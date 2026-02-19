@@ -1838,9 +1838,9 @@
             body {
                 position: fixed;
                 inset: 0;
-                width: 100%;
-                height: var(--app-height, 100dvh);
-                min-height: var(--app-height, 100dvh);
+                width: 100vw;
+                height: 100%;
+                min-height: 100%;
                 overflow: hidden;
             }
 
@@ -1849,8 +1849,7 @@
                 inset: 0;
                 display: block;
                 width: 100%;
-                height: var(--app-height, 100dvh);
-                min-height: var(--app-height, 100dvh);
+                height: 100%;
             }
 
             .map-container {
@@ -3209,25 +3208,7 @@
                 liveSafeBottom = cssSafeBottom;
             }
             let fillSafeBottom = Math.max(liveSafeBottom, cssSafeBottom);
-            const isPortrait = (
-                (window.matchMedia && window.matchMedia('(orientation: portrait)').matches) ||
-                Number(window.innerHeight || 0) >= Number(window.innerWidth || 0)
-            );
-            if (isIos && isMobileViewport_() && isPortrait && !keyboardLikelyOpen) {
-                const screenLong = Math.round(
-                    Math.max(
-                        Number((window.screen && window.screen.height) || 0),
-                        Number((window.screen && window.screen.width) || 0)
-                    )
-                );
-                if (screenLong > 0) {
-                    const inferredBottomGap = Math.max(0, Math.min(96, screenLong - nextHeight - liveSafeTop));
-                    if (inferredBottomGap > 0) {
-                        fillSafeBottom = Math.max(fillSafeBottom, inferredBottomGap);
-                    }
-                }
-            }
-            if (isIos && isMobileViewport_() && isStandalone && fillSafeBottom < 20) {
+            if (isIos && isMobileViewport_() && !keyboardLikelyOpen && fillSafeBottom < 20) {
                 fillSafeBottom = 34;
             }
             root.style.setProperty('--safe-top-live', `${liveSafeTop}px`);
