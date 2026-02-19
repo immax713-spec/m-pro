@@ -6,8 +6,6 @@ on:
       - main
     paths:
       - bmw.html
-      - manifest.webmanifest
-      - icons/**
       - .github/workflows/deploy.yml
   workflow_dispatch:
 
@@ -69,20 +67,6 @@ jobs:
             ./bmw.html \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/bmw.html.new"
 
-      - name: Ensure icons dir on server
-        run: |
-          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
-            set -e
-            mkdir -p "'"$DEPLOY_PATH"'/icons"
-          '
-
-      - name: Upload PWA static files
-        run: |
-          scp -P "$DEPLOY_PORT" ./manifest.webmanifest "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/manifest.webmanifest"
-          scp -P "$DEPLOY_PORT" ./icons/icon-192.png "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/icons/icon-192.png"
-          scp -P "$DEPLOY_PORT" ./icons/icon-512.png "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/icons/icon-512.png"
-          scp -P "$DEPLOY_PORT" ./icons/apple-touch-icon.png "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/icons/apple-touch-icon.png"
-
       - name: Atomic replace + backup
         run: |
           ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
@@ -92,8 +76,4 @@ jobs:
             fi
             mv "'"$DEPLOY_PATH"'/bmw.html.new" "'"$DEPLOY_PATH"'/bmw.html"
             chmod 644 "'"$DEPLOY_PATH"'/bmw.html"
-            chmod 644 "'"$DEPLOY_PATH"'/manifest.webmanifest"
-            chmod 644 "'"$DEPLOY_PATH"'/icons/icon-192.png"
-            chmod 644 "'"$DEPLOY_PATH"'/icons/icon-512.png"
-            chmod 644 "'"$DEPLOY_PATH"'/icons/apple-touch-icon.png"
           '
