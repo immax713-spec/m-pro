@@ -39,6 +39,7 @@
             --safe-bottom: env(safe-area-inset-bottom, 0px);
             --safe-left: env(safe-area-inset-left, 0px);
             --safe-top-live: var(--safe-top);
+            --safe-bottom-live: var(--safe-bottom);
         }
 
         html, body {
@@ -1823,7 +1824,10 @@
 
             .map-container {
                 position: fixed;
-                inset: 0;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: calc(-1 * var(--safe-bottom-live, var(--safe-bottom)));
                 width: auto;
                 min-height: 0;
                 height: auto;
@@ -3141,6 +3145,7 @@
             if (!Number.isFinite(rawHeight) || rawHeight < 320) return;
 
             let nextHeight = rawHeight;
+            let keyboardLikelyOpen = false;
             if (isMobileViewport_()) {
                 if (!maxSyncedViewportHeight_ || rawHeight > maxSyncedViewportHeight_) {
                     maxSyncedViewportHeight_ = rawHeight;
@@ -3150,7 +3155,7 @@
                     activeEl &&
                     (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)
                 );
-                const keyboardLikelyOpen = !!(vvHeight && maxSyncedViewportHeight_ - vvHeight > 140 && isEditableFocused);
+                keyboardLikelyOpen = !!(vvHeight && maxSyncedViewportHeight_ - vvHeight > 140 && isEditableFocused);
                 nextHeight = keyboardLikelyOpen ? rawHeight : Math.max(rawHeight, maxSyncedViewportHeight_);
             }
             if (!Number.isFinite(nextHeight) || nextHeight < 320) return;
@@ -3158,13 +3163,22 @@
             const cssSafeTop = Number.parseInt(getComputedStyle(root).getPropertyValue('--safe-top'), 10) || 0;
             const vvTop = window.visualViewport ? Math.round(Number(window.visualViewport.offsetTop) || 0) : 0;
             let liveSafeTop = Math.max(cssSafeTop, vvTop, 0);
+            const cssSafeBottom = Number.parseInt(getComputedStyle(root).getPropertyValue('--safe-bottom'), 10) || 0;
+            const vvBottomInset = vv
+                ? Math.max(0, Math.round(innerHeight - ((Number(vv.height) || 0) + (Number(vv.offsetTop) || 0))))
+                : 0;
+            let liveSafeBottom = Math.max(cssSafeBottom, vvBottomInset, 0);
             const ua = navigator.userAgent || '';
             const isIos = /iPhone|iPad|iPod/i.test(ua);
             const isStandalone = !!(window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true);
             if (isIos && isMobileViewport_() && isStandalone && liveSafeTop < 24) {
                 liveSafeTop = 28;
             }
+            if (keyboardLikelyOpen) {
+                liveSafeBottom = cssSafeBottom;
+            }
             root.style.setProperty('--safe-top-live', `${liveSafeTop}px`);
+            root.style.setProperty('--safe-bottom-live', `${liveSafeBottom}px`);
 
             if (nextHeight === lastSyncedViewportHeight_) return;
             lastSyncedViewportHeight_ = nextHeight;
