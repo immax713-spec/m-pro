@@ -2157,8 +2157,8 @@
                     type="text"
                     placeholder="Найти на карте: адрес, номер точки..."
                     autocomplete="off"
+                    data-input-action="map-inline-search-input"
                 >
-                <button class="map-inline-search__btn" type="button" data-action="map-inline-search-submit">Найти</button>
                 <button class="map-inline-search__btn map-inline-search__btn--close" type="button" data-action="map-inline-search-close" aria-label="Скрыть поиск">
                     <span class="map-inline-search__close-arrow" aria-hidden="true">&rarr;</span>
                 </button>
@@ -2381,6 +2381,7 @@
             runtime: {
                 currentUser: null,
                 dataLoadPromise: null,
+                mapSearchQuery: '',
                 workDay: {
                     isLoaded: false,
                     isOpen: false,
@@ -2616,6 +2617,15 @@
             },
             clearDataLoadPromise() {
                 AppState.runtime.dataLoadPromise = null;
+            },
+            getMapSearchQuery() {
+                return String(AppState.runtime.mapSearchQuery || '');
+            },
+            setMapSearchQuery(query) {
+                AppState.runtime.mapSearchQuery = String(query || '');
+            },
+            clearMapSearchQuery() {
+                AppState.runtime.mapSearchQuery = '';
             }
         });
 
@@ -2984,6 +2994,9 @@
                     case 'objects-search':
                         AppModules.Objects.scheduleObjectsListUpdate();
                         break;
+                    case 'map-inline-search-input':
+                        handleMapInlineSearchInput_(target);
+                        break;
                     case 'filter-management-inspectors':
                         AppModules.Customization.filterManagementInspectors();
                         break;
@@ -3141,6 +3154,8 @@
                 });
             } else if (input) {
                 input.blur();
+                if (input.value) input.value = '';
+                setMapSearchQuery_('');
             }
         }
 
@@ -3151,48 +3166,30 @@
             setMapInlineSearchOpen_(!isOpen);
         }
 
-        function findObjectByMapQuery_(rawQuery) {
-            const query = String(rawQuery || '').trim().toLowerCase();
-            if (!query) return null;
+        function normalizeMapSearchQuery_(rawValue) {
+            return String(rawValue || '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .toLowerCase();
+        }
 
-            const objects = getRoleScopedObjects_(DataState.getObjectsData());
-            if (!Array.isArray(objects) || !objects.length) return null;
+        function setMapSearchQuery_(rawValue) {
+            const nextQuery = normalizeMapSearchQuery_(rawValue);
+            if (RuntimeState.getMapSearchQuery() === nextQuery) return;
+            RuntimeState.setMapSearchQuery(nextQuery);
+            scheduleMapUpdate_();
+        }
 
-            const exactById = objects.find(obj => String(obj?.id || '').toLowerCase() === query);
-            if (exactById) return exactById;
-
-            for (let i = 0; i < objects.length; i += 1) {
-                const obj = objects[i];
-                const fallbackBlob = `${String(obj?.id || '')}|${String(obj?.list || '')}|${String(obj?.address || '')}`.toLowerCase();
-                const blob = `${obj?.__searchBlobLower || fallbackBlob}|${String(obj?.inspector || '').toLowerCase()}`;
-                if (blob.includes(query)) return obj;
-            }
-            return null;
+        function handleMapInlineSearchInput_(target) {
+            if (!(target instanceof HTMLInputElement)) return;
+            setMapSearchQuery_(target.value);
         }
 
         function submitMapInlineSearch_() {
             const input = document.getElementById('mapInlineSearchInput');
-            const query = String(input?.value || '').trim();
-            if (!query) {
-                showNotification('ℹ️ Введите адрес или номер точки', 'info');
-                return;
-            }
-
-            const mapInstance = MapState.getMapInstance();
-            if (!mapInstance) {
-                showNotification('❌ Карта еще не инициализирована', 'error');
-                return;
-            }
-
-            const obj = findObjectByMapQuery_(query);
-            if (!obj) {
-                showNotification(`❌ Ничего не найдено: ${query}`, 'error');
-                return;
-            }
-
-            AppModules.Objects.switchNav('map');
-            focusObjectFromObjectsTab_(obj);
-            setMapInlineSearchOpen_(false);
+            if (!input) return;
+            setMapSearchQuery_(input.value);
+            input.blur();
         }
 
         function setMobileSidebarOpen_(nextOpen) {
@@ -6263,6 +6260,8 @@
             const selectedListsSet = hasListFilters
                 ? new Set(currentFilters.lists.map(item => `${item.division}::${item.name}`))
                 : null;
+            const mapSearchQuery = RuntimeState.getMapSearchQuery();
+            const hasMapSearchQuery = !!mapSearchQuery;
 
             objectsData.forEach((obj) => {
                 // Фильтрация
@@ -6292,6 +6291,12 @@
                 }
                 
                 if (!match) return;
+
+                if (hasMapSearchQuery) {
+                    const fallbackBlob = `${String(obj?.id || '')}|${String(obj?.list || '')}|${String(obj?.address || '')}`.toLowerCase();
+                    const searchBlob = `${obj?.__searchBlobLower || fallbackBlob}|${String(obj?.inspector || '').toLowerCase()}`;
+                    if (!searchBlob.includes(mapSearchQuery)) return;
+                }
 
                 // Выполненные/отказанные точки по умолчанию скрываем с карты.
                 // После "Выход" точка видна ещё несколько секунд и затем исчезает.
