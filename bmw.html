@@ -38,9 +38,6 @@
             --safe-right: env(safe-area-inset-right, 0px);
             --safe-bottom: env(safe-area-inset-bottom, 0px);
             --safe-left: env(safe-area-inset-left, 0px);
-            --safe-top-live: var(--safe-top);
-            --safe-bottom-live: var(--safe-bottom);
-            --safe-bottom-fill: var(--safe-bottom);
         }
 
         html, body {
@@ -1498,7 +1495,7 @@
            ============================================ */
         .glass-notification {
             position: fixed;
-            top: calc(var(--safe-top-live, var(--safe-top)) + 12px);
+            top: 20px;
             left: 50%;
             transform: translateX(-50%) translateY(-100px) scale(0.9);
             z-index: 999999;
@@ -1612,17 +1609,6 @@
             align-items: center;
             justify-content: center;
             transition: opacity 0.5s ease, visibility 0.5s ease;
-        }
-
-        .auth-overlay::after {
-            content: "";
-            position: absolute;
-            left: 0;
-            right: 0;
-            bottom: calc(-1 * var(--safe-bottom-fill, var(--safe-bottom)));
-            height: var(--safe-bottom-fill, var(--safe-bottom));
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-            pointer-events: none;
         }
         
         .auth-overlay.hidden {
@@ -1829,35 +1815,14 @@
         }
 
         @media (max-width: 980px) {
-            html, body {
-                width: 100%;
-                height: 100%;
-                min-height: 100%;
-            }
-
-            body {
-                position: fixed;
-                inset: 0;
-                width: 100vw;
-                height: 100%;
-                min-height: 100%;
-                overflow: hidden;
-            }
-
             .container {
-                position: fixed;
-                inset: 0;
                 display: block;
-                width: 100%;
-                height: 100%;
+                height: var(--app-height, 100dvh);
             }
 
             .map-container {
                 position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: calc(-1 * var(--safe-bottom-fill, var(--safe-bottom)));
+                inset: 0;
                 width: auto;
                 min-height: 0;
                 height: auto;
@@ -1888,7 +1853,7 @@
             }
 
             .sidebar-content {
-                padding: calc(12px + var(--safe-top-live, var(--safe-top)) + 12px) 12px 12px;
+                padding: 12px;
             }
 
             .modern-menu-container {
@@ -3105,11 +3070,8 @@
         }
 
         function getMapControlsTopOffset_() {
-            const root = document.documentElement;
-            const safeTopLive = root
-                ? Number.parseInt(getComputedStyle(root).getPropertyValue('--safe-top-live'), 10) || 0
-                : 0;
-            if (isMobileViewport_()) return safeTopLive + 12;
+            const vvTop = window.visualViewport ? Math.round(Number(window.visualViewport.offsetTop) || 0) : 0;
+            if (isMobileViewport_()) return vvTop + 52;
             return 10;
         }
 
@@ -3175,7 +3137,6 @@
             if (!Number.isFinite(rawHeight) || rawHeight < 320) return;
 
             let nextHeight = rawHeight;
-            let keyboardLikelyOpen = false;
             if (isMobileViewport_()) {
                 if (!maxSyncedViewportHeight_ || rawHeight > maxSyncedViewportHeight_) {
                     maxSyncedViewportHeight_ = rawHeight;
@@ -3185,35 +3146,10 @@
                     activeEl &&
                     (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)
                 );
-                keyboardLikelyOpen = !!(vvHeight && maxSyncedViewportHeight_ - vvHeight > 140 && isEditableFocused);
+                const keyboardLikelyOpen = !!(vvHeight && maxSyncedViewportHeight_ - vvHeight > 140 && isEditableFocused);
                 nextHeight = keyboardLikelyOpen ? rawHeight : Math.max(rawHeight, maxSyncedViewportHeight_);
             }
             if (!Number.isFinite(nextHeight) || nextHeight < 320) return;
-
-            const cssSafeTop = Number.parseInt(getComputedStyle(root).getPropertyValue('--safe-top'), 10) || 0;
-            const vvTop = window.visualViewport ? Math.round(Number(window.visualViewport.offsetTop) || 0) : 0;
-            let liveSafeTop = Math.max(cssSafeTop, vvTop, 0);
-            const cssSafeBottom = Number.parseInt(getComputedStyle(root).getPropertyValue('--safe-bottom'), 10) || 0;
-            const vvBottomInset = vv
-                ? Math.max(0, Math.round(innerHeight - ((Number(vv.height) || 0) + (Number(vv.offsetTop) || 0))))
-                : 0;
-            let liveSafeBottom = Math.max(cssSafeBottom, vvBottomInset, 0);
-            const ua = navigator.userAgent || '';
-            const isIos = /iPhone|iPad|iPod/i.test(ua);
-            const isStandalone = !!(window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true);
-            if (isIos && isMobileViewport_() && isStandalone && liveSafeTop < 24) {
-                liveSafeTop = 28;
-            }
-            if (keyboardLikelyOpen) {
-                liveSafeBottom = cssSafeBottom;
-            }
-            let fillSafeBottom = Math.max(liveSafeBottom, cssSafeBottom);
-            if (isIos && isMobileViewport_() && !keyboardLikelyOpen && fillSafeBottom < 20) {
-                fillSafeBottom = 34;
-            }
-            root.style.setProperty('--safe-top-live', `${liveSafeTop}px`);
-            root.style.setProperty('--safe-bottom-live', `${liveSafeBottom}px`);
-            root.style.setProperty('--safe-bottom-fill', `${fillSafeBottom}px`);
 
             if (nextHeight === lastSyncedViewportHeight_) return;
             lastSyncedViewportHeight_ = nextHeight;
