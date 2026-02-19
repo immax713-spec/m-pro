@@ -3046,7 +3046,10 @@
         }
 
         let lastSyncedViewportHeight_ = 0;
+        let maxSyncedViewportHeight_ = 0;
         let fitMapToViewportRaf_ = 0;
+        let mapViewportWarmupTimer_ = 0;
+        let mapViewportWarmupTicks_ = 0;
 
         function scheduleMapFitToViewport_() {
             const mapInstance = MapState.getMapInstance();
@@ -3067,19 +3070,16 @@
         }
 
         function getMapControlsTopOffset_() {
-            const root = document.documentElement;
-            const cssSafeTop = root
-                ? Number.parseInt(getComputedStyle(root).getPropertyValue('--safe-top'), 10) || 0
-                : 0;
             const vvTop = window.visualViewport ? Math.round(Number(window.visualViewport.offsetTop) || 0) : 0;
-            return Math.max(cssSafeTop, vvTop, 0);
+            if (isMobileViewport_()) return vvTop + 52;
+            return 10;
         }
 
         function syncMapControlsInsets_() {
             const mapInstance = MapState.getMapInstance();
             if (!mapInstance || !mapInstance.controls) return;
 
-            const controlTop = getMapControlsTopOffset_() + 10;
+            const controlTop = getMapControlsTopOffset_();
             const zoomControl = mapInstance.controls.get('zoomControl');
             if (zoomControl && zoomControl.options && typeof zoomControl.options.set === 'function') {
                 zoomControl.options.set('position', { left: 10, top: controlTop });
@@ -3089,6 +3089,27 @@
             if (typeSelector && typeSelector.options && typeof typeSelector.options.set === 'function') {
                 typeSelector.options.set('position', { right: 10, top: controlTop });
             }
+        }
+
+        function stopMapViewportWarmup_() {
+            if (mapViewportWarmupTimer_) {
+                clearInterval(mapViewportWarmupTimer_);
+                mapViewportWarmupTimer_ = 0;
+            }
+            mapViewportWarmupTicks_ = 0;
+        }
+
+        function startMapViewportWarmup_() {
+            stopMapViewportWarmup_();
+            mapViewportWarmupTimer_ = setInterval(() => {
+                mapViewportWarmupTicks_ += 1;
+                syncViewportHeight_();
+                scheduleMapFitToViewport_();
+                syncMapControlsInsets_();
+                if (mapViewportWarmupTicks_ >= 22) {
+                    stopMapViewportWarmup_();
+                }
+            }, 150);
         }
 
         function queueViewportStabilization_(withMapRefit = true) {
@@ -3111,7 +3132,23 @@
             const vv = window.visualViewport;
             const vvHeight = vv && Number(vv.height);
             const innerHeight = Number(window.innerHeight);
-            const nextHeight = Math.round((vvHeight && vvHeight > 0) ? vvHeight : innerHeight);
+            const clientHeight = Number(document.documentElement.clientHeight);
+            const rawHeight = Math.round(Math.max(vvHeight || 0, innerHeight || 0, clientHeight || 0));
+            if (!Number.isFinite(rawHeight) || rawHeight < 320) return;
+
+            let nextHeight = rawHeight;
+            if (isMobileViewport_()) {
+                if (!maxSyncedViewportHeight_ || rawHeight > maxSyncedViewportHeight_) {
+                    maxSyncedViewportHeight_ = rawHeight;
+                }
+                const activeEl = document.activeElement;
+                const isEditableFocused = !!(
+                    activeEl &&
+                    (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)
+                );
+                const keyboardLikelyOpen = !!(vvHeight && maxSyncedViewportHeight_ - vvHeight > 140 && isEditableFocused);
+                nextHeight = keyboardLikelyOpen ? rawHeight : Math.max(rawHeight, maxSyncedViewportHeight_);
+            }
             if (!Number.isFinite(nextHeight) || nextHeight < 320) return;
 
             if (nextHeight === lastSyncedViewportHeight_) return;
@@ -3299,10 +3336,18 @@
                 syncMobileLayoutState_();
             });
             window.addEventListener('orientationchange', () => {
-                setTimeout(syncViewportHeight_, 120);
+                maxSyncedViewportHeight_ = 0;
+                lastSyncedViewportHeight_ = 0;
+                setTimeout(() => {
+                    syncViewportHeight_();
+                    startMapViewportWarmup_();
+                }, 140);
             });
             window.addEventListener('pageshow', () => {
-                setTimeout(syncViewportHeight_, 60);
+                setTimeout(() => {
+                    syncViewportHeight_();
+                    startMapViewportWarmup_();
+                }, 80);
             });
             if (window.visualViewport) {
                 window.visualViewport.addEventListener('resize', syncViewportHeight_);
@@ -3624,6 +3669,7 @@
             scheduleMenuIndicatorSync_();
             syncMobileLayoutState_();
             queueViewportStabilization_(true);
+            startMapViewportWarmup_();
         }
         
         /**
@@ -3993,15 +4039,16 @@
                 const mapInstance = MapState.getMapInstance();
                 mapInstance.controls.add('zoomControl', {
                     size: 'small',
-                    position: { left: 10, top: getMapControlsTopOffset_() + 10 }
+                    position: { left: 10, top: getMapControlsTopOffset_() }
                 });
                 mapInstance.controls.add('typeSelector', {
-                    position: { right: 10, top: getMapControlsTopOffset_() + 10 }
+                    position: { right: 10, top: getMapControlsTopOffset_() }
                 });
                 scheduleMapFitToViewport_();
                 syncMapControlsInsets_();
                 setTimeout(scheduleMapFitToViewport_, 120);
                 setTimeout(syncMapControlsInsets_, 120);
+                startMapViewportWarmup_();
                 
                 // Инициализируем менеджеры объектов (ObjectManager) для точек
                 initObjectManagers_();
