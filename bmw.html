@@ -13,15 +13,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#1f6fb2">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="M-PRO">
-    <link rel="manifest" href="/manifest.webmanifest">
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
     <title>M-PRO</title>
     
     <!-- v2.1 - принудительное обновление -->
@@ -1600,9 +1591,10 @@
         /* Стили экрана авторизации */
         .auth-overlay {
             position: fixed;
-            inset: 0;
-            width: auto;
-            height: auto;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
             z-index: 99999;
             display: flex;
@@ -1821,18 +1813,8 @@
             }
 
             .map-container {
-                position: fixed;
-                inset: 0;
-                width: auto;
-                min-height: 0;
-                height: auto;
-            }
-
-            #map {
-                position: absolute;
-                inset: 0;
                 width: 100%;
-                height: 100%;
+                height: var(--app-height, 100dvh);
             }
 
             .sidebar {
@@ -3046,10 +3028,7 @@
         }
 
         let lastSyncedViewportHeight_ = 0;
-        let maxSyncedViewportHeight_ = 0;
         let fitMapToViewportRaf_ = 0;
-        let mapViewportWarmupTimer_ = 0;
-        let mapViewportWarmupTicks_ = 0;
 
         function scheduleMapFitToViewport_() {
             const mapInstance = MapState.getMapInstance();
@@ -3069,62 +3048,6 @@
             });
         }
 
-        function getMapControlsTopOffset_() {
-            const vvTop = window.visualViewport ? Math.round(Number(window.visualViewport.offsetTop) || 0) : 0;
-            if (isMobileViewport_()) return vvTop + 52;
-            return 10;
-        }
-
-        function syncMapControlsInsets_() {
-            const mapInstance = MapState.getMapInstance();
-            if (!mapInstance || !mapInstance.controls) return;
-
-            const controlTop = getMapControlsTopOffset_();
-            const zoomControl = mapInstance.controls.get('zoomControl');
-            if (zoomControl && zoomControl.options && typeof zoomControl.options.set === 'function') {
-                zoomControl.options.set('position', { left: 10, top: controlTop });
-            }
-
-            const typeSelector = mapInstance.controls.get('typeSelector');
-            if (typeSelector && typeSelector.options && typeof typeSelector.options.set === 'function') {
-                typeSelector.options.set('position', { right: 10, top: controlTop });
-            }
-        }
-
-        function stopMapViewportWarmup_() {
-            if (mapViewportWarmupTimer_) {
-                clearInterval(mapViewportWarmupTimer_);
-                mapViewportWarmupTimer_ = 0;
-            }
-            mapViewportWarmupTicks_ = 0;
-        }
-
-        function startMapViewportWarmup_() {
-            stopMapViewportWarmup_();
-            mapViewportWarmupTimer_ = setInterval(() => {
-                mapViewportWarmupTicks_ += 1;
-                syncViewportHeight_();
-                scheduleMapFitToViewport_();
-                syncMapControlsInsets_();
-                if (mapViewportWarmupTicks_ >= 22) {
-                    stopMapViewportWarmup_();
-                }
-            }, 150);
-        }
-
-        function queueViewportStabilization_(withMapRefit = true) {
-            const delays = [0, 60, 140, 260, 420];
-            delays.forEach(delay => {
-                setTimeout(() => {
-                    syncViewportHeight_();
-                    if (withMapRefit) {
-                        scheduleMapFitToViewport_();
-                        syncMapControlsInsets_();
-                    }
-                }, delay);
-            });
-        }
-
         function syncViewportHeight_() {
             const root = document.documentElement;
             if (!root) return;
@@ -3132,30 +3055,13 @@
             const vv = window.visualViewport;
             const vvHeight = vv && Number(vv.height);
             const innerHeight = Number(window.innerHeight);
-            const clientHeight = Number(document.documentElement.clientHeight);
-            const rawHeight = Math.round(Math.max(vvHeight || 0, innerHeight || 0, clientHeight || 0));
-            if (!Number.isFinite(rawHeight) || rawHeight < 320) return;
-
-            let nextHeight = rawHeight;
-            if (isMobileViewport_()) {
-                if (!maxSyncedViewportHeight_ || rawHeight > maxSyncedViewportHeight_) {
-                    maxSyncedViewportHeight_ = rawHeight;
-                }
-                const activeEl = document.activeElement;
-                const isEditableFocused = !!(
-                    activeEl &&
-                    (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)
-                );
-                const keyboardLikelyOpen = !!(vvHeight && maxSyncedViewportHeight_ - vvHeight > 140 && isEditableFocused);
-                nextHeight = keyboardLikelyOpen ? rawHeight : Math.max(rawHeight, maxSyncedViewportHeight_);
-            }
+            const nextHeight = Math.round((vvHeight && vvHeight > 0) ? vvHeight : innerHeight);
             if (!Number.isFinite(nextHeight) || nextHeight < 320) return;
 
             if (nextHeight === lastSyncedViewportHeight_) return;
             lastSyncedViewportHeight_ = nextHeight;
             root.style.setProperty('--app-height', `${nextHeight}px`);
             scheduleMapFitToViewport_();
-            syncMapControlsInsets_();
         }
 
         function getMainSidebarElement_() {
@@ -3336,18 +3242,10 @@
                 syncMobileLayoutState_();
             });
             window.addEventListener('orientationchange', () => {
-                maxSyncedViewportHeight_ = 0;
-                lastSyncedViewportHeight_ = 0;
-                setTimeout(() => {
-                    syncViewportHeight_();
-                    startMapViewportWarmup_();
-                }, 140);
+                setTimeout(syncViewportHeight_, 120);
             });
             window.addEventListener('pageshow', () => {
-                setTimeout(() => {
-                    syncViewportHeight_();
-                    startMapViewportWarmup_();
-                }, 80);
+                setTimeout(syncViewportHeight_, 60);
             });
             if (window.visualViewport) {
                 window.visualViewport.addEventListener('resize', syncViewportHeight_);
@@ -3372,7 +3270,6 @@
                 initMap();
                 loadData();
                 scheduleMenuIndicatorSync_();
-                queueViewportStabilization_(true);
             } else {
                 // Пользователь не авторизован: показываем оверлей входа
                 const overlay = document.getElementById('authOverlay');
@@ -3381,12 +3278,6 @@
                 // Подключаем обработчики событий
                 const passwordInput = document.getElementById('authPassword');
                 passwordInput.focus();
-                passwordInput.addEventListener('focus', () => {
-                    queueViewportStabilization_(false);
-                });
-                passwordInput.addEventListener('blur', () => {
-                    queueViewportStabilization_(false);
-                });
                 passwordInput.addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') doLogin();
                 });
@@ -3591,11 +3482,9 @@
             }
             
             // Показать состояние загрузки
-            passwordInput.blur();
             btn.classList.add('loading');
             btn.disabled = true;
             errorDiv.classList.remove('show');
-            queueViewportStabilization_(false);
             
             // Создать JSONP-запрос
             const callbackName = 'auth_cb_' + Date.now();
@@ -3668,8 +3557,6 @@
             loadData();
             scheduleMenuIndicatorSync_();
             syncMobileLayoutState_();
-            queueViewportStabilization_(true);
-            startMapViewportWarmup_();
         }
         
         /**
@@ -3678,7 +3565,6 @@
         function hideAuthOverlay() {
             const overlay = document.getElementById('authOverlay');
             overlay.classList.add('hidden');
-            queueViewportStabilization_(false);
         }
         
         /**
@@ -4034,21 +3920,10 @@
                 MapState.setMapInstance(new ymaps.Map('map', {
                     center: [55.7558, 37.6176],
                     zoom: 10,
-                    controls: []
+                    controls: ['zoomControl', 'typeSelector']
                 }));
-                const mapInstance = MapState.getMapInstance();
-                mapInstance.controls.add('zoomControl', {
-                    size: 'small',
-                    position: { left: 10, top: getMapControlsTopOffset_() }
-                });
-                mapInstance.controls.add('typeSelector', {
-                    position: { right: 10, top: getMapControlsTopOffset_() }
-                });
                 scheduleMapFitToViewport_();
-                syncMapControlsInsets_();
                 setTimeout(scheduleMapFitToViewport_, 120);
-                setTimeout(syncMapControlsInsets_, 120);
-                startMapViewportWarmup_();
                 
                 // Инициализируем менеджеры объектов (ObjectManager) для точек
                 initObjectManagers_();
