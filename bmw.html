@@ -1427,9 +1427,10 @@
             display: flex;
             flex-direction: column;
             width: 100%;
-            gap: 1px;
-            background: #e2e8f0;
-            border-radius: 10px;
+            gap: 0;
+            background: #ffffff;
+            border: 1px solid #dbe4ef;
+            border-radius: 12px;
             overflow: hidden;
             margin-top: 8px;
         }
@@ -1439,19 +1440,26 @@
             display: flex;
             align-items: center;
             justify-content: flex-start;
-            gap: 10px;
-            padding: 8px 12px;
+            gap: 8px;
+            padding: 10px 12px;
             border: none;
             background: #ffffff;
-            color: #2d3748;
-            font-size: 0.85rem;
-            font-weight: 500;
+            color: #253447;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-bottom: 1px solid #edf2f7;
             cursor: pointer;
             transition: background 0.15s ease;
             text-decoration: none;
         }
         
-        .object-card__button:hover { background: #f7fafc; }
+        .object-card__button:last-child {
+            border-bottom: none;
+        }
+
+        .object-card__button:hover {
+            background: #f4f8fc;
+        }
         
         /* Специальные стили для кнопок действий в карточке деталей объекта */
         .object-card__button--primary,
@@ -2763,10 +2771,12 @@
             'select-color',
             'select-icon',
             'select-status-option',
-            'apply-inspector-changes'
+            'apply-inspector-changes',
+            'cancel-entry'
         ]);
         const INSPECTOR_BLOCKED_INPUT_ACTIONS = new Set([
-            'filter-management-inspectors'
+            'filter-management-inspectors',
+            'reassign-inspector'
         ]);
 
         function getCurrentUserRoleNorm_() {
@@ -6541,18 +6551,6 @@
         }
         
         /**
-         * Получить параметры бейджа на основе статуса.
-         * @param {Object} status - Объект статуса из getObjectStatus
-         * @returns {{class: string, text: string}}
-         */
-        function getStatusBadge({ isActive, isDenied, isCompleted }) {
-            if (isActive) return { class: 'object-card__badge object-card__badge--active', text: 'В работе' };
-            if (isDenied) return { class: 'object-card__badge object-card__badge--denied', text: 'Отказано' };
-            if (isCompleted) return { class: 'object-card__badge object-card__badge--completed', text: 'Выполнена' };
-            return { class: 'object-card__badge object-card__badge--new', text: 'Новая' };
-        }
-        
-        /**
          * Сформировать кнопки действий по текущему статусу объекта.
          * @param {Object} obj - Данные объекта
          * @param {Object} status - Объект статуса
@@ -6562,15 +6560,16 @@
             const objectIdAttr = Utils.escapeAttr(obj.id);
             if (isNew) {
                 return `<div class="object-card__actions" style="margin-top: 12px;">
-                    <button class="object-card__button" data-action="mark-entry" data-object-id="${objectIdAttr}">➡️ Вход</button>
+                    <button class="object-card__button" data-action="mark-entry" data-object-id="${objectIdAttr}">Вход</button>
                 </div>`;
             }
             if (isActive) {
+                const allowCancelEntry = !isInspectorRole_();
                 return `<div class="object-card__actions" style="margin-top: 12px;">
-                    <button class="object-card__button" data-action="mark-exit" data-object-id="${objectIdAttr}">🚪 Выход</button>
-                    <button class="object-card__button" data-action="cancel-entry" data-object-id="${objectIdAttr}">↩️ Отменить вход</button>
-                    <button class="object-card__button" data-action="mark-denied" data-object-id="${objectIdAttr}">🚫 Отказано</button>
-                    <button class="object-card__button" data-action="call-laboratory" data-object-id="${objectIdAttr}">🔬 Лаборатория</button>
+                    <button class="object-card__button" data-action="mark-exit" data-object-id="${objectIdAttr}">Выход</button>
+                    ${allowCancelEntry ? `<button class="object-card__button" data-action="cancel-entry" data-object-id="${objectIdAttr}">Отменить вход</button>` : ''}
+                    <button class="object-card__button" data-action="mark-denied" data-object-id="${objectIdAttr}">Отказано</button>
+                    <button class="object-card__button" data-action="call-laboratory" data-object-id="${objectIdAttr}">Лаборатория</button>
                 </div>`;
             }
             return '';
@@ -6582,6 +6581,8 @@
          * @returns {string} HTML-строка
          */
         function renderReassignSelect(obj) {
+            if (isInspectorRole_()) return '';
+
             const options = Object.keys(DataState.getInspectorsConfig()).sort().map(insp => {
                 const style = getInspectorStyle(insp);
                 const selected = obj.inspector === insp ? 'selected' : '';
@@ -6620,12 +6621,12 @@
             const objectIdAttr = Utils.escapeAttr(obj.id);
             if (isActive) {
                 if (!yandexWorkLink) return '';
-                return `<button class="object-card__button" data-action="yandex-disk" data-yandex-mode="create" data-yandex-object="${objectIdAttr}" data-yandex-link="${Utils.escapeAttr(yandexWorkLink)}" data-yandex-report-link="${Utils.escapeAttr(reportLink)}">✨ Создать папки</button>`;
+                return `<button class="object-card__button" data-action="yandex-disk" data-yandex-mode="create" data-yandex-object="${objectIdAttr}" data-yandex-link="${Utils.escapeAttr(yandexWorkLink)}" data-yandex-report-link="${Utils.escapeAttr(reportLink)}">Создать папки</button>`;
             }
             if (!reportLink) return '';
             const safeUrl = Utils.sanitizeUrl(reportLink);
             if (!safeUrl) return '';
-            return `<a href="${Utils.escapeAttr(safeUrl)}" target="_blank" rel="noopener noreferrer" class="object-card__button">👁️ Просмотр фотоотчета</a>`;
+            return `<a href="${Utils.escapeAttr(safeUrl)}" target="_blank" rel="noopener noreferrer" class="object-card__button">Просмотр фотоотчета</a>`;
         }
 
         function getRenderSig_(value) {
@@ -6641,11 +6642,9 @@
 
         function buildObjectCardViewModel_(obj, icon) {
             const status = getObjectStatus(obj);
-            const badge = getStatusBadge(status);
 
             return {
                 status,
-                badge,
                 objectIdRaw: String(obj.id || ''),
                 objectIdAttr: Utils.escapeAttr(obj.id),
                 coordinates: Utils.escapeAttr(`${obj.latitude}, ${obj.longitude}`),
@@ -6671,7 +6670,6 @@
                         <div class="object-card__meta">${vm.listLabel}</div>
                     </div>
                 </div>
-                <span class="${vm.badge.class}">${vm.badge.text}</span>
             `;
         }
 
@@ -6706,7 +6704,7 @@
                 ${obj.laboratory ? `
                 <div class="object-card__row">
                     <span class="object-card__label">Лаборатория</span>
-                    <span class="object-card__value">✅ ${vm.laboratoryComment}</span>
+                    <span class="object-card__value">${vm.laboratoryComment}</span>
                 </div>
                 ` : ''}
             `;
@@ -6714,9 +6712,9 @@
 
         function renderObjectCardPrimaryActionsHtml_(obj, vm) {
             return `
-                ${vm.googleLink ? `<a href="${Utils.escapeAttr(vm.googleLink)}" target="_blank" rel="noopener noreferrer" class="object-card__button">📝 Чек-лист</a>` : ''}
+                ${vm.googleLink ? `<a href="${Utils.escapeAttr(vm.googleLink)}" target="_blank" rel="noopener noreferrer" class="object-card__button">Чек-лист</a>` : ''}
                 ${renderYandexButton(obj, vm.status.isActive)}
-                <button class="object-card__button" data-action="copy-coordinates" data-coordinates="${vm.coordinates}">📍 Координаты</button>
+                <button class="object-card__button" data-action="copy-coordinates" data-coordinates="${vm.coordinates}">Координаты</button>
             `;
         }
 
@@ -6877,7 +6875,7 @@
          */
         async function copyCoordinates(coordinates) {
             const success = await Utils.copyToClipboard(coordinates);
-            showNotification(success ? '📍 Координаты скопированы' : '❌ Не удалось скопировать', success ? 'success' : 'error');
+            showNotification(success ? 'Координаты скопированы' : 'Не удалось скопировать координаты', success ? 'success' : 'error');
         }
         
         // ==================================================================
@@ -7075,7 +7073,7 @@
                 const directLink = `https://disk.yandex.ru/client/disk/${encodeURIComponent(mainPath)}`;
                 
                 // Обновляем кнопку
-                btn.innerHTML = '📂 Добавить фотоотчет';
+                btn.innerHTML = 'Добавить фотоотчет';
                 btn.disabled = false;
                 btn.style.opacity = '1';
                 btn.dataset.yandexMode = 'open';
@@ -7096,7 +7094,7 @@
                 
             } catch (error) {
                 console.error('❌ Ошибка создания папок:', error);
-                btn.innerHTML = '✨ Создать папки';
+                btn.innerHTML = 'Создать папки';
                 btn.disabled = false;
                 btn.style.opacity = '1';
                 btn.dataset.yandexMode = 'create';
@@ -7144,7 +7142,7 @@
                 
                 // Если вход не выполнен - просто открываем ссылку
                 if (!isActive) {
-                    btn.innerHTML = '👁️ Просмотр фотоотчета Я.Диск';
+                    btn.innerHTML = 'Просмотр фотоотчета Я.Диск';
                     btn.dataset.yandexMode = 'open';
                     btn.dataset.yandexTarget = reportLink;
                     continue;
@@ -7172,12 +7170,12 @@
                 
                 if (folderExists) {
                     const directLink = `https://disk.yandex.ru/client/disk/${encodeURIComponent(folderPathToCheck)}`;
-                    btn.innerHTML = '📂 Добавить фотоотчет';
+                    btn.innerHTML = 'Добавить фотоотчет';
                     btn.dataset.yandexMode = 'open';
                     btn.dataset.yandexTarget = directLink;
                     btn.dataset.yandexReportLink = directLink;
                 } else {
-                    btn.innerHTML = '✨ Создать папки';
+                    btn.innerHTML = 'Создать папки';
                     btn.dataset.yandexMode = 'create';
                     delete btn.dataset.yandexTarget;
                 }
