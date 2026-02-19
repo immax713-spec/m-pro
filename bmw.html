@@ -6560,16 +6560,16 @@
             const objectIdAttr = Utils.escapeAttr(obj.id);
             if (isNew) {
                 return `<div class="object-card__actions" style="margin-top: 12px;">
-                    <button class="object-card__button" data-action="mark-entry" data-object-id="${objectIdAttr}">Вход</button>
+                    <button class="object-card__button" data-action="mark-entry" data-object-id="${objectIdAttr}">➡️ Вход</button>
                 </div>`;
             }
             if (isActive) {
                 const allowCancelEntry = !isInspectorRole_();
                 return `<div class="object-card__actions" style="margin-top: 12px;">
-                    <button class="object-card__button" data-action="mark-exit" data-object-id="${objectIdAttr}">Выход</button>
-                    ${allowCancelEntry ? `<button class="object-card__button" data-action="cancel-entry" data-object-id="${objectIdAttr}">Отменить вход</button>` : ''}
-                    <button class="object-card__button" data-action="mark-denied" data-object-id="${objectIdAttr}">Отказано</button>
-                    <button class="object-card__button" data-action="call-laboratory" data-object-id="${objectIdAttr}">Лаборатория</button>
+                    <button class="object-card__button" data-action="mark-exit" data-object-id="${objectIdAttr}">🏁 Выход</button>
+                    ${allowCancelEntry ? `<button class="object-card__button" data-action="cancel-entry" data-object-id="${objectIdAttr}">↩️ Отменить вход</button>` : ''}
+                    <button class="object-card__button" data-action="mark-denied" data-object-id="${objectIdAttr}">🚫 Отказано</button>
+                    <button class="object-card__button" data-action="call-laboratory" data-object-id="${objectIdAttr}">🔬 Лаборатория</button>
                 </div>`;
             }
             return '';
@@ -6621,12 +6621,12 @@
             const objectIdAttr = Utils.escapeAttr(obj.id);
             if (isActive) {
                 if (!yandexWorkLink) return '';
-                return `<button class="object-card__button" data-action="yandex-disk" data-yandex-mode="create" data-yandex-object="${objectIdAttr}" data-yandex-link="${Utils.escapeAttr(yandexWorkLink)}" data-yandex-report-link="${Utils.escapeAttr(reportLink)}">Создать папки</button>`;
+                return `<button class="object-card__button" data-action="yandex-disk" data-yandex-mode="create" data-yandex-object="${objectIdAttr}" data-yandex-link="${Utils.escapeAttr(yandexWorkLink)}" data-yandex-report-link="${Utils.escapeAttr(reportLink)}">✨ Создать папки</button>`;
             }
             if (!reportLink) return '';
             const safeUrl = Utils.sanitizeUrl(reportLink);
             if (!safeUrl) return '';
-            return `<a href="${Utils.escapeAttr(safeUrl)}" target="_blank" rel="noopener noreferrer" class="object-card__button">Просмотр фотоотчета</a>`;
+            return `<a href="${Utils.escapeAttr(safeUrl)}" target="_blank" rel="noopener noreferrer" class="object-card__button">🖼️ Просмотр фотоотчета</a>`;
         }
 
         function getRenderSig_(value) {
@@ -6712,9 +6712,9 @@
 
         function renderObjectCardPrimaryActionsHtml_(obj, vm) {
             return `
-                ${vm.googleLink ? `<a href="${Utils.escapeAttr(vm.googleLink)}" target="_blank" rel="noopener noreferrer" class="object-card__button">Чек-лист</a>` : ''}
+                ${vm.googleLink ? `<a href="${Utils.escapeAttr(vm.googleLink)}" target="_blank" rel="noopener noreferrer" class="object-card__button">📝 Чек-лист</a>` : ''}
                 ${renderYandexButton(obj, vm.status.isActive)}
-                <button class="object-card__button" data-action="copy-coordinates" data-coordinates="${vm.coordinates}">Координаты</button>
+                <button class="object-card__button" data-action="copy-coordinates" data-coordinates="${vm.coordinates}">🧭 Координаты</button>
             `;
         }
 
@@ -6875,7 +6875,7 @@
          */
         async function copyCoordinates(coordinates) {
             const success = await Utils.copyToClipboard(coordinates);
-            showNotification(success ? 'Координаты скопированы' : 'Не удалось скопировать координаты', success ? 'success' : 'error');
+            showNotification(success ? '🧭 Координаты скопированы' : 'Не удалось скопировать координаты', success ? 'success' : 'error');
         }
         
         // ==================================================================
@@ -7073,7 +7073,7 @@
                 const directLink = `https://disk.yandex.ru/client/disk/${encodeURIComponent(mainPath)}`;
                 
                 // Обновляем кнопку
-                btn.innerHTML = 'Добавить фотоотчет';
+                btn.innerHTML = '📂 Добавить фотоотчет';
                 btn.disabled = false;
                 btn.style.opacity = '1';
                 btn.dataset.yandexMode = 'open';
@@ -7094,7 +7094,7 @@
                 
             } catch (error) {
                 console.error('❌ Ошибка создания папок:', error);
-                btn.innerHTML = 'Создать папки';
+                btn.innerHTML = '✨ Создать папки';
                 btn.disabled = false;
                 btn.style.opacity = '1';
                 btn.dataset.yandexMode = 'create';
@@ -7142,7 +7142,7 @@
                 
                 // Если вход не выполнен - просто открываем ссылку
                 if (!isActive) {
-                    btn.innerHTML = 'Просмотр фотоотчета Я.Диск';
+                    btn.innerHTML = '🖼️ Просмотр фотоотчета Я.Диск';
                     btn.dataset.yandexMode = 'open';
                     btn.dataset.yandexTarget = reportLink;
                     continue;
@@ -7170,12 +7170,12 @@
                 
                 if (folderExists) {
                     const directLink = `https://disk.yandex.ru/client/disk/${encodeURIComponent(folderPathToCheck)}`;
-                    btn.innerHTML = 'Добавить фотоотчет';
+                    btn.innerHTML = '📂 Добавить фотоотчет';
                     btn.dataset.yandexMode = 'open';
                     btn.dataset.yandexTarget = directLink;
                     btn.dataset.yandexReportLink = directLink;
                 } else {
-                    btn.innerHTML = 'Создать папки';
+                    btn.innerHTML = '✨ Создать папки';
                     btn.dataset.yandexMode = 'create';
                     delete btn.dataset.yandexTarget;
                 }
