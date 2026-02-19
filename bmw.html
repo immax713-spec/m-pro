@@ -1824,9 +1824,16 @@
             .map-container {
                 position: fixed;
                 inset: 0;
+                width: auto;
+                min-height: 0;
+                height: auto;
+            }
+
+            #map {
+                position: absolute;
+                inset: 0;
                 width: 100%;
-                min-height: 100dvh;
-                height: var(--app-height, 100dvh);
+                height: 100%;
             }
 
             .sidebar {
