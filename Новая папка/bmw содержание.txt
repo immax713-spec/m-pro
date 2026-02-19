@@ -1,0 +1,369 @@
+# bmw.html - Структура файла (~3400 строк)
+
+## Архитектура: Модульная структура с IIFE
+
+---
+
+## Строки 1-12: HEAD
+- DOCTYPE, html lang="ru"
+- Meta charset, viewport
+- Title: M-PRO
+- Yandex Maps API script
+- Firebase SDK scripts
+
+---
+
+## Строки 13-1100: CSS СТИЛИ
+
+### Основные стили (13-40)
+- * reset, body (font-family, background: #f2f2f7)
+- .container (flex layout)
+
+### Authorization Styles (41-216)
+- .auth-overlay (градиентный фон, z-index: 99999)
+- .auth-container (glassmorphism эффект)
+- .auth-logo, .auth-title, .auth-input
+- .auth-btn с loader анимацией
+
+### Sidebar & Layout (217-350)
+- .sidebar (width: 400px)
+- .sidebar-content (padding: 15px)
+- .logo-container, .logo
+- .user-card (👤 Роль: Имя)
+- .ios-section, .ios-group
+- .ios-btn с emoji
+
+### Filters (351-400)
+- .filter-header (кликабельный заголовок)
+- .filter-content (max-height: 0 → max-height при открытии)
+- .filter-list, .filter-item
+
+### Modern Telegram-Style Navigation V2 (401-333)
+- .modern-menu-container (sticky bottom)
+- .modern-menu с glass эффектом
+- .menu-indicator с drag functionality
+- .menu-indicator-inner с lens эффектом
+- .modern-menu-btn с SVG иконками
+
+### Side Panel (334-448)
+- .side-panel (slide from left)
+- .inspector-card (раскрывающаяся карточка)
+- .inspector-status-dot (цвет по статусу)
+
+### Collapsible Pickers (449-643)
+- .picker-toggle с ▼ стрелкой
+- .picker-dropdown (max-height: 0 → 200px)
+- .color-picker (grid 8 колонок, ~70 цветов)
+- .icon-picker (grid 7 колонок, ~84 emoji)
+- .status-options (flex column)
+- .apply-btn с состояниями: saving (фиолетовый), saved (зелёный)
+
+### Object Details Modal (Custom Balloon) (644-850)
+- .object-details (fixed overlay)
+- .object-details__card (rounded modal)
+- .object-card (header, info, actions)
+- .object-card__badge (new/active/completed/denied)
+
+### Glass Notification (851-920)
+- .glass-notification (fixed top-center)
+- .yandex-spinner (loading animation)
+- .yandex-progress-container/bar
+
+### Yandex Disk Styles (921-940)
+- .yandex-spinner
+- .yandex-progress-container
+- .yandex-progress-bar
+
+---
+
+## Строки 1101-1300: HTML BODY
+
+### Container (1101)
+- <div class="container">
+
+### Sidebar (1102-1265)
+- Logo: m-pro
+- User card: 👤 <span class="user-role">Роль:</span> <span class="user-name">Имя</span>
+- Админ функции:
+  - 🏠 Домашние адреса (onclick="showHomes()")
+  - 🧭 Кастомизация и управление инспекторами (onclick="showInspectorManagement()")
+  - 🏢 Добавить объект на карту (TODO)
+  - 📈 KPI (TODO)
+  - 🗄️ Архивировать выполненные (TODO)
+- Фильтры: Списки объектов, Списки инспекторов
+- Bottom menu: Списки, Объекты, Карта, Выход
+
+### Map (1266-1270)
+- <div id="map"></div>
+
+### Inspector Management Panel (1271-1295)
+- #inspectorManagementPanel (class="side-panel hidden")
+- Поиск по инспекторам
+- #inspectorManagementBody (контейнер для карточек)
+
+---
+
+## Строки 1300-3400: JAVASCRIPT (<script>)
+
+### 1300-1450: MODULE CONFIG
+- const CONFIG = Object.freeze({...})
+  - FIREBASE: конфигурация Firebase
+  - SCRIPT_URL: GAS endpoint
+  - YANDEX: OAUTH_TOKEN, ROOT_PATH, SUBFOLDERS[]
+  - MAP: DEFAULT_CENTER, DEFAULT_ZOOM, SPIRAL (ANGLE_STEP, RADIUS_BASE), ICON_SIZE
+  - STATUS: NEW, ACTIVE, COMPLETED, DENIED
+  - SOURCES: Map→'ГС', Laboratory→'Лаборатория', ConstructionControl→'Строительный контроль'
+  - SESSION_KEY: 'mpro_user'
+  - TIMEOUT: 15000
+
+### 1450-1600: MODULE STATE (IIFE)
+- const State = (() => { ... })()
+  - get(key), set(key, value), getAll(), reset()
+  - Внутреннее состояние: map, layers, data, user, loading
+
+### 1600-1700: MODULE VALIDATOR (IIFE)
+- const Validator = (() => { ... })()
+  - validateObject(obj) → {valid, errors}
+  - isValidUrl(url) → boolean
+  - parseCoordinates(latlon) → {valid, lat, lon}
+
+### 1700-1850: MODULE UTILS (IIFE)
+- const Utils = (() => { ... })()
+  - formatDate(dateStr) → formatted string
+  - formatDateRU(date) → 'DD.MM.YYYY'
+  - copyToClipboard(text) → Promise<boolean>
+  - extractDisplayId(id) → string (Map_123 → 123)
+  - debounce(fn, ms) → Function
+
+### 1850-1920: GLOBAL VARIABLES
+- let map, inspectorsHomesLayer, showInspectorsHomes
+- let inspectorsHomesData, inspectorsConfig, currentUser
+- let objectManager, activeObjectsLayer, objectsData
+- let currentOpenObjectId, coordinateCounter, dataLoadPromise
+
+### 1920-2100: INITIALIZATION & AUTH
+- DOMContentLoaded listener
+- firebase.initializeApp(CONFIG.FIREBASE)
+- Auth check: sessionStorage.getItem(CONFIG.SESSION_KEY)
+- initMap(), loadData() или show authOverlay
+
+### 2100-2250: Glass Interaction V9 (MutationObserver)
+- initGlassInteractions() с MutationObserver
+- Drag functionality для menu-indicator
+- updateIndicator(), handleStart/Move/End()
+
+### 2250-2450: MODULE AUTHENTICATION
+- doLogin() - JSONP запрос с паролем
+- showAuthError(message)
+- hideAuthOverlay()
+- updateUserCard()
+- logout()
+
+### 2450-2600: MODULE MAP
+- initMap() - Яндекс.Карты (CONFIG.MAP.DEFAULT_CENTER, zoom)
+- initObjectManagers_() - ObjectManager для точек
+- showHomes() - переключение видимости домов
+- updateInspectorsHomesLayer()
+
+### 2600-2850: MODULE DATA
+- loadData() - JSONP загрузка из GAS (CONFIG.SCRIPT_URL)
+- createJsonpRequest(params, timeout) → Promise
+- autoRenderOpenPanels()
+
+### 2850-3000: MODULE NOTIFICATIONS
+- const GlassNotification = { show(), hide() }
+- showNotification(message, type) - обёртка
+
+### 3000-3100: MODULE UI
+- toggleFilter(id)
+- switchNav(tabName) - переключение табов
+
+### 3100-3400: MODULE ADMIN
+- showInspectorManagement()
+- closeInspectorManagement()
+- toggleInspectorCard(card)
+- filterManagementInspectors()
+- renderInspectorManagement()
+- renderInspectorCard()
+- getPickerData() - ~70 цветов, ~84 иконки
+- togglePicker(type, cardId)
+
+### 3400-3550: MODULE CARD CHANGES (IIFE)
+- const CardChanges = { _getCard(), get(), set(), clear() }
+
+### 3550-3750: MODULE PICKER (IIFE)
+- const PICKER_TYPE_COLOR = 'color'
+- const PICKER_TYPE_ICON = 'icon'
+- const PICKER_TYPE_STATUS = 'status'
+- const Picker = { config, select() }
+- Обёртки: selectColor(), selectIcon(), selectStatusOption()
+
+### 3750-4000: MODULE SAVE CONFIG
+- applyInspectorChanges(inspector, cardId)
+- setButtonState(btn, state, originalText)
+
+### 4000-4300: MODULE MAP POINTS
+- updateMap() - обновление точек на карте
+- createPointFeature_(obj, coordinateMap) → Feature
+- calculateOffset_(index) → {lat, lon} (использует CONFIG.MAP.SPIRAL)
+- getHintContent_(obj) → string
+- getInspectorStyle(inspectorName) → {color, icon, status}
+
+### 4300-4600: MODULE BALLOON
+- getObjectStatus(obj) → {isNew, isActive, isDenied, isCompleted}
+- getStatusBadge(status) → {class, text}
+- renderActionButtons(obj, status) → HTML
+- renderReassignSelect(obj) → HTML
+- renderYandexButton(obj, isActive) → HTML
+- getBalloonContent(obj, icon) → HTML (использует Utils.formatDate)
+- openObjectDetails(objectId)
+- closeObjectDetails()
+
+### 4600-4900: MODULE YANDEX DISK
+- createYandexFolder(path) → Promise
+- checkYandexFolder(path) → Promise<boolean>
+- handleYandexDiskButton(objectId, yandexLink)
+- initYandexDiskButtons()
+
+### 4900-5100: MODULE OBJECT ACTIONS
+- markEntry(objectId)
+- markExit(objectId)
+- cancelEntry(objectId)
+- markDenied(objectId)
+- callLaboratory(objectId)
+- reassignInspector(objectId, newInspector)
+- copyCoordinates(coordinates)
+
+### 5100-5300: MODULE ACTION EXECUTION
+- executeObjectAction_(objectId, action, params)
+- optimisticallyUpdateObject_(objectId, action, params)
+- rollbackObjectUpdate_(objectId)
+- reloadData_()
+
+### 5300-5350: TODO FUNCTIONS
+- showAddObject() - заглушка
+- showKPI() - заглушка
+- archiveCompleted() - заглушка
+
+---
+
+## КОННЕКТИВИТИ
+
+### Google Apps Script
+- URL: https://script.google.com/macros/s/AKfycbwxyb9NrT2b_ypbeAsrRJ3xPSdwoSim4UB4f0lNZ4nGdbSZwCmiomcvQFNfFmjpJ1-j/exec
+- Actions:
+  - getData - загрузка данных
+  - auth - проверка пароля
+  - saveInspectorConfig - сохранение настроек
+  - entry/exit/cancelEntry/denyAccess/callLaboratory - действия с объектами
+
+### Google Sheets Структура
+
+#### AuthorizationPage
+- A: Inspector (имя)
+- B: Password (пароль)
+- C: Rights (роль, опционально)
+
+#### CustomInspectors
+- A: Inspector
+- B: Color
+- C: Icon
+- D: Status
+
+#### InspectorsHomes
+- A: Inspector
+- B: Address
+- C: Lat
+- D: Lon
+- E: Updated
+
+#### Map / Laboratory / ConstructionControl
+- A: id
+- B: Date
+- C: Adress
+- D: LatLon
+- E: Inspector
+- F: List
+- G: Entry_time
+- H: Exit_time
+- I: Time_spent
+- J: Google_link
+- K: Yandex_link
+- L: Readiness
+- M: Number
+- N: Photos_link
+- O: Laboratory
+- P: Laboratory_Comment
+
+---
+
+## ТРИГГЕРЫ
+
+| Действие | Функция | Условие |
+|----------|---------|---------|
+| Загрузка страницы | Проверка auth | Автоматически |
+| Ввод пароля + Enter | doLogin() | Клик или Enter |
+| Клик "Войти" | doLogin() | Клик |
+| Клик "Выход" | logout() | Клик на красную кнопку |
+| Клик "🏠 Домашние адреса" | showHomes() | Клик |
+| Клик "🧭 Кастомизация" | showInspectorManagement() | Клик |
+| Клик на карточку инспектора | toggleInspectorCard() | Клик на заголовок |
+| Клик на "Выбрать цвет" | togglePicker('color') | Клик |
+| Клик на "Выбрать иконку" | togglePicker('icon') | Клик |
+| Клик на "Статус" | togglePicker('status') | Клик |
+| Выбор цвета | selectColor() → Picker.select() | Клик на цвет |
+| Выбор иконки | selectIcon() → Picker.select() | Клик на иконку |
+| Выбор статуса | selectStatusOption() → Picker.select() | Клик на статус |
+| Клик "Сохранить" | applyInspectorChanges() | Клик |
+| Поиск в панели | filterManagementInspectors() | onkeyup |
+| Клик на точку карты | openObjectDetails() | Клик на объект |
+| Клик "Вход" на объекте | markEntry() | Клик в балуне |
+| Клик "Выход" на объекте | markExit() | Клик в балуне |
+| Клик "Создать папки" | handleYandexDiskButton() | Клик в балуне (активный объект) |
+
+---
+
+## КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ (РЕФАКТОРИНГ 2024)
+
+### 1. Модульная архитектура
+- ✅ const CONFIG = Object.freeze({...}) - все константы в одном месте
+- ✅ const State = (() => {...})() - инкапсуляция состояния
+- ✅ const Validator = (() => {...})() - валидация входных данных
+- ✅ const Utils = (() => {...})() - утилиты (formatDate, copyToClipboard, etc.)
+
+### 2. Константы вместо магических чисел
+- ✅ CONFIG.MAP.SPIRAL.ANGLE_STEP = 1.2
+- ✅ CONFIG.MAP.SPIRAL.RADIUS_BASE = 0.001
+- ✅ CONFIG.MAP.ICON_SIZE.DEFAULT = [30, 30]
+- ✅ CONFIG.MAP.ICON_SIZE.ACTIVE = [50, 50]
+- ✅ CONFIG.TIMEOUT = 15000
+
+### 3. Разбиение длинных функций
+- ❌ getBalloonContent() - 120 строк
+- ✅ getObjectStatus(), getStatusBadge(), renderActionButtons(), renderReassignSelect(), renderYandexButton()
+
+### 4. Валидация входных данных
+- ✅ Validator.validateObject(obj) → {valid, errors}
+- ✅ Validator.isValidUrl(url) → boolean
+- ✅ Validator.parseCoordinates(latlon) → {valid, lat, lon}
+
+### 5. Улучшенная обработка ошибок
+- ✅ createJsonpRequest() - проверка params, валидация ответа
+- ✅ executeObjectAction_() - проверка objectId и action
+
+### 6. Утилиты
+- ✅ Utils.formatDate(dateStr) - форматирование даты
+- ✅ Utils.formatDateRU(date) → 'DD.MM.YYYY'
+- ✅ Utils.copyToClipboard(text) - Promise<boolean>
+- ✅ Utils.extractDisplayId(id) - Map_123 → 123
+- ✅ Utils.debounce(fn, ms) - дебаунс
+
+### 7. Yandex Disk Integration
+- ✅ createYandexFolder(path) - создание папок через API
+- ✅ checkYandexFolder(path) - проверка существования
+- ✅ handleYandexDiskButton() - создание структуры папок
+- ✅ initYandexDiskButtons() - инициализация кнопок
+
+### 8. Чистые комментарии
+- ❌ // 🔥, // 💎 - визуальный шум
+- ✅ // MODULE: NAME, // SECTION: Description

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>by Max Malakhov</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0f3460">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    <base href="/">
+
+    <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=52007aca-39bd-4a9c-87ef-4d9b730aeb71"
+        type="text/javascript"></script>
+
+    <link rel="stylesheet" href="assets/css/main.css?v=139">
+    <link rel="stylesheet" href="assets/css/special-fields.css">
+    <link rel="stylesheet" href="assets/css/disabled-items.css">
+</head>
+
+<body>
+    <!-- 🔥 МЕНЮ ЛОГИНА -->
+    <div class="login-overlay" id="loginOverlay">
+        <div class="login-container">
+            <div class="login-header" style="text-align:center;">
+                <div class="brand-container">
+                    <img src="assets/img/logo.png" alt="Логотип" class="brand-logo" />
+                </div>
+            </div>
+            <div class="login-form">
+                <div class="form-group">
+                    <label for="userSelect">Выберите пользователя:</label>
+                    <select id="userSelect">
+                        <option value="">Загрузка...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="passwordInput">Пароль:</label>
+                    <input type="password" id="passwordInput" placeholder="Введите пароль">
+                </div>
+                <!-- 🔥 ЧЕКБОКС ЗАПОМНИТЬ ПАРОЛЬ -->
+                <div class="remember-password">
+                    <input type="checkbox" id="rememberPassword">
+                    <label for="rememberPassword">💾 Запомнить пароль</label>
+                </div>
+                <button class="login-button" onclick="login()">Войти</button>
+                <!-- 🔥 КНОПКА ОБНОВЛЕНИЯ ИНСПЕКТОРОВ -->
+                <button class="refresh-btn" onclick="refreshInspectorsList()">Обновить список инспекторов</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🔥 ГАМБУРГЕР МЕНЮ -->
+    <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleHamburgerMenu()">
+        <span class="hamburger-icon">☰</span>
+    </button>
+
+
+    <!-- 🔥 МОДАЛЬНОЕ МЕНЮ НАВИГАЦИИ (КАК БАЛУН) -->
+    <div class="nav-modal-overlay" id="navModalOverlay" onclick="closeHamburgerMenu()"></div>
+    <div class="nav-modal" id="navModal">
+        <!-- Header -->
+        <div class="nav-modal-header-balloon">
+            <div class="nav-header-left">
+                <div class="nav-header-text">
+                    <div class="nav-title">Навигация</div>
+                </div>
+            </div>
+            <button class="nav-modal-close-balloon" onclick="closeHamburgerMenu()">×</button>
+        </div>
+
+        <div class="nav-modal-content">
+            <!-- Gray Info Box -->
+            <div class="nav-info-box">
+                <div class="nav-info-label">ПОЛЬЗОВАТЕЛЬ</div>
+                <div class="nav-user-name" id="navUserName">...</div>
+                <div class="nav-info-label" style="margin-top: 8px;">РОЛЬ</div>
+                <div class="nav-user-role" id="navUserRole">...</div>
+            </div>
+
+            <!-- Buttons -->
+
+            <button class="nav-modal-btn" onclick="selectNavItem('menu')">
+                <span class="nav-icon">📋</span>
+                <span class="nav-text">Меню</span>
+            </button>
+
+            <button class="nav-modal-btn" id="navBtnList" onclick="switchTab('objects'); toggleHamburgerMenu();">
+                <span class="nav-icon">📝</span>
+                <span class="nav-text">Список объектов</span>
+            </button>
+
+            <button class="nav-modal-btn" id="navBtnManagement"
+                onclick="toggleInspectorsManagement(); toggleHamburgerMenu();">
+                <span class="nav-icon">⚙️</span>
+                <span class="nav-text">Управление</span>
+            </button>
+
+            <button class="nav-modal-btn" id="navBtnDashboards" onclick="openDashboardsApp(); toggleHamburgerMenu();">
+                <span class="nav-icon">📊</span>
+                <span class="nav-text">Дашборды</span>
+            </button>
+
+
+            <button class="nav-modal-btn" id="navBtnWorkDay" onclick="toggleWorkDayFromNav(); toggleHamburgerMenu();"
+                style="display: none;">
+                <span class="nav-icon">📅</span>
+                <span class="nav-text">Открыть рабочий день</span>
+            </button>
+
+            <button class="nav-modal-btn nav-logout" onclick="logout()">
+                <span class="nav-icon">🚪</span>
+                <span class="nav-text">Выйти</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 🔥 ОСНОВНОЙ ИНТЕРФЕЙС -->
+    <div class="user-info" id="userInfo" style="display: none;">
+        <span id="currentUser"></span>
+        <button class="logout-btn" onclick="logout()">Выйти</button>
+    </div>
+
+    <!-- 🔥 МЕНЮ УПРАВЛЕНИЯ ИНСПЕКТОРАМИ -->
+    <div class="inspector-management-menu" id="inspectorManagementMenu">
+        <div class="inspector-management-header">
+            <div class="filter-access-title" style="margin:0;">👥 Управление инспекторами</div>
+            <button class="close-management-btn" onclick="closeTopMenu()">×</button>
+        </div>
+
+        <input type="text" class="search-management" id="searchManagement" placeholder="🔍 Поиск по инспекторам..."
+            onkeyup="filterManagementInspectors()">
+
+        <div id="inspectorManagementContent"></div>
+    </div>
+
+    <!-- 🔥 ОСНОВНОЙ КОНТЕЙНЕР -->
+    <div class="container" id="mainContainer" style="display: none;">
+        <!-- 🔥 САЙДБАР С ВСЕМИ ЭЛЕМЕНТАМИ УПРАВЛЕНИЯ -->
+        <div class="sidebar" id="sidebar">
+            <!-- 🔥 КНОПКА СКРЫТИЯ САЙДБАРА -->
+            <button class="sidebar-toggle" id="sidebarToggle" onclick="closeTopMenu()">◀</button>
+
+            <div class="header">
+                <button class="sidebar-close-btn" onclick="closeTopMenu()">✕</button>
+                <div class="brand-container">
+                    <img src="assets/img/logo.png" alt="Логотип" class="brand-logo" />
+                </div>
+            </div>
+
+            <!-- 🔥 СЕКЦИЯ УПРАВЛЕНИЯ РАБОЧИМ ДНЕМ (ДЛЯ ИНСПЕКТОРОВ) -->
+            <div class="control-section" id="workDaySection" style="display: none;">
+                <div class="control-section-title">📅 Управление рабочим днем</div>
+                <div class="control-buttons-grid">
+                    <button class="inspector-btn" id="openDayBtn" onclick="startWorkDay()">Открыть день</button>
+                    <button class="inspector-btn close-day-btn" id="closeDayBtn" onclick="endWorkDay()" disabled>Закрыть
+                        день</button>
+                </div>
+                <div class="work-day-indicator closed" id="workDayIndicator">Статус: День закрыт</div>
+            </div>
+
+            <!-- 🔥 СЕКЦИЯ АДМИНИСТРАТОРА -->
+            <div class="control-section" id="adminSection" style="display: none;">
+                <div class="control-section-title">⚙️ Административные функции</div>
+                <div class="control-buttons-grid">
+                    <button class="admin-btn" onclick="toggleInspectorsHomes()">Инспекторы</button>
+                    <button class="admin-btn" id="managementBtn"
+                        onclick="toggleInspectorsManagement()">Управление</button>
+                    <button class="admin-btn" onclick="openAddObjectList()">Список объектов</button>
+                    <button class="admin-btn dashboard-wide" id="adminDashboardBtn"
+                        onclick="openDashboardsApp()">Дашборды</button>
+                </div>
+            </div>
+
+            <!-- 🔥 ТАБЫ -->
+            <div class="tab-buttons" id="sidebarTabs">
+                <button class="tab-button active" onclick="switchTab('filters')">Фильтры</button>
+                <button class="tab-button" onclick="switchTab('objects')">Список объектов</button>
+            </div>
+
+            <div class="tab-content">
+                <!-- 🔥 ВКЛАДКА ФИЛЬТРОВ -->
+                <div class="tab-pane active" id="filters-tab">
+                    <div class="filter-section">
+                        <div class="filter-title">🔍 Поиск объекта</div>
+                        <input type="text" id="searchInput" class="search-box"
+                            placeholder="Введите номер точки или адрес..." onkeyup="updateFilters()">
+                    </div>
+
+                    <div class="filter-section">
+                        <div class="filter-title">👤 Фильтр по инспекторам</div>
+                        <input type="text" id="searchInspectors" class="search-box"
+                            placeholder="🔍 Поиск по инспекторам..." onkeyup="filterInspectorsList()">
+                        <div class="checkbox-item" style="margin-bottom: 12px; font-weight: bold;">
+                            <input type="checkbox" id="selectAllInspectorsCheckbox"
+                                onchange="toggleAllInspectors(this.checked); saveFilterState();">
+                            <label for="selectAllInspectorsCheckbox">Выделить все</label>
+                        </div>
+                        <div class="checkbox-group" id="inspectorsList">
+                            <div class="loading">Загрузка инспекторов...</div>
+                        </div>
+                    </div>
+
+                    <div class="filter-section">
+                        <div class="filter-title">📋 Фильтр по спискам</div>
+                        <div class="checkbox-item" style="margin-bottom: 12px; font-weight: bold;">
+                            <input type="checkbox" id="selectAllListsCheckbox"
+                                onchange="toggleAllLists(this.checked); saveFilterState();">
+                            <label for="selectAllListsCheckbox">Выделить все</label>
+                        </div>
+                        <div class="checkbox-group" id="listsList">
+                            <div class="loading">Загрузка списков...</div>
+                        </div>
+                    </div>
+
+                    <div class="filter-section">
+                        <div class="filter-title">⚙️ Настройки отображения</div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="showHidden" onchange="updateFilters(); saveFilterState();">
+                            <label for="showHidden"> МОНИТОРИНГ ЗАВЕРШЕН ✅ </label>
+                        </div>
+                    </div>
+
+                    <div class="stats">
+                        <!-- 🔥 ТОЛЬКО ОДНА КНОПКА ОБНОВЛЕНИЯ -->
+                        <button class="refresh-btn force" onclick="forceRefreshData()">Принудительное
+                            обновление</button>
+                        <div>📊 Статистика:</div>
+                        <div id="objectsCounter">Показано: 0 из 0 объектов</div>
+                        <div id="completedCounter">Выполнено: 0 объектов</div>
+                        <div id="activeCounter" style="margin-top: 5px; font-size: 12px; color: #3498db;"></div>
+                    </div>
+                </div>
+
+                <!-- 🔥 ВКЛАДКА СПИСКА ОБЪЕКТОВ -->
+                <div class="tab-pane" id="objects-tab">
+                    <div class="filter-section">
+                        <div class="filter-title">🔍 Поиск в списке</div>
+                        <input type="text" id="searchListInput" class="search-box"
+                            placeholder="Введите номер точки или адрес..." onkeyup="updateObjectsList()">
+                    </div>
+                    <div class="objects-list">
+                        <div class="objects-list-title">📋 Список объектов</div>
+                        <div id="objectsListContent">
+                            <div class="loading">Загрузка объектов...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <div class="object-details hidden" id="objectDetailsOverlay">
+        <div class="object-details__backdrop"></div>
+        <div class="object-details__card" role="dialog" aria-modal="true">
+            <button class="object-details__close" type="button" onclick="closeObjectDetails()">✕</button>
+            <div class="object-details__content" id="objectDetailsContent"></div>
+        </div>
+    </div>
+
+    <div class="workday-modal hidden" id="workDayApprovalOverlay">
+        <div class="workday-modal__backdrop"></div>
+        <div class="workday-modal__card" role="dialog" aria-modal="true">
+            <button class="workday-modal__close" type="button" onclick="closeWorkDayApproval()">✕</button>
+            <div class="workday-modal__content" id="workDayApprovalContent"></div>
+        </div>
+    </div>
+
+    <!-- 🔥 ВЫЕЗЖАЮЩЕЕ МЕНЮ СПИСКА ОБЪЕКТОВ (add_object) -->
+    <div class="side-drawer" id="addObjectDrawer">
+        <div class="side-drawer-header">
+            <div class="side-drawer-title">Список объектов</div>
+            <button class="side-drawer-close" onclick="closeAddObjectDrawer()">×</button>
+        </div>
+        <div class="side-drawer-search">
+            <input type="text" id="addObjectSearch" placeholder="Поиск по номеру или адресу..."
+                oninput="filterAddObjectList(this.value)">
+        </div>
+        <div class="side-drawer-content" id="addObjectListContent">
+            <div class="loading">Загрузка объектов...</div>
+        </div>
+    </div>
+
+    <script src="assets/js/checklist.js?t=1766682000"></script>
+    <script type="module" src="assets/js/upload-queue.js"></script>
+    <script type="module" src="assets/js/main.js?t=1766682000"></script>
+    <!-- Note: app.js is imported by main.js as ES6 module -->
+    
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('✅ Service Worker registered:', registration.scope);
+                        
+                        // Check for updates
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // New version available
+                                    if (confirm('Доступна новая версия приложения. Обновить?')) {
+                                        newWorker.postMessage({ type: 'SKIP_WAITING' });
+                                        window.location.reload();
+                                    }
+                                }
+                            });
+                        });
+                    })
+                    .catch(error => {
+                        console.error('❌ Service Worker registration failed:', error);
+                    });
+            });
+        }
+    </script>
+</body>
+
+</html>

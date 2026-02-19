@@ -1,0 +1,384 @@
+function doGet(e) {
+  var ss = SpreadsheetApp.openById('1heGhawwYlTggV5iJdDnGVjD8oAdEXax6Ziu3KarR900');
+  var sheet = ss.getSheetByName('289');
+  var headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var i;
+
+  var colMark2 = 0;
+  for (i = 0; i < headerRow.length; i++) {
+    if (typeof headerRow[i] === 'string' && headerRow[i].trim().toLowerCase() === 'mark2') {
+      colMark2 = i + 1;
+      break;
+    }
+  }
+
+  var colMark3 = 0;
+  for (i = 0; i < headerRow.length; i++) {
+    if (typeof headerRow[i] === 'string' && headerRow[i].trim().toLowerCase() === 'mark3') {
+      colMark3 = i + 1;
+      break;
+    }
+  }
+
+  var colMark3_1 = 0;
+  for (i = 0; i < headerRow.length; i++) {
+    if (typeof headerRow[i] === 'string' && headerRow[i].trim().toLowerCase() === 'mark3.1') {
+      colMark3_1 = i + 1;
+      break;
+    }
+  }
+
+  var colMark4 = 0;
+  for (i = 0; i < headerRow.length; i++) {
+    if (typeof headerRow[i] === 'string' && headerRow[i].trim().toLowerCase() === 'mark4') {
+      colMark4 = i + 1;
+      break;
+    }
+  }
+
+  var colMark5 = 0;
+  for (i = 0; i < headerRow.length; i++) {
+    if (typeof headerRow[i] === 'string' && headerRow[i].trim().toLowerCase() === 'mark5') {
+      colMark5 = i + 1;
+      break;
+    }
+  }
+
+  if (!colMark2) {
+    throw new Error('Не найдена колонка mark2');
+  }
+
+  if (!colMark3 || !colMark4 || !colMark5) {
+    throw new Error('Не найдены колонки mark3/mark4/mark5');
+  }
+
+  var lastRow = sheet.getLastRow();
+
+  var info = [];
+  var infoRange = sheet.getRange('B4:C14').getValues();
+  for (i = 0; i < infoRange.length; i++) {
+    var label = infoRange[i][0];
+    var value = infoRange[i][1];
+    if (label && value !== '' && value != null) {
+      info.push({ label: label, value: value });
+    }
+  }
+
+  // Читаем даты из строки 22 для отображения периода
+  var date1Header = sheet.getRange(22, colMark4).getValue();
+  var date2Header = sheet.getRange(22, colMark5).getValue();
+  
+  // Логируем для отладки
+  Logger.log('Reading dates from row 22:');
+  Logger.log('mark4 (col ' + colMark4 + '): ' + date1Header + ' (type: ' + typeof date1Header + ')');
+  Logger.log('mark5 (col ' + colMark5 + '): ' + date2Header + ' (type: ' + typeof date2Header + ')');
+  
+  // Функция для форматирования даты в строку
+  var formatDate = function(dateVal) {
+    if (!dateVal) return '';
+    
+    // Если это уже строка в формате DD.MM.YYYY, возвращаем как есть
+    if (typeof dateVal === 'string') {
+      // Проверяем, является ли это датой в формате DD.MM.YYYY
+      var dateMatch = dateVal.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+      if (dateMatch) {
+        var day = parseInt(dateMatch[1], 10);
+        var month = parseInt(dateMatch[2], 10);
+        var year = dateMatch[3];
+        // Добавляем ведущий ноль если нужно
+        var dayStr = day < 10 ? '0' + day : String(day);
+        var monthStr = month < 10 ? '0' + month : String(month);
+        return dayStr + '.' + monthStr + '.' + year;
+      }
+      return dateVal;
+    }
+    
+    if (dateVal instanceof Date) {
+      // Используем UTC для избежания проблем с часовым поясом
+      var day = dateVal.getDate();
+      var month = dateVal.getMonth() + 1;
+      var year = dateVal.getFullYear();
+      // Добавляем ведущий ноль если нужно
+      var dayStr = day < 10 ? '0' + day : String(day);
+      var monthStr = month < 10 ? '0' + month : String(month);
+      return dayStr + '.' + monthStr + '.' + year;
+    }
+    
+    return String(dateVal);
+  };
+  
+  var date1Str = formatDate(date1Header);
+  var date2Str = formatDate(date2Header);
+  
+  Logger.log('Formatted dates: ' + date1Str + ' - ' + date2Str);
+
+  // Функция для преобразования значения в число (процент)
+  var parsePercentage = function(val) {
+    if (val === null || val === undefined || val === '') {
+      return 0;
+    }
+    if (typeof val === 'number') {
+      return val;
+    }
+    if (val instanceof Date) {
+      // Если это дата, возвращаем 0 (в строках 23+ должны быть проценты, не даты)
+      return 0;
+    }
+    if (typeof val === 'string') {
+      // Убираем пробелы и пробуем преобразовать
+      var cleaned = val.toString().trim().replace(/\s+/g, '');
+      // Убираем % если есть
+      cleaned = cleaned.replace('%', '').replace(',', '.');
+      var num = Number(cleaned);
+      return isNaN(num) ? 0 : num;
+    }
+    return 0;
+  };
+
+  var progressBars = [];
+  var currentParent = null;
+  
+  // Читаем данные начиная со строки 23 (под заголовками)
+  for (var row = 23; row <= lastRow; row++) {
+    var name = sheet.getRange(row, colMark3).getValue();
+    var subName = colMark3_1 ? sheet.getRange(row, colMark3_1).getValue() : '';
+    var prev = sheet.getRange(row, colMark4).getValue();
+    var curr = sheet.getRange(row, colMark5).getValue();
+
+    // Проверяем на стоп-слово
+    if (typeof name === 'string' && name.trim().toLowerCase() === 'stop') {
+      break;
+    }
+    
+    var hasMain = name && name !== '';
+    var hasSub = subName && subName !== '';
+
+    // Пропускаем пустые строки
+    if (!hasMain && !hasSub) {
+      continue;
+    }
+
+    // Преобразуем проценты из mark4 и mark5
+    var prevValue = parsePercentage(prev);
+    var currValue = parsePercentage(curr);
+
+    var entry = {
+      name: hasMain ? name : subName,
+      previous: prevValue,
+      current: currValue
+    };
+
+    // Если есть основное название (mark3) - это родительский прогресс бар
+    if (hasMain) {
+      currentParent = { 
+        name: entry.name, 
+        previous: entry.previous, 
+        current: entry.current, 
+        children: [] 
+      };
+      progressBars.push(currentParent);
+    } 
+    // Если есть только подназвание (mark3.1) - это дочерний элемент
+    else if (hasSub && currentParent) {
+      currentParent.children.push(entry);
+    }
+  }
+
+  // Идём влево от mark2: от колонки 1 до колонки mark2 включительно
+  // Строка 22 - даты, строка 20 - мобилизация, строка 23 - готовность
+  var startCol = 1;
+  var endCol = colMark2;
+  var numCols = endCol - startCol + 1;
+  
+  if (numCols <= 0) {
+    throw new Error('Некорректный диапазон колонок для mark2');
+  }
+  
+  var dateRow = sheet.getRange(22, startCol, 1, numCols).getValues()[0];
+  var manpowerRow = sheet.getRange(20, startCol, 1, numCols).getValues()[0];
+  var readinessRow = sheet.getRange(23, startCol, 1, numCols).getValues()[0];
+  
+  var monthKey = function(date) {
+    var month = String(date.getMonth() + 1);
+    if (month.length < 2) {
+      month = '0' + month;
+    }
+    return date.getFullYear() + '-' + month;
+  };
+
+  var manpowerByMonth = {};
+  var readinessByMonth = {};
+
+  for (var idx = 0; idx < dateRow.length; idx++) {
+    var value = dateRow[idx];
+    var date = null;
+
+    if (value instanceof Date) {
+      date = value;
+    } else if (typeof value === 'string' && value.trim() !== '') {
+      var trimmed = value.trim();
+      // Пробуем разные форматы даты
+      if (trimmed.indexOf('.') > -1) {
+        var parts = trimmed.split('.');
+        if (parts.length === 3) {
+          // Формат DD.MM.YYYY
+          var day = parseInt(parts[0], 10);
+          var month = parseInt(parts[1], 10);
+          var year = parseInt(parts[2], 10);
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            date = new Date(year, month - 1, day);
+          }
+        }
+      } else if (trimmed.indexOf('/') > -1) {
+        var parts = trimmed.split('/');
+        if (parts.length === 3) {
+          var month = parseInt(parts[0], 10);
+          var day = parseInt(parts[1], 10);
+          var year = parseInt(parts[2], 10);
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            date = new Date(year, month - 1, day);
+          }
+        }
+      } else if (trimmed.indexOf('-') > -1) {
+        // Формат YYYY-MM-DD или DD-MM-YYYY
+        var parts = trimmed.split('-');
+        if (parts.length === 3) {
+          // Пробуем YYYY-MM-DD
+          var year = parseInt(parts[0], 10);
+          var month = parseInt(parts[1], 10);
+          var day = parseInt(parts[2], 10);
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year) && year > 1900) {
+            date = new Date(year, month - 1, day);
+          } else {
+            // Пробуем DD-MM-YYYY
+            day = parseInt(parts[0], 10);
+            month = parseInt(parts[1], 10);
+            year = parseInt(parts[2], 10);
+            if (!isNaN(day) && !isNaN(month) && !isNaN(year) && year > 1900) {
+              date = new Date(year, month - 1, day);
+            }
+          }
+        }
+      }
+    } else if (typeof value === 'number') {
+      // Может быть числовое представление даты (timestamp или Excel date)
+      // Если число большое (timestamp), используем его как есть
+      if (value > 1000000000000) {
+        date = new Date(value);
+      } else if (value > 0 && value < 100000) {
+        // Excel date format (days since 1900-01-01)
+        date = new Date((value - 25569) * 86400 * 1000);
+      }
+    }
+
+    if (!date || isNaN(date.getTime())) {
+      continue;
+    }
+
+    var key = monthKey(date);
+    if (!manpowerByMonth[key]) manpowerByMonth[key] = [];
+    if (!readinessByMonth[key]) readinessByMonth[key] = [];
+    
+    var manpowerVal = manpowerRow[idx];
+    var readinessVal = readinessRow[idx];
+    
+    // Обработка мобилизации (может быть число или строка)
+    if (manpowerVal !== null && manpowerVal !== '' && manpowerVal !== undefined) {
+      var manpowerNum = typeof manpowerVal === 'number' ? manpowerVal : Number(manpowerVal);
+      if (!isNaN(manpowerNum) && manpowerNum > 0) {
+        manpowerByMonth[key].push(manpowerNum);
+      }
+    }
+    
+    // Обработка готовности (может быть число, строка с % или просто число)
+    if (readinessVal !== null && readinessVal !== '' && readinessVal !== undefined) {
+      var readinessNum = null;
+      if (typeof readinessVal === 'number') {
+        readinessNum = readinessVal;
+      } else if (typeof readinessVal === 'string') {
+        // Убираем % если есть
+        var cleaned = readinessVal.toString().replace('%', '').replace(',', '.').trim();
+        readinessNum = Number(cleaned);
+      }
+      if (!isNaN(readinessNum) && readinessNum >= 0) {
+        readinessByMonth[key].push(readinessNum);
+      }
+    }
+  }
+
+  var months = [];
+  // Получаем все уникальные месяцы из обеих коллекций
+  var allMonthKeys = {};
+  for (var key in manpowerByMonth) {
+    allMonthKeys[key] = true;
+  }
+  for (var key in readinessByMonth) {
+    allMonthKeys[key] = true;
+  }
+  
+  // Сортируем месяцы правильно (как даты, а не как строки)
+  var monthKeys = Object.keys(allMonthKeys).sort(function(a, b) {
+    // Формат: YYYY-MM
+    var partsA = a.split('-');
+    var partsB = b.split('-');
+    var yearA = parseInt(partsA[0], 10);
+    var yearB = parseInt(partsB[0], 10);
+    if (yearA !== yearB) {
+      return yearA - yearB;
+    }
+    var monthA = parseInt(partsA[1], 10);
+    var monthB = parseInt(partsB[1], 10);
+    return monthA - monthB;
+  });
+  
+  // Берем последние 5 месяцев
+  monthKeys = monthKeys.slice(-5);
+
+  for (i = 0; i < monthKeys.length; i++) {
+    var k = monthKeys[i];
+    var manpowerVals = manpowerByMonth[k] || [];
+    var readinessVals = readinessByMonth[k] || [];
+    
+    // Для мобилизации: среднее значение
+    var avgManpower = null;
+    if (manpowerVals.length > 0) {
+      var manpowerSum = 0;
+      for (var j = 0; j < manpowerVals.length; j++) {
+        manpowerSum += manpowerVals[j];
+      }
+      avgManpower = manpowerSum / manpowerVals.length;
+    }
+
+    // Для готовности: максимальное значение
+    var maxReadiness = null;
+    if (readinessVals.length > 0) {
+      maxReadiness = Math.max.apply(null, readinessVals);
+    }
+
+    months.push({
+      month: k,
+      manpower: avgManpower,
+      readiness: maxReadiness
+    });
+  }
+
+  // Формируем ответ с данными
+  var response = {
+    info: info,
+    progressBars: progressBars,
+    months: months,
+    period: {
+      start: date1Str,
+      end: date2Str
+    }
+  };
+
+  var output = ContentService.createTextOutput(
+    JSON.stringify(response)
+  );
+  
+  // Устанавливаем CORS заголовки для разрешения запросов из браузера
+  output.setMimeType(ContentService.MimeType.JSON);
+  
+  return output;
+}

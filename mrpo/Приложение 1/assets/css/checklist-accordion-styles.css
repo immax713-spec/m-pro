@@ -1,0 +1,321 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    background: #f0f2f5;
+}
+
+/* Previous content truncated for brevity - THIS IS A PLACEHOLDER */
+/* In reality, this file will contain all previous content plus new styles below */
+
+@media (max-width: 768px) {
+    .side-drawer {
+        width: 100%;
+        left: -100%;
+    }
+}
+
+/* ========================================
+   CHECKLIST ACCORDION STYLES
+   ======================================== */
+
+/* Контейнер чек-листа */
+.cl-accordion-container {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    background: #fafafa;
+}
+
+/* Кнопки управления */
+.cl-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.cl-expand-all-btn {
+    padding: 8px 12px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.cl-expand-all-btn:hover {
+    background: #764ba2;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+/* Категория уровня 0 (верхний) - белый с фиолетовой рамкой */
+.cl-category {
+    margin-bottom: 10px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    border: 2px solid #667eea;
+    background: white;
+}
+
+.cl-category-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: white;
+    color: #2c3e50;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    user-select: none;
+    border-left: 4px solid #667eea;
+}
+
+.cl-category-header:hover {
+    background: #f8f9ff;
+    border-left-color: #764ba2;
+    box-shadow: 0 2px 6px rgba(102, 126, 234, 0.12);
+}
+
+/* Подкатегория уровня 1 (средний) */
+.cl-subcategory {
+    margin: 8px 0 8px 20px;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.cl-subcategory-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background: #f8f9fa;
+    border-left: 4px solid #667eea;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    user-select: none;
+}
+
+.cl-subcategory-header:hover {
+    background: #e9ecef;
+    border-left-color: #764ba2;
+    transform: translateX(2px);
+}
+
+/* Элемент уровня 2 (нижний) */
+.cl-item {
+    margin: 6px 0 6px 40px;
+    padding: 10px 12px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+    transition: all 0.2s ease;
+}
+
+.cl-item:hover {
+    border-color: #667eea;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.1);
+}
+
+.cl-item-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Иконка раскрытия */
+.cl-expand-icon {
+    font-size: 12px;
+    transition: transform 0.3s ease;
+    display: inline-block;
+    min-width: 14px;
+    color: #667eea;
+}
+
+.cl-category.expanded .cl-category-header .cl-expand-icon,
+.cl-subcategory.expanded .cl-subcategory-header .cl-expand-icon {
+    transform: rotate(90deg);
+}
+
+.cl-subcategory-header .cl-expand-icon {
+    color: #667eea;
+}
+
+/* Лейблы */
+.cl-label {
+    flex: 1;
+    font-weight: 500;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.cl-category-header .cl-label {
+    font-weight: 700;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.cl-subcategory-header .cl-label {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.cl-item .cl-label {
+    font-weight: 400;
+    color: #495057;
+}
+
+/* Бейдж со значением */
+.cl-value-badge {
+    margin-left: auto;
+    padding: 4px 12px;
+    background: #667eea;
+    color: white;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 13px;
+    min-width: 50px;
+    text-align: center;
+}
+
+.cl-subcategory-header .cl-value-badge {
+    background: #667eea;
+    color: white;
+}
+
+/* Поля ввода */
+.cl-input {
+    width: 80px;
+    padding: 6px 10px;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.cl-input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.cl-range {
+    flex: 1;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(to right,
+            #e0e0e0 0%,
+            #e0e0e0 var(--clp, 0%),
+            #667eea var(--clp, 0%),
+            #667eea 100%);
+    outline: none;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.cl-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #667eea;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s ease;
+}
+
+.cl-range::-webkit-slider-thumb:hover {
+    background: #764ba2;
+    transform: scale(1.1);
+}
+
+.cl-range::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #667eea;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s ease;
+}
+
+.cl-range::-moz-range-thumb:hover {
+    background: #764ba2;
+    transform: scale(1.1);
+}
+
+/* Чекбокс удаления */
+.cl-delete-toggle {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #dc3545;
+}
+
+/* Контент категории */
+.cl-category-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.3s ease,
+        padding 0.3s ease;
+    opacity: 0;
+    padding: 0 10px;
+}
+
+.cl-category.expanded>.cl-category-content {
+    max-height: 3000px;
+    opacity: 1;
+    padding: 12px 10px;
+}
+
+.cl-subcategory-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.3s ease,
+        padding 0.3s ease;
+    opacity: 0;
+    padding: 0;
+}
+
+.cl-subcategory.expanded>.cl-subcategory-content {
+    max-height: 2000px;
+    opacity: 1;
+    padding: 8px 0;
+}
+
+/* Скрытые элементы */
+.cl-category.disabled,
+.cl-subcategory.disabled,
+.cl-item.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Режим адаптации */
+.cl-adapt-mode .cl-delete-toggle {
+    display: inline-block !important;
+}
+
+.cl-adapt-mode .cl-category-header {
+    background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+}

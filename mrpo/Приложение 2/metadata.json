@@ -1,0 +1,7 @@
+{
+  "name": "Quick Presentation Builder",
+  "description": "An application to quickly create a presentation by taking four photos. Users are guided through a step-by-step process to capture images and then can view, edit, and download the resulting presentation as a PDF.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

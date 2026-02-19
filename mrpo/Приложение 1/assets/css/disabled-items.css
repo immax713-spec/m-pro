@@ -1,0 +1,23 @@
+/* Disabled (hidden) items shown in adaptation mode */
+.checklist-item.item-disabled,
+.checklist-category.item-disabled,
+.checklist-subcategory.item-disabled {
+    opacity: 0.5;
+    background: #f0f0f0;
+    border-style: dashed !important;
+}
+
+.checklist-item.item-disabled .item-label,
+.checklist-category.item-disabled .category-title,
+.checklist-subcategory.item-disabled .category-title {
+    font-style: italic;
+    color: #999 !important;
+}
+
+.item-disabled .delete-checkbox {
+    background: #e8f5e9 !important;
+}
+
+.item-disabled .delete-checkbox label {
+    color: #2e7d32 !important;
+}

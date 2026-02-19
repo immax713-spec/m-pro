@@ -1,0 +1,27 @@
+[Unit]
+Description=MPRO7 Application Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/mrpo/Приложение 1
+Environment="NODE_ENV=production"
+Environment="PORT=5550"
+ExecStart=/usr/bin/env node "/mrpo/Приложение 1/proxy.js"
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mpro7
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/mrpo
+
+[Install]
+WantedBy=multi-user.target
+

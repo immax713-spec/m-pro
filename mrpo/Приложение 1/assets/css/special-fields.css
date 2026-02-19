@@ -1,0 +1,123 @@
+/* ========================================
+   SPECIAL FIELDS SECTION (Mobilization, СКУД, Грунт)
+   ======================================== */
+
+.special-fields-section {
+    margin: 12px 0;
+    padding: 12px 14px;
+    background: #f8f9ff;
+    border-radius: 8px;
+    border: 2px solid #667eea;
+}
+
+.special-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.special-field:last-child {
+    margin-bottom: 0;
+}
+
+.special-field label {
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 13px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.special-field input[type="number"] {
+    width: 120px;
+    padding: 6px 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.toggle-group {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+    max-width: 250px;
+}
+
+.toggle-btn {
+    flex: 1;
+    padding: 6px 12px;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    opacity: 0.5;
+    white-space: nowrap;
+    text-align: center;
+}
+
+.toggle-btn.toggle-good {
+    background: #d4edda;
+    color: #155724;
+    border-color: #c3e6c cb;
+}
+
+.toggle-btn.toggle-bad {
+    background: #f8d7da;
+    color: #721c24;
+    border-color: #f5c6cb;
+}
+
+.toggle-btn.active {
+    opacity: 1;
+    transform: scale(1.02);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.toggle-btn.toggle-good.active {
+    border-color: #28a745;
+}
+
+.toggle-btn.toggle-bad.active {
+    border-color: #dc3545;
+}
+
+.toggle-btn:hover {
+    opacity: 0.8;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .special-fields-section {
+        padding: 10px 12px;
+    }
+
+    .special-field {
+        gap: 8px;
+        margin-bottom: 6px;
+    }
+
+    .special-field label {
+        font-size: 11px;
+    }
+
+    .special-field input[type="number"] {
+        width: 80px;
+        padding: 4px 8px;
+        font-size: 12px;
+    }
+
+    .toggle-group {
+        max-width: none;
+    }
+
+    .toggle-btn {
+        flex: 1;
+        padding: 5px 8px;
+        font-size: 10px;
+        text-align: center;
+    }
+}

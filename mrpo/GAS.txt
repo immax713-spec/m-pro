@@ -1,0 +1,3221 @@
+var SPREADSHEET_ID = '1B9Joj6DFhJM9DMmp8JHQpF66JSii0WPSdKZIUPvZGko';
+// Using Yandex Disk ONLY - Google Drive completely removed
+var YANDEX_OAUTH_TOKEN = 'y0__xCL2NLGAhi7qzwgnObv5xUDvEEMzfgQqQn3bwUjB4rJe0Hj_Q';
+var YANDEX_ROOT_SOLDER = 'smg_ph';
+var ss_id = '1B9Joj6DFhJM9DMmp8JHQpF66JSii0WPSdKZIUPvZGko';
+const WEBHOOK_URL = '';
+var CONFIG_SHEET = '1aXXo5EpwHLwU-3A0ZeONvevnOvdwsUIzR-6-x6M2y3c';
+
+// 🔥 TEST FUNCTIONS - Call these from GAS console to debug
+function testYandexToken() {
+  Logger.log('=== Testing Yandex OAuth Token ===');
+  Logger.log('Token exists: ' + !!YANDEX_OAUTH_TOKEN);
+  Logger.log('Token length: ' + YANDEX_OAUTH_TOKEN.length);
+  Logger.log('Root folder: ' + YANDEX_ROOT_SOLDER);
+  
+  // Test API call to check token validity
+  var url = 'https://cloud-api.yandex.net/v1/disk/';
+  var options = {
+    headers: { 'Authorization': 'OAuth ' + YANDEX_OAUTH_TOKEN },
+    muteHttpExceptions: true
+  };
+  
+  try {
+    var response = UrlFetchApp.fetch(url, options);
+    Logger.log('Token validation response: ' + response.getResponseCode());
+    Logger.log('Response: ' + response.getContentText());
+  } catch (e) {
+    Logger.log('ERROR: ' + e.toString());
+  }
+}
+
+function testMkdir() {
+  Logger.log('=== Testing Folder Creation ===');
+  var testPath = 'smg_ph/906/2026-01-14/Общий фотоотчет';
+  Logger.log('Creating folder: ' + testPath);
+  
+  var result = ydMkdir_(testPath);
+  Logger.log('Result: ' + result);
+  Logger.log('=== Test Complete ===');
+}
+
+function testFullStructure() {
+  Logger.log('=== Testing Full Folder Structure ===');
+  var result = ensureYDFolderStructure_('906', '2026-01-14', 'Общий фотоотчет');
+  Logger.log('Result: ' + result);
+  Logger.log('=== Test Complete ===');
+}
+
+function testPhotoUpload() {
+  Logger.log('=== Testing Photo Upload ===');
+  
+  // Tiny 1x1 red pixel PNG in base64
+  var testBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+  
+  var folderPath = ensureYDFolderStructure_('906', '2026-01-14', 'Общий фотоотчет');
+  Logger.log('Folder path: ' + folderPath);
+  
+  if (!folderPath) {
+    Logger.log('❌ Failed to create folders!');
+    return;
+  }
+  
+  var uploadResult = ydUploadFile_(folderPath, 'test-photo.png', testBase64);
+  Logger.log('Upload result: ' + JSON.stringify(uploadResult));
+  Logger.log('=== Test Complete ===');
+}
+// ============================================================================
+// MAIN HTTP ROUTER
+// ============================================================================
+
+/**
+ * Helper: Return JSON response
+ */
+function json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON)
+    .setHeader('Access-Control-Allow-Origin', '*')
+    .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+/**
+ * Helper: Return JSONP response
+ */
+function jsonp_(callback, obj) {
+  var cb = String(callback || 'callback');
+  var json = JSON.stringify(obj);
+  return ContentService.createTextOutput(cb + '(' + json + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT)
+    .setHeader('Access-Control-Allow-Origin', '*')
+    .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+/**
+ * Handle OPTIONS requests for CORS preflight
+ */
+function doOptions(e) {
+  return ContentService.createTextOutput('')
+    .setMimeType(ContentService.MimeType.TEXT)
+    .setHeader('Access-Control-Allow-Origin', '*')
+    .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    .setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    .setHeader('Access-Control-Max-Age', '86400');
+}
+
+/**
+ * Main GET request handler - routes all incoming requests
+ */
+function doGet(e) {
+  var p = e.parameter || {};
+  var action = String(p.action || '').trim();
+  
+  // Handle common actions (case-insensitive)
+  var actionLower = action.toLowerCase();
+  
+  if (actionLower === 'getdata') {
+    return json_(getData_(p));
+  }
+  
+  if (actionLower === 'checkworkday') {
+    var inspector = String(p.inspector || '');
+    var sh = sheet_('WorkDay');
+    if (!sh) return json_({ success: true, isOpen: false, message: 'No WorkDay sheet' });
+    
+    var now = new Date();
+    var rowIdx = getWorkDayRowIndex_(sh, inspector, now);
+    
+    if (rowIdx > 0) {
+      var row = sh.getRange(rowIdx, 1, 1, 18).getValues()[0];
+      var timeOpen = row[2];
+      var timeClose = row[7];
+      return json_({ success: true, isOpen: !!(timeOpen && !timeClose) });
+    }
+    
+    return json_({ success: true, isOpen: false });
+  }
+  
+  if (action === 'getChecklistSchema') {
+    return getChecklistSchema(p);
+  }
+  
+  if (action === 'getObjectChecklistConfig') {
+    return getObjectChecklistConfig(p);
+  }
+  
+  if (action === 'getObjectHistory') {
+    return getObjectHistory(p);
+  }
+  
+  if (action === 'getLastMonitoring') {
+    return getLastMonitoring(p);
+  }
+  
+  // ✅ Handle submitChecklist via GET to avoid CORS preflight
+  if (action === 'submitChecklist') {
+    // Use parameters directly from URL
+    return submitChecklist(p);
+  }
+
+  // 🔥 NEW ACTION ROUTES
+  if (action === 'startWorkDay') {
+    return json_(startWorkDay_(p));
+  }
+  if (action === 'endWorkDay') {
+    return json_(endWorkDay_(p));
+  }
+  if (action === 'entry') {
+    return json_(markEntry_(p));
+  }
+  if (action === 'exit') {
+    return json_(markExit_(p));
+  }
+  if (action === 'cancelEntry') {
+    return json_(cancelEntry_(p));
+  }
+  if (action === 'reassign') {
+    return json_(reassignInspector_(p));
+  }
+  
+  return json_({ 
+    success: false, 
+    message: 'Unknown action: ' + action,
+    available_actions: ['getData', 'checkWorkDay', 'getChecklistSchema', 'getObjectChecklistConfig', 'getObjectHistory', 'startWorkDay', 'endWorkDay', 'entry', 'exit', 'cancelEntry', 'reassign']
+  });
+}
+
+/**
+ * Main POST request handler
+ */
+function doPost(e) {
+  Logger.log('doPost called');
+  Logger.log('e.postData: ' + JSON.stringify(e.postData));
+  
+  var p = {};
+  
+  try {
+    if (e.postData && e.postData.contents) {
+      Logger.log('Parsing e.postData.contents: ' + e.postData.contents);
+      p = JSON.parse(e.postData.contents);
+      Logger.log('Parsed payload: ' + JSON.stringify(p));
+    } else {
+      Logger.log('WARNING: e.postData or e.postData.contents is missing');
+      Logger.log('Full e object: ' + JSON.stringify(e));
+    }
+  } catch (err) {
+    Logger.log('ERROR parsing JSON: ' + String(err));
+    return json_({ success: false, message: 'Invalid JSON: ' + String(err) });
+  }
+  
+  // Check action from both body and URL parameters
+  var action = String(p.action || '').trim();
+  if (!action && e.parameter && e.parameter.action) {
+    action = String(e.parameter.action).trim();
+    Logger.log('Action from URL parameter: ' + action);
+  }
+  Logger.log('Action: ' + action);
+  
+  if (action === 'saveObjectChecklistConfig') {
+    return saveObjectChecklistConfig(p);
+  }
+  
+  if (action === 'getLastMonitoring') {
+    return getLastMonitoring(p);
+  }
+  
+  if (action === 'submitChecklist') {
+    return submitChecklist(p);
+  }
+  
+  if (action === 'uploadPhoto') {
+    return uploadPhoto_(p);
+  }
+  
+  if (action === 'ensurePhotoFolder') {
+    return ensurePhotoFolder(p);
+  }
+  
+  if (action === 'batchVerify') {
+    return batchVerify(p);
+  }
+  
+  if (action === 'testYandex') {
+    // Test endpoint to verify Yandex functions exist
+    try {
+      var testResult = {
+        success: true,
+        hasToken: !!YANDEX_OAUTH_TOKEN,
+        tokenLength: YANDEX_OAUTH_TOKEN ? YANDEX_OAUTH_TOKEN.length : 0,
+        rootFolder: YANDEX_ROOT_SOLDER,
+        functionsExist: {
+          ensureYDFolderStructure_: typeof ensureYDFolderStructure_ === 'function',
+          ydMkdir_: typeof ydMkdir_ === 'function',
+          ydUploadFile_: typeof ydUploadFile_ === 'function',
+          ydGetPublicLink_: typeof ydGetPublicLink_ === 'function'
+        }
+      };
+      return json_(testResult);
+    } catch (e) {
+      return json_({ success: false, error: String(e) });
+    }
+  }
+  
+  return json_({ 
+    success: false, 
+    message: 'Unknown POST action: ' + action 
+  });
+}
+
+function json_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function jsonp_(cb, o) {
+  var body = (cb ? cb : 'callback') + '(' + JSON.stringify(o) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function ss_() { return SpreadsheetApp.openById(SPREADSHEET_ID); }
+function sheet_(name) {
+  var ss = ss_();
+  var sh = ss.getSheetByName(name);
+  if (sh) return sh;
+  var target = String(name || '').toLowerCase().trim();
+  var sheets = ss.getSheets();
+  for (var i=0;i<sheets.length;i++) {
+    var n = String(sheets[i].getName() || '').toLowerCase().trim();
+    if (n === target) return sheets[i];
+  }
+  return null;
+}
+
+function indexOf_(hdr, key) {
+  for (var i = 0; i < hdr.length; i++) if (String(hdr[i]).trim() === String(key).trim()) return i;
+  return -1;
+}
+
+function indexOfAny_(hdr, keys) {
+  if (!hdr || !hdr.length) return -1;
+  for (var k = 0; k < keys.length; k++) {
+    var key = String(keys[k]).toLowerCase();
+    for (var i = 0; i < hdr.length; i++) {
+      if (String(hdr[i]).toLowerCase() === key) return i;
+    }
+  }
+  return -1;
+}
+
+function pickCell_(row, idx, fallbacks) {
+  if (idx >= 0 && idx < row.length) return row[idx];
+  if (fallbacks && fallbacks.length) {
+    for (var i = 0; i < fallbacks.length; i++) {
+      var j = fallbacks[i];
+      if (j >= 0 && j < row.length && row[j] !== '') return row[j];
+    }
+  }
+  return '';
+}
+
+function asObj_(hdr, row) {
+  var o = {};
+  for (var i = 0; i < hdr.length; i++) o[String(hdr[i]).trim()] = row[i];
+  return o;
+}
+
+function formatDateRU_(d) {
+  var dd = d.getDate();
+  var mm = d.getMonth() + 1;
+  var yyyy = d.getFullYear();
+  var sdd = dd < 10 ? ('0' + dd) : String(dd);
+  var smm = mm < 10 ? ('0' + mm) : String(mm);
+  return sdd + '.' + smm + '.' + yyyy;
+}
+
+function asStrDate_(v) {
+  if (!v) return '';
+  if (v instanceof Date) return formatDateRU_(v);
+  var s = String(v).trim();
+  var m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (m) {
+    var dd = m[1].length === 1 ? ('0' + m[1]) : m[1];
+    var mm = m[2].length === 1 ? ('0' + m[2]) : m[2];
+    return dd + '.' + mm + '.' + m[3];
+  }
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? s : formatDateRU_(d);
+}
+
+/**
+ * Normalizes inspector name by removing role in parentheses (e.g. "Name (Inspector)")
+ */
+function normalizeInspectorName_(name) {
+  if (!name) return '';
+  name = String(name).trim();
+  if (name.indexOf('(') !== -1) {
+    name = name.split('(')[0].trim();
+  }
+  return name;
+}
+
+// --- Yandex Disk Helpers ---
+
+/**
+ * Recursive mkdir for Yandex Disk. Ensures each segment of the path exists.
+ */
+function ydMkdir_(path) {
+  if (!path) return;
+  var segments = path.split('/');
+  var current = '';
+  for (var i = 0; i < segments.length; i++) {
+    if (!segments[i]) continue;
+    current = current ? (current + '/' + segments[i]) : segments[i];
+    var url = 'https://cloud-api.yandex.net/v1/disk/resources?path=' + encodeURIComponent(current);
+    var opts = {
+      method: 'put',
+      headers: { 'Authorization': 'OAuth ' + YANDEX_OAUTH_TOKEN },
+      muteHttpExceptions: true
+    };
+    var resp = UrlFetchApp.fetch(url, opts);
+    Logger.log('ydMkdir segment [' + current + '] status: ' + resp.getResponseCode());
+  }
+}
+
+function ydUploadFile_(path, name, base64Data) {
+  // 1. Get upload URL
+  var uploadPath = path + '/' + name;
+  var url = 'https://cloud-api.yandex.net/v1/disk/resources/upload?path=' + encodeURIComponent(uploadPath) + '&overwrite=true';
+  var opts = {
+    method: 'get',
+    headers: { 'Authorization': 'OAuth ' + YANDEX_OAUTH_TOKEN },
+    muteHttpExceptions: true
+  };
+  var resp = UrlFetchApp.fetch(url, opts);
+  var statusCode = resp.getResponseCode();
+  var responseText = resp.getContentText();
+  
+  if (statusCode !== 200) {
+    return {
+      success: false,
+      message: 'Yandex API error: ' + statusCode,
+      response: responseText,
+      statusCode: statusCode
+    };
+  }
+  
+  var json = {};
+  try { json = JSON.parse(responseText); } catch(e) { 
+    return {success:false, message: 'json parse error', response: responseText}; 
+  }
+  
+  if (!json.href) {
+    return { success: false, message: 'no upload href', response: responseText, json: json };
+  }
+  
+  var href = json.href;
+  
+  // 2. PUT binary data
+  // Clean base64 data (remove whitespace, newlines, etc.)
+  base64Data = base64Data.replace(/\s/g, '');
+  var bytes = Utilities.base64Decode(base64Data);
+  var blob = Utilities.newBlob(bytes);
+  var uploadOpts = {
+    method: 'put',
+    payload: blob,
+    muteHttpExceptions: true
+  };
+  var upResp = UrlFetchApp.fetch(href, uploadOpts);
+  var uploadStatus = upResp.getResponseCode();
+  
+  if (uploadStatus >= 200 && uploadStatus < 300) {
+    // File uploaded successfully - return path instead of public URL
+    return { success: true, path: uploadPath, url: uploadPath };
+  }
+  
+  return { success: false, message: 'Upload failed', statusCode: uploadStatus };
+}
+
+function ensureYDFolderStructure_(objectId, dateStr, category) {
+  // Root -> Object -> Date -> Category
+  var root = YANDEX_ROOT_SOLDER;
+  ydMkdir_(root);
+  
+  var objPath = root + '/' + objectId;
+  ydMkdir_(objPath);
+  
+  var todayStr = dateStr && String(dateStr).trim() ? String(dateStr).trim() : formatDateRU_(new Date());
+  var datePath = objPath + '/' + todayStr;
+  ydMkdir_(datePath);
+  
+  var catPath = datePath + '/' + category;
+  ydMkdir_(catPath);
+  
+  return catPath;
+}
+// ------------------------------
+
+
+function verifyPassword_(p) {
+  var name = String(p.inspector || '').trim();
+  var pass = String(p.password || '').trim();
+  if (!name) return { success: false, message: 'no user' };
+  
+  var sh = sheet_('Инспектора');
+  if (!sh) return { success: false, message: 'no sheet' };
+  
+  var vals = sh.getDataRange().getValues();
+  if (vals.length < 2) return { success: false, message: 'no data' };
+  
+  var hdr = vals[0];
+  var nameCol = indexOfAny_(hdr, ['name','имя','фио','инспектор']);
+  var passCol = indexOfAny_(hdr, ['password','pass','пароль']);
+  var rightsCol = indexOfAny_(hdr, ['rights','права','доступ']);
+  
+  if (nameCol < 0) return { success: false, message: 'no name col' };
+  
+  for (var i = 1; i < vals.length; i++) {
+    var rowName = String(vals[i][nameCol]).trim();
+    if (rowName === name) {
+      // Check password
+      var rowPass = '';
+      if (passCol >= 0) rowPass = String(vals[i][passCol]).trim();
+      
+      // If no password set in sheet, allow empty password? Or deny?
+      // Usually deny if pass is provided but rowPass is empty.
+      // Let's assume strict check: rowPass must match pass.
+      
+      if (rowPass === pass) {
+         var rights = (rightsCol >= 0) ? String(vals[i][rightsCol]).trim() : 'Инспектор';
+         return { success: true, accessRights: rights };
+      } else {
+         return { success: false, message: 'wrong password' };
+      }
+    }
+  }
+  
+  return { success: false, message: 'user not found' };
+}
+
+function getData_(p) {
+  var inspSheet = sheet_('Инспектора');
+  var inspectorsData = {};
+  var inspectorsHomes = {};
+  var inspectorsConfig = {};
+  var availableIcons = { default: '📍' };
+  var availableColors = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b'];
+
+  // 🔥 FETCH INSPECTORS
+  if (inspSheet) {
+    var iVals = inspSheet.getDataRange().getValues();
+    if (iVals.length > 1) {
+      var iHdr = iVals[0];
+      var nameCol = indexOfAny_(iHdr, ['name','имя','фио','инспектор']);
+      var colorCol = indexOfAny_(iHdr, ['color','цвет']);
+      var iconCol = indexOfAny_(iHdr, ['icon','иконка']);
+      var statusCol = indexOfAny_(iHdr, ['status','статус']);
+      var rightsCol = indexOfAny_(iHdr, ['rights','права','доступ']);
+      var homeLatCol = indexOfAny_(iHdr, ['home_lat','дом_широта']);
+      var homeLonCol = indexOfAny_(iHdr, ['home_lon','дом_долгота']);
+      var homeAddrCol = indexOfAny_(iHdr, ['home_addr','дом_адрес']);
+      
+      for (var i = 1; i < iVals.length; i++) {
+        var r = iVals[i];
+        var name = pickCell_(r, nameCol, [0]);
+        if (name) {
+          inspectorsConfig[name] = {
+            color: pickCell_(r, colorCol, []) || availableColors[i % availableColors.length],
+            icon: pickCell_(r, iconCol, []) || availableIcons.default,
+            status: pickCell_(r, statusCol, []) || 'active',
+            accessRights: pickCell_(r, rightsCol, []) || 'user'
+          };
+          var hLat = pickCell_(r, homeLatCol, []);
+          var hLon = pickCell_(r, homeLonCol, []);
+          if (hLat && hLon) {
+            inspectorsHomes[name] = {
+              lat: parseFloat(String(hLat).replace(',', '.')),
+              lon: parseFloat(String(hLon).replace(',', '.')),
+              address: pickCell_(r, homeAddrCol, [])
+            };
+          }
+        }
+      }
+    }
+  }
+  
+  // 🔥 FETCH MAP7 SHEET (POINTS)
+  var sh = sheet_('map7');
+  var points = [];
+  if (sh) {
+      var vals = sh.getDataRange().getValues();
+      if (vals.length > 1) {
+          var hdr = vals[0];
+          var idCol = indexOfAny_(hdr, ['id','№','№ точки','object_id','no']);
+          var latCol = indexOfAny_(hdr, ['latitude','lat','широта']);
+          var lonCol = indexOfAny_(hdr, ['longitude','lon','lng','долгота']);
+          var addrCol = indexOfAny_(hdr, ['address','адрес']);
+          var inspCol = indexOfAny_(hdr, ['inspector','инспектор','ответственный']);
+          var statusCol = indexOfAny_(hdr, ['status','статус']);
+          var entryCol = indexOfAny_(hdr, ['Время/дата входа', 'entry_time', 'Вход']);
+          var exitCol = indexOfAny_(hdr, ['Время/дата выхода', 'exit_time', 'Выход']);
+          
+          var listCol = indexOfAny_(hdr, ['list','список','лист']);
+          
+          for (var i = 1; i < vals.length; i++) {
+              var row = vals[i];
+              var id = pickCell_(row, idCol, [0]);
+              var lat = pickCell_(row, latCol, [2]);
+              var lon = pickCell_(row, lonCol, [3]);
+              var addr = pickCell_(row, addrCol, [1]);
+              var insp = pickCell_(row, inspCol, []) || 'Admin';
+              var status = pickCell_(row, statusCol, []);
+              var entry = pickCell_(row, entryCol, []);
+              var exit = pickCell_(row, exitCol, []);
+              var list = pickCell_(row, listCol, []) || 'Без списка';
+              
+              var latNum = (typeof lat === 'number') ? lat : parseFloat(String(lat).replace(',', '.'));
+              var lonNum = (typeof lon === 'number') ? lon : parseFloat(String(lon).replace(',', '.'));
+              
+              if (id) {
+                  points.push({
+                      id: id,
+                      latitude: latNum,
+                      longitude: lonNum,
+                      address: addr,
+                      inspector: insp,
+                      status: status,
+                      entry_time: entry,
+                      exit_time: exit,
+                      list: list
+                  });
+              }
+          }
+      }
+  }
+
+  // 🔥 FETCH ADD_OBJECT SHEET
+  var addObjSheet = sheet_('add_object');
+  var addedObjects = [];
+  if (addObjSheet) {
+    var vals = addObjSheet.getDataRange().getValues();
+    // Start from row 5 (index 4). Header is at row 4 (index 3).
+    if (vals.length > 4) {
+        var hdr = vals[3]; 
+        var idCol = indexOfAny_(hdr, ['id','№','№ точки','object_id','no']);
+        var latCol = indexOfAny_(hdr, ['latitude','lat','широта']);
+        var lonCol = indexOfAny_(hdr, ['longitude','lon','lng','долгота']);
+        var addrCol = indexOfAny_(hdr, ['address','адрес']);
+        var listCol = indexOfAny_(hdr, ['list','список','лист']);
+        var inspCol = indexOfAny_(hdr, ['inspector','инспектор','ответственный']);
+        
+        for (var r = 4; r < vals.length; r++) {
+            var row = vals[r];
+            var id = pickCell_(row, idCol, [0]); // Fallback to col A
+            var lat = pickCell_(row, latCol, [2]); // Fallback to col C
+            var lon = pickCell_(row, lonCol, [3]); // Fallback to col D
+            var addr = pickCell_(row, addrCol, [1]); // Fallback to col B (Address)
+            var list = pickCell_(row, listCol, [5]) || 'Без списка';
+            var insp = pickCell_(row, inspCol, []) || 'Admin';
+            
+            var latNum = (typeof lat === 'number') ? lat : parseFloat(String(lat).replace(',', '.'));
+            var lonNum = (typeof lon === 'number') ? lon : parseFloat(String(lon).replace(',', '.'));
+            
+            if (id) { 
+                addedObjects.push({ id: id, latitude: latNum, longitude: lonNum, address: addr || '', inspector: insp, list: list });
+            }
+        }
+    }
+  }
+
+  var allSheets = [];
+  try { allSheets = ss_().getSheets().map(function(s) { return s.getName(); }); } catch(e) { allSheets = [String(e)]; }
+  var debugHeaders = [];
+  if (sh) { try { debugHeaders = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0]; } catch(e) {} }
+  
+  return { success: true, version: 'DEBUG_V2_' + (new Date().toISOString()), points: points, addedObjects: addedObjects, inspectorsConfig: inspectorsConfig, inspectorsHomes: inspectorsHomes, inspectorsData: inspectorsData, availableIcons: availableIcons, availableColors: availableColors, debugSheets: allSheets, debugHeaders: debugHeaders };
+}
+
+function moveObjectToMap_(p) {
+  var id = String(p.objectId || '');
+  if (!id) return { success: false, message: 'no id' };
+  
+  var source = sheet_('add_object');
+  var dest = sheet_('map7');
+  if (!source || !dest) return { success: false, message: 'sheets not found' };
+  
+  // Read source data
+  var sData = source.getDataRange().getValues();
+  var sHdr = sData.length > 3 ? sData[3] : [];
+  var sIdCol = indexOfAny_(sHdr, ['id','№','№ точки','object_id','no']);
+  if (sIdCol < 0) sIdCol = 0;
+  
+  // Find row in source
+  var sRowIdx = -1;
+  var rowToMove = null;
+  for (var i = 4; i < sData.length; i++) {
+    if (String(sData[i][sIdCol]) === id) {
+      sRowIdx = i + 1;
+      rowToMove = sData[i];
+      break;
+    }
+  }
+  
+  if (!rowToMove) return { success: false, message: 'object not found in add_object' };
+  
+  // Read dest headers to map columns correctly
+  var dData = dest.getDataRange().getValues();
+  var dHdr = dData.length > 0 ? dData[0] : [];
+  
+  // If dest is empty, just append the row as is (fallback)
+  if (dHdr.length === 0) {
+      dest.appendRow(rowToMove);
+      source.deleteRow(sRowIdx);
+      return { success: true };
+  }
+  
+  // Construct new row based on DEST headers
+  var newRow = [];
+  var newInspector = String(p.inspector || '');
+  
+  for (var j = 0; j < dHdr.length; j++) {
+      var colName = String(dHdr[j]).toLowerCase().trim();
+      
+      // Determine value for this column
+      var val = '';
+      
+      // Special handling for Inspector
+      if (['inspector','инспектор','ответственный'].indexOf(colName) >= 0) {
+          if (newInspector) {
+              val = newInspector;
+          } else {
+              // Try to find in source
+              var sInspCol = indexOfAny_(sHdr, ['inspector','инспектор','ответственный']);
+              val = pickCell_(rowToMove, sInspCol, []) || 'Admin';
+          }
+      } 
+      // Special handling for ID (preserve formatting)
+      else if (['id','№','№ точки','object_id','no'].indexOf(colName) >= 0) {
+          val = "'" + String(pickCell_(rowToMove, sIdCol, [0]));
+      }
+      // General mapping for other columns
+      else {
+          // Try to find matching column in source
+          var sCol = indexOf_(sHdr, dHdr[j]); // Exact match first
+          if (sCol < 0) {
+              // Fuzzy match
+              sCol = indexOfAny_(sHdr, [colName]);
+          }
+          
+          if (sCol >= 0) {
+              val = rowToMove[sCol];
+          } else {
+              // Common mappings
+              if (['latitude','lat','широта'].indexOf(colName) >= 0) val = pickCell_(rowToMove, indexOfAny_(sHdr, ['latitude','lat','широта']), [2]);
+              else if (['longitude','lon','lng','долгота'].indexOf(colName) >= 0) val = pickCell_(rowToMove, indexOfAny_(sHdr, ['longitude','lon','lng','долгота']), [3]);
+              else if (['address','адрес'].indexOf(colName) >= 0) val = pickCell_(rowToMove, indexOfAny_(sHdr, ['address','адрес']), [1]);
+              else if (['list','список','лист'].indexOf(colName) >= 0) val = pickCell_(rowToMove, indexOfAny_(sHdr, ['list','список','лист']), [5]) || 'Без списка';
+          }
+      }
+      
+      newRow.push(val);
+  }
+  
+  // Append constructed row
+  dest.appendRow(newRow);
+  
+  // Delete from add_object
+  source.deleteRow(sRowIdx);
+  
+  return { success: true };
+}
+
+
+
+function markEntry_(p) {
+  updateMapStatus_(p.objectId || p.object_id, 'entry');
+  updateWorkDayVisit_(p);
+  return { success: true, updated: true };
+}
+function markExit_(p) {
+  updateMapStatus_(p.objectId || p.object_id, 'exit');
+  calculateDailyScore_(p.inspector, new Date());
+  return { success: true, updated: true };
+}
+function cancelEntry_(p) {
+  updateMapStatus_(p.objectId || p.object_id, 'cancel');
+  return { success: true, updated: true };
+}
+
+function updateMapStatus_(objectId, type) {
+  var sh = sheet_('map7');
+  if (!sh) return;
+  var data = sh.getDataRange().getValues();
+  var hdr = data[0] || [];
+  var idCol = indexOfAny_(hdr, ['id','№','№ точки','object_id','no']);
+  var entryCol = indexOfAny_(hdr, ['Время/дата входа', 'entry_time', 'Вход']);
+  var exitCol = indexOfAny_(hdr, ['Время/дата выхода', 'exit_time', 'Выход']);
+  var seqCol = indexOfAny_(hdr, ['номер по счету', 'sequence', 'seq']);
+  var inspCol = indexOfAny_(hdr, ['inspector','инспектор','ответственный']);
+
+  if (idCol < 0) return;
+
+  var inspector = '';
+  // Find current inspector for this object
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) == String(objectId)) {
+      inspector = String(data[i][inspCol] || '');
+      break;
+    }
+  }
+
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) == String(objectId)) {
+      var row = i + 1;
+      var now = new Date();
+      if (type === 'entry') {
+        if (entryCol >= 0) sh.getRange(row, entryCol + 1).setValue(now);
+        if (exitCol >= 0) sh.getRange(row, exitCol + 1).setValue('');
+        
+        // Calculate sequence number
+        if (seqCol >= 0 && inspector) {
+          var maxSeq = 0;
+          var todayStr = formatDateRU_(now);
+          for (var j = 1; j < data.length; j++) {
+             var rInsp = String(data[j][inspCol] || '');
+             var rEntry = data[j][entryCol];
+             var rEntryStr = (rEntry instanceof Date) ? formatDateRU_(rEntry) : String(rEntry);
+             // Check if same inspector and same day (and not the current row we are updating, or if it is, ignore its old value)
+             if (rInsp === inspector && rEntryStr === todayStr && j !== i) {
+                var sVal = parseInt(data[j][seqCol], 10);
+                if (!isNaN(sVal) && sVal > maxSeq) maxSeq = sVal;
+             }
+          }
+          sh.getRange(row, seqCol + 1).setValue(maxSeq + 1);
+        }
+
+      } else if (type === 'exit') {
+        if (exitCol >= 0) sh.getRange(row, exitCol + 1).setValue(now);
+      } else if (type === 'cancel') {
+        if (entryCol >= 0) sh.getRange(row, entryCol + 1).setValue('');
+        if (exitCol >= 0) sh.getRange(row, exitCol + 1).setValue('');
+        if (seqCol >= 0) sh.getRange(row, seqCol + 1).setValue('');
+      }
+      break;
+    }
+  }
+}
+
+function reassignInspector_(p) {
+  var objectId = String(p.objectId || p.object_id || '');
+  var inspector = String(p.inspector || p.newInspector || '');
+  
+  // Try map7 first
+  var sh = sheet_('map7');
+  if (sh) {
+      var range = sh.getDataRange();
+      var vals = range.getValues();
+      var hdr = vals[0] || [];
+      var idCol = indexOfAny_(hdr, ['id','№','№ точки','object_id','no']);
+      var inspCol = indexOfAny_(hdr, ['inspector','инспектор','ответственный']);
+      if (idCol < 0) idCol = 0;
+      if (inspCol < 0) inspCol = 1; // Default assumption if not found
+      
+      for (var i = 1; i < vals.length; i++) {
+        if (String(vals[i][idCol]) === objectId) { 
+            sh.getRange(i + 1, inspCol + 1).setValue(inspector);
+            return { success: true, updated: true, sheet: 'map7' };
+        }
+      }
+  }
+  
+  // Try add_object
+  var addSh = sheet_('add_object');
+  if (addSh) {
+      var range = addSh.getDataRange();
+      var vals = range.getValues();
+      // Header at row 4 (index 3)
+      var hdr = vals.length > 3 ? vals[3] : [];
+      var idCol = indexOfAny_(hdr, ['id','№','№ точки','object_id','no']);
+      var inspCol = indexOfAny_(hdr, ['inspector','инспектор','ответственный']);
+      if (idCol < 0) idCol = 0;
+      
+      if (inspCol >= 0) {
+          for (var i = 4; i < vals.length; i++) {
+            if (String(vals[i][idCol]) === objectId) { 
+                addSh.getRange(i + 1, inspCol + 1).setValue(inspector);
+                return { success: true, updated: true, sheet: 'add_object' };
+            }
+          }
+      }
+  }
+
+  return { success: false, message: 'object not found' };
+}
+
+function getDistance_(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+  var R = 6371e3; // metres
+  var φ1 = lat1 * Math.PI/180;
+  var φ2 = lat2 * Math.PI/180;
+  var Δφ = (lat2-lat1) * Math.PI/180;
+  var Δλ = (lon2-lon1) * Math.PI/180;
+  var a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+          Math.cos(φ1) * Math.cos(φ2) *
+          Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+function getWorkDayRowIndex_(sheet, inspector, date) {
+  var vals = sheet.getDataRange().getValues();
+  if (vals.length < 2) return -1;
+  // Fixed structure: A=date, B=inspector
+  var targetDate = formatDateRU_(date);
+  for (var i = 1; i < vals.length; i++) {
+    var rowDate = vals[i][0];
+    var rowInsp = vals[i][1];
+    var dStr = (rowDate instanceof Date) ? formatDateRU_(rowDate) : String(rowDate);
+    if (String(rowInsp) === inspector && dStr === targetDate) {
+      return i + 1;
+    }
+  }
+  return -1;
+}
+
+function updateWorkDay_(p, status) {
+  var sh = sheet_('WorkDay');
+  if (!sh) {
+    sh = ss_().insertSheet('WorkDay');
+    sh.appendRow(['date','inspector','time_open','open_coordinats','coordinates_first_object','coordinate_correspondence','open_comment','time_close','close_coordinats','coordinates_last_object','coordinate_correspondence','close_comment','quality','base_point','object_point','distance_point','point_construction_readiness','sum_point']);
+  }
+  
+  // Ensure headers match requirements
+  var required = ['date','inspector','time_open','open_coordinats','coordinates_first_object','coordinate_correspondence','open_comment','time_close','close_coordinats','coordinates_last_object','coordinate_correspondence','close_comment','quality','base_point','object_point','distance_point','point_construction_readiness','sum_point'];
+  var currentHdr = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  if (currentHdr.length < required.length || currentHdr[0] !== 'date') {
+     sh.getRange(1,1,1,required.length).setValues([required]);
+  }
+
+  var inspector = String(p.inspector || '');
+  var now = new Date();
+  var dateStr = formatDateRU_(now);
+  var rowIdx = getWorkDayRowIndex_(sh, inspector, now);
+  
+  var row = [];
+  if (rowIdx > 0) {
+    row = sh.getRange(rowIdx, 1, 1, required.length).getValues()[0];
+  } else {
+    row = new Array(required.length).fill('');
+    row[0] = dateStr;
+    row[1] = inspector;
+  }
+
+  var lat = p.lat || p.latitude;
+  var lon = p.lon || p.longitude;
+  var coords = (lat && lon) ? (parseFloat(lat).toFixed(4) + ', ' + parseFloat(lon).toFixed(4)) : '';
+
+  if (status === 'open') {
+    row[2] = now.toLocaleTimeString('ru-RU'); // time_open
+    row[3] = coords; // open_coordinats
+    row[6] = String(p.open_comment || p.comment || ''); // open_comment
+  } else if (status === 'close') {
+    row[7] = now.toLocaleTimeString('ru-RU'); // time_close
+    row[8] = coords; // close_coordinats
+    row[11] = String(p.close_comment || p.comment || ''); // close_comment
+    
+    // Calculate close correspondence (K) using coordinates_last_object (J) and close_coordinats (I)
+    var lastObjCoords = row[9];
+    if (lastObjCoords && coords) {
+       var parts1 = lastObjCoords.split(',');
+       var parts2 = coords.split(',');
+       if (parts1.length == 2 && parts2.length == 2) {
+         var dist = getDistance_(parseFloat(parts1[0]), parseFloat(parts1[1]), parseFloat(parts2[0]), parseFloat(parts2[1]));
+         row[10] = dist <= 500 ? '✅' : '🔻';
+       }
+    }
+  }
+
+  if (rowIdx > 0) {
+    sh.getRange(rowIdx, 1, 1, required.length).setValues([row]);
+  } else {
+    sh.appendRow(row);
+  }
+  return { success: true };
+}
+
+function calculateDailyScore_(inspector, date) {
+  var shWD = sheet_('WorkDay');
+  if (!shWD) return;
+  var rowIdx = getWorkDayRowIndex_(shWD, inspector, date);
+  if (rowIdx < 0) return;
+
+  var row = shWD.getRange(rowIdx, 1, 1, 18).getValues()[0];
+  // Headers: date(0), inspector(1), time_open(2), open_coordinats(3), coordinates_first_object(4),
+  // coordinate_correspondence(5), open_comment(6), time_close(7), close_coordinats(8),
+  // coordinates_last_object(9), coordinate_correspondence(10), close_comment(11),
+  // quality(12), base_point(13), object_point(14), distance_point(15), point_construction_readiness(16), sum_point(17)
+
+  // 1. Base Point
+  var basePoint = 0;
+  var timeOpenStr = row[2];
+  var timeCloseStr = row[7];
+  
+  if (timeOpenStr) {
+     var parts = String(timeOpenStr).split(':');
+     if (parts.length >= 2) {
+       var h = parseInt(parts[0], 10);
+       var m = parseInt(parts[1], 10);
+       // <= 09:15
+       if (h < 9 || (h === 9 && m <= 15)) basePoint += 5;
+     }
+  }
+  
+  if (timeCloseStr) {
+     var parts = String(timeCloseStr).split(':');
+     if (parts.length >= 2) {
+       var h = parseInt(parts[0], 10);
+       // >= 18:00
+       if (h >= 18) basePoint += 5;
+     }
+  }
+
+  // Get map7 data for objects
+  var shMap = sheet_('map7');
+  var mapData = shMap.getDataRange().getValues();
+  var mapHdr = mapData[0];
+  var inspCol = indexOfAny_(mapHdr, ['inspector','инспектор','ответственный']);
+  var entryCol = indexOfAny_(mapHdr, ['Время/дата входа', 'entry_time', 'Вход']);
+  var seqCol = indexOfAny_(mapHdr, ['номер по счету', 'sequence', 'seq']);
+  var readyCol = indexOfAny_(mapHdr, ['Строительная готовность', 'readiness', 'construction_readiness']);
+  var latCol = indexOfAny_(mapHdr, ['latitude','lat','широта']);
+  var lonCol = indexOfAny_(mapHdr, ['longitude','lon','lng','долгота']);
+
+  var visited = [];
+  var todayStr = formatDateRU_(date);
+
+  for (var i = 1; i < mapData.length; i++) {
+    var rInsp = String(mapData[i][inspCol] || '');
+    var rEntry = mapData[i][entryCol];
+    var rEntryStr = (rEntry instanceof Date) ? formatDateRU_(rEntry) : String(rEntry);
+    
+    if (rInsp === inspector && rEntryStr === todayStr) {
+       var seq = parseInt(mapData[i][seqCol], 10) || 0;
+       var ready = parseFloat(mapData[i][readyCol]) || 0;
+       var lat = mapData[i][latCol];
+       var lon = mapData[i][lonCol];
+       visited.push({ seq: seq, ready: ready, lat: lat, lon: lon });
+    }
+  }
+
+  // Sort by sequence
+  visited.sort(function(a,b) { return a.seq - b.seq; });
+
+  // 2. Quality (Max Sequence) & Object Point
+  var maxSeq = 0;
+  if (visited.length > 0) {
+    maxSeq = visited[visited.length - 1].seq;
+  }
+  
+  var quality = maxSeq;
+  var objectPoint = quality * 10;
+
+  // 3. Distance Point
+  var totalDist = 0;
+  for (var i = 0; i < visited.length - 1; i++) {
+     var p1 = visited[i];
+     var p2 = visited[i+1];
+     totalDist += getDistance_(p1.lat, p1.lon, p2.lat, p2.lon);
+  }
+  var distKm = totalDist / 1000;
+  var distancePoint = distKm * 0.5;
+
+  // 4. Construction Readiness Point
+  var avgReady = 0;
+  if (visited.length > 0) {
+    var sumReady = 0;
+    for (var i=0; i<visited.length; i++) sumReady += visited[i].ready;
+    avgReady = sumReady / visited.length;
+  }
+  
+  var coef = 1.0;
+  if (avgReady > 30 && avgReady <= 60) coef = 1.2;
+  if (avgReady > 60) coef = 1.5;
+  
+  var pointConstructionReadiness = coef;
+
+  // 5. Sum Point
+  var sumPoint = (basePoint + objectPoint + distancePoint) * pointConstructionReadiness;
+
+  // Write back
+  while (row.length < 18) row.push('');
+  
+  row[12] = quality;
+  row[13] = basePoint;
+  row[14] = objectPoint;
+  row[15] = distancePoint;
+  row[16] = pointConstructionReadiness;
+  row[17] = sumPoint;
+  
+  shWD.getRange(rowIdx, 1, 1, 18).setValues([row]);
+}
+
+function updateWorkDayVisit_(p) {
+  var sh = sheet_('WorkDay');
+  if (!sh) return;
+  var inspector = String(p.inspector || '');
+  var now = new Date();
+  var rowIdx = getWorkDayRowIndex_(sh, inspector, now);
+  if (rowIdx < 0) return;
+
+  var row = sh.getRange(rowIdx, 1, 1, 12).getValues()[0];
+  
+  var objId = p.objectId || p.object_id;
+  var mapSh = sheet_('map7');
+  var mapData = mapSh.getDataRange().getValues();
+  var mapHdr = mapData[0];
+  var idCol = indexOfAny_(mapHdr, ['id','№','№ точки','object_id','no']);
+  var latCol = indexOfAny_(mapHdr, ['latitude','lat','широта']);
+  var lonCol = indexOfAny_(mapHdr, ['longitude','lon','lng','долгота']);
+  
+  var objLat = 0, objLon = 0;
+  for(var i=1; i<mapData.length; i++) {
+    if(String(mapData[i][idCol]) == String(objId)) {
+      objLat = mapData[i][latCol];
+      objLon = mapData[i][lonCol];
+      break;
+    }
+  }
+  
+  if (!objLat || !objLon) return;
+  
+  var objCoords = parseFloat(objLat).toFixed(4) + ', ' + parseFloat(objLon).toFixed(4);
+  
+  // Update last object (J)
+  row[9] = objCoords;
+  
+  // Update first object (E) if empty
+  if (!row[4]) {
+    row[4] = objCoords;
+    // Calculate open correspondence (F) using open_coordinats (D)
+    var openCoords = row[3];
+    if (openCoords) {
+       var parts1 = openCoords.split(',');
+       var parts2 = objCoords.split(',');
+       if (parts1.length == 2 && parts2.length == 2) {
+         var dist = getDistance_(parseFloat(parts1[0]), parseFloat(parts1[1]), parseFloat(parts2[0]), parseFloat(parts2[1]));
+         row[5] = dist <= 500 ? '✅' : '🔻';
+       }
+    }
+  }
+  
+  sh.getRange(rowIdx, 1, 1, 12).setValues([row]);
+}
+
+function checkWorkDay_(p) {
+  var sh = sheet_('WorkDay');
+  if (!sh) return { success: false, open: false };
+  var inspector = String(p.inspector || '');
+  var now = new Date();
+  var rowIdx = getWorkDayRowIndex_(sh, inspector, now);
+  if (rowIdx < 0) return { success: true, open: false };
+  
+  var row = sh.getRange(rowIdx, 1, 1, 12).getValues()[0];
+  // If time_close (H, index 7) is empty, it's open
+  var open = !row[7];
+  return { success: true, open: open };
+}
+
+function startWorkDay_(p) { return updateWorkDay_(p, 'open'); }
+function endWorkDay_(p) {
+  var res = updateWorkDay_(p, 'close');
+  calculateDailyScore_(p.inspector, new Date());
+  return res;
+}
+
+function saveInspectorConfig_(p) {
+  var name = String(p.inspector || '');
+  var sh = sheet_('Инспектора');
+  if (!sh) return { success: false };
+  var range = sh.getDataRange();
+  var vals = range.getValues();
+  var hdr = vals[0] || [];
+  var nameCol = indexOf_(hdr, 'fullName') >= 0 ? indexOf_(hdr, 'fullName') : 0;
+  var colorCol = indexOf_(hdr, 'color');
+  var iconCol = indexOf_(hdr, 'icon');
+  var statusCol = indexOf_(hdr, 'status');
+  var updated = false;
+  for (var i = 1; i < vals.length; i++) {
+    if (String(vals[i][nameCol]) === name) {
+      // Write to columns G(6), H(7), I(8)
+      if (p.status) vals[i][6] = p.status;
+      if (p.color) vals[i][7] = p.color;
+      if (p.icon) vals[i][8] = p.icon;
+      updated = true;
+    }
+  }
+  if (updated) range.setValues(vals);
+  return { success: updated };
+}
+
+// function saveChecklist_ REMOVED per user request
+// function shouldBlockColumnName_ REMOVED per user request
+
+
+function uploadPhoto_(d) {
+  // Create debug log in sheet
+  var debugSh = ss_().getSheetByName('_debug_upload') || ss_().insertSheet('_debug_upload');
+  
+  var logEntry = [
+    new Date(),
+    'uploadPhoto_ called',
+    JSON.stringify(Object.keys(d)),
+    d.object_id || d.objectId || 'NO_ID',
+    d.category || 'NO_CATEGORY',
+    d.fileName || 'NO_FILENAME',
+    !!(d.dataUrl || d.base64 || d.content),
+    (d.dataUrl || d.base64 || d.content || '').length,
+    (d.dataUrl || d.base64 || d.content || '').substring(0, 50)
+  ];
+  
+  try {
+    debugSh.appendRow(logEntry);
+  } catch (e) {
+    // Ignore sheet errors
+  }
+  
+  var objId = String(d.object_id || d.objectId || '');
+  var dataUrl = String(d.dataUrl || d.base64 || d.content || '');
+  var categoryRaw = String(d.category || 'general');
+  var seq = String(d.seq || '1');
+  var name = String(d.fileName || ('photo_' + categoryRaw + '_' + objId + '_' + seq + '_' + Date.now() + '.png'));
+  var comment = String(d.comment || '');
+  
+  if (!dataUrl) {
+    debugSh.appendRow([new Date(), 'ERROR', 'No dataUrl!', '', '', '', '', '', '']);
+    return { success: false, message: 'no data' };
+  }
+  
+  var catNorm = (function(s){
+    var t = String(s).trim().toLowerCase();
+    if (['общий фотоотчет','общий','general'].indexOf(t) >= 0) return 'Общий фотоотчет';
+    if (['оценка строительной площадки','замечания по строительной площадке','site','comments'].indexOf(t) >= 0) return 'Замечания по строительной площадке';
+    return s;
+  })(categoryRaw);
+  
+  debugSh.appendRow([new Date(), 'Normalized', catNorm, objId, name, '', '', '', '']);
+  
+  // YANDEX UPLOAD
+  try {
+    var folderPath = ensureYDFolderStructure_(objId, String(d.monitoring_date || '').trim(), catNorm);
+    debugSh.appendRow([new Date(), 'Folder path', folderPath || 'NULL', '', '', '', '', '', '']);
+    
+    if (!folderPath) {
+      debugSh.appendRow([new Date(), 'ERROR', 'Failed to create folders!', '', '', '', '', '', '']);
+      return { 
+        success: false, 
+        message: 'Failed to create folder structure', 
+        step: 'ensureYDFolderStructure_',
+        diagnostic: {
+          objectId: objId,
+          category: catNorm,
+          attemptedPath: YANDEX_ROOT_SOLDER + '/' + objId + '/...'
+        }
+      };
+    }
+    
+    // Remove data URL prefix if present
+    var base64Data = dataUrl.replace(/^data:[^;]+;base64,/, '');
+    debugSh.appendRow([new Date(), 'Base64 length', base64Data.length, '', '', '', '', '', '']);
+    
+    var upRes = ydUploadFile_(folderPath, name, base64Data);
+    debugSh.appendRow([new Date(), 'Upload result', JSON.stringify(upRes), '', '', '', '', '', '']);
+    
+    // 🔥 CHECK IF UPLOAD ACTUALLY SUCCEEDED
+    if (!upRes || !upRes.success) {
+      return { 
+        success: false, 
+        message: upRes ? (upRes.message || 'Upload to Yandex.Disk failed') : 'ydUploadFile_ returned null',
+        step: 'ydUploadFile_',
+        diagnostic: {
+          folderPath: folderPath,
+          fileName: name,
+          objectId: objId,
+          category: catNorm,
+          uploadResponse: upRes
+        }
+      };
+    }
+    
+    var publicUrl = upRes.url || '';
+    var fileId = upRes.path || '';
+    
+    // 🔥 DIAGNOSTIC: Set info for successful upload
+    var diagnosticInfo = {
+      folderPath: folderPath,
+      publicUrl: publicUrl,
+      fileId: fileId,
+      uploadSuccess: true,
+      rootFolder: YANDEX_ROOT_SOLDER,
+      objectId: objId,
+      category: catNorm
+    };
+    
+  } catch (uploadError) {
+    return { 
+      success: false, 
+      message: 'Exception during upload: ' + String(uploadError),
+      step: 'upload_exception',
+      diagnostic: {
+        objectId: objId,
+        category: catNorm,
+        monitoringDate: String(d.monitoring_date || ''),
+        hasDataUrl: !!dataUrl,
+        hasOAuthToken: !!YANDEX_OAUTH_TOKEN,
+        rootFolder: YANDEX_ROOT_SOLDER,
+        error: String(uploadError)
+      }
+    };
+  }
+  
+  var sh = sheet_('photos');
+  if (!sh) { sh = ss_().insertSheet('photos'); sh.appendRow(['timestamp','object_id','category','seq','fileId','fileName','url','comment']); }
+  var hdr = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0] || [];
+  var needComment = indexOf_(hdr,'comment') < 0;
+  var needMonDate = indexOf_(hdr,'monitoring_date') < 0;
+  if (needComment || needMonDate) {
+    hdr = hdr.slice();
+    if (needComment) hdr.push('comment');
+    if (needMonDate) hdr.push('monitoring_date');
+    sh.getRange(1,1,1,hdr.length).setValues([hdr]);
+  }
+  var row = [new Date(), objId, catNorm, seq, fileId, name, publicUrl, comment];
+  if (needMonDate) row.push(String(d.monitoring_date || '').trim());
+  else {
+    var monIdx = indexOf_(hdr,'monitoring_date');
+    if (monIdx >= 0) {
+      while (row.length < (monIdx+1)) row.push('');
+      row[monIdx] = String(d.monitoring_date || '').trim();
+    }
+  }
+  sh.appendRow(row);
+  return { 
+    success: true, 
+    fileId: fileId, 
+    url: publicUrl, 
+    updated: true,
+    diagnostic: diagnosticInfo  // Include folder path and upload details
+  };
+}
+
+function getPhotos_(p) {
+  var objId = String(p.objectId || p.object_id || '');
+  var sh = sheet_('photos');
+  if (!sh) return { success: true, photos: {} };
+  var vals = sh.getDataRange().getValues();
+  var hdr = vals.length ? vals[0] : [];
+  var tsCol = indexOf_(hdr, 'timestamp');
+  var idCol = indexOf_(hdr, 'object_id');
+  var catCol = indexOf_(hdr, 'category');
+  var seqCol = indexOf_(hdr, 'seq');
+  var fileIdCol = indexOf_(hdr, 'fileId');
+  var fileNameCol = indexOf_(hdr, 'fileName');
+  var urlCol = indexOf_(hdr, 'url');
+  var commentCol = indexOf_(hdr, 'comment');
+  var obsCol = indexOf_(hdr, 'obs');
+  var monCol = indexOf_(hdr, 'monitoring_date');
+  var reqMon = asStrDate_(p.monitoring_date || p.date || '');
+  var out = {};
+  for (var r = 1; r < vals.length; r++) {
+    var row = vals[r] || [];
+    var id = idCol >= 0 ? String(row[idCol] || '') : '';
+    if (id !== objId) continue;
+    if (reqMon) {
+      var monStr = monCol >= 0 ? String(row[monCol] || '') : '';
+      if (asStrDate_(monStr) !== reqMon) continue;
+    }
+    var cat = catCol >= 0 ? String(row[catCol] || '') : 'general';
+    var seq = seqCol >= 0 ? String(row[seqCol] || '') : '';
+    var fileId = fileIdCol >= 0 ? String(row[fileIdCol] || '') : '';
+    var fileName = fileNameCol >= 0 ? String(row[fileNameCol] || '') : '';
+    var urlRaw = urlCol >= 0 ? String(row[urlCol] || '') : '';
+    // Use stored Yandex Disk URL only
+    var url = urlRaw || '';
+    var comment = commentCol >= 0 ? String(row[commentCol] || '') : '';
+    // obs removed
+    if (!out[cat]) out[cat] = [];
+    out[cat].push({ seq: seq, fileId: fileId, fileName: fileName, url: url, comment: comment });
+  }
+  return { success: true, photos: out };
+}
+
+function getPhotosLatest_(p) {
+  var objId = String(p.objectId || p.object_id || '');
+  var sh = sheet_('photos');
+  if (!sh) return { success: true, photos: {} };
+  var vals = sh.getDataRange().getValues();
+  var hdr = vals.length ? vals[0] : [];
+  var tsCol = indexOf_(hdr, 'timestamp');
+  var idCol = indexOf_(hdr, 'object_id');
+  var catCol = indexOf_(hdr, 'category');
+  var seqCol = indexOf_(hdr, 'seq');
+  var fileIdCol = indexOf_(hdr, 'fileId');
+  var fileNameCol = indexOf_(hdr, 'fileName');
+  var urlCol = indexOf_(hdr, 'url');
+  var commentCol = indexOf_(hdr, 'comment');
+  var monCol = indexOf_(hdr, 'monitoring_date');
+  var rows = [];
+  for (var r = 1; r < vals.length; r++) {
+    var row = vals[r] || [];
+    var id = idCol >= 0 ? String(row[idCol] || '') : '';
+    if (id !== objId) continue;
+    var tsVal = tsCol >= 0 ? row[tsCol] : '';
+    var ts = (tsVal && Object.prototype.toString.call(tsVal) === '[object Date]') ? tsVal : (tsVal ? new Date(tsVal) : null);
+    var cat = catCol >= 0 ? String(row[catCol] || '') : 'general';
+    var seq = seqCol >= 0 ? String(row[seqCol] || '') : '';
+    var fileId = fileIdCol >= 0 ? String(row[fileIdCol] || '') : '';
+    var fileName = fileNameCol >= 0 ? String(row[fileNameCol] || '') : '';
+    var urlRaw = urlCol >= 0 ? String(row[urlCol] || '') : '';
+    var url = urlRaw || '';
+    var comment = commentCol >= 0 ? String(row[commentCol] || '') : '';
+    var monStr = monCol >= 0 ? String(row[monCol] || '') : '';
+    rows.push({ ts: ts ? ts.getTime() : 0, day: ts ? formatDateRU_(ts) : '', mon: monStr, cat: cat, seq: seq, fileId: fileId, fileName: fileName, url: url, comment: comment });
+  }
+  var latestDay = '';
+  var maxTs = 0;
+  for (var i = 0; i < rows.length; i++) { if (rows[i].ts > maxTs) { maxTs = rows[i].ts; latestDay = rows[i].day; } }
+  var shDb = sheet_('database');
+  if (shDb) {
+    var vdb = shDb.getDataRange().getValues();
+    var hdb1 = vdb[0] || [];
+    var hdb2 = vdb.length > 1 ? vdb[1] : [];
+    var idxId1 = indexOf_(hdb1,'object_id');
+    var idxId2 = indexOf_(hdb2,'object_id');
+    var idxMon1 = indexOf_(hdb1,'monitoring_date');
+    var idxMon2 = indexOf_(hdb2,'monitoring_date');
+    var latestMon = '';
+    for (var rr = 2; rr < vdb.length; rr++) {
+      var rw = vdb[rr] || [];
+      var oid1 = idxId1 >= 0 ? String(rw[idxId1] || '') : '';
+      var oid2 = idxId2 >= 0 ? String(rw[idxId2] || '') : '';
+      var oid = oid1 || oid2 || '';
+      if (oid === objId) {
+        var md1 = idxMon1 >= 0 ? String(rw[idxMon1] || '') : '';
+        var md2 = idxMon2 >= 0 ? String(rw[idxMon2] || '') : '';
+        latestMon = md1 || md2 || latestMon;
+      }
+    }
+    if (latestMon) latestDay = latestMon;
+  }
+  var out = {};
+  rows
+    .filter(function(it){ return latestDay ? (it.mon ? (it.mon === latestDay) : false) : true; })
+    .sort(function(a,b){ var ca = a.cat.localeCompare(b.cat); if (ca !== 0) return ca; var sa = parseInt(a.seq||'0',10); var sb = parseInt(b.seq||'0',10); return sa - sb; })
+    .forEach(function(it){
+      if (!out[it.cat]) out[it.cat] = [];
+      out[it.cat].push({ seq: it.seq, fileId: it.fileId, fileName: it.fileName, url: it.url, comment: it.comment, obs: it.obs, timestamp: it.ts });
+    });
+  return { success: true, photos: out };
+}
+
+/**
+ * Get object history/checklist data from database sheet
+ * Returns rows with column HEADERS as keys (not col_1, col_2, etc.)
+ */
+function getObjectHistory(p) {
+  var objectId = String(p.object_id || p.objectId || '').trim();
+  var limit = parseInt(p.limit || 10, 10);
+  
+  var sh = sheet_('database');
+  if (!sh) return json_({ success: false, message: 'database sheet not found' });
+  
+  var vals = sh.getDataRange().getValues();
+  if (vals.length < 5) return json_({ success: true, rows: [] }); // Not enough rows
+  
+  // Row 4 (index 3) contains the headers (id, дата, Инспектор, 2.1.1, 2.1.2, etc.)
+  var headers = vals[3] || [];
+  
+  // Data starts from row 6 (index 5)
+  var rows = [];
+  var idColIndex = -1;
+  
+  // Find id column index
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i]).toLowerCase().trim();
+    if (h === 'id' || h=== '№' || h === 'object_id') {
+      idColIndex = i;
+      break;
+    }
+  }
+  
+  if (idColIndex < 0) {
+    // Assume first column is id
+    idColIndex = 0;
+  }
+  
+  // Read data rows and filter by object_id
+  for (var r = 5; r < vals.length && rows.length < limit; r++) {
+    var row = vals[r] || [];
+    var rowId = String(row[idColIndex] || '').trim();
+    
+    if (objectId && rowId !== objectId) continue;
+    
+    // Build object with headers as keys
+    var obj = {};
+    for (var c = 0; c < headers.length && c < row.length; c++) {
+      var headerName = String(headers[c] || '').trim();
+      if (!headerName) continue;
+      obj[headerName] = row[c];
+    }
+    
+    rows.push(obj);
+  }
+  
+  return json_({ success: true, rows: rows });
+}
+
+
+function ensureSheet_(name, headers) {
+  var sh = sheet_(name);
+  if (!sh) { sh = ss_().insertSheet(name); }
+  var lr = sh.getLastRow();
+  if (lr === 0) { sh.getRange(1,1,1,headers.length).setValues([headers]); }
+  else {
+    var lastCol = sh.getLastColumn();
+    if (lastCol <= 0) { sh.getRange(1,1,1,headers.length).setValues([headers]); return sh; }
+    var hdr = sh.getRange(1,1,1,lastCol).getValues()[0] || [];
+    var same = hdr.length === headers.length;
+    if (same) {
+      for (var i=0;i<headers.length;i++) { if (String(hdr[i]) !== String(headers[i])) { same = false; break; } }
+    }
+    if (!same) sh.getRange(1,1,1,headers.length).setValues([headers]);
+  }
+  return sh;
+}
+
+function colIndexByHeader_(sheet, headerName) {
+  var lastCol = sheet.getLastColumn();
+  if (lastCol <= 0) return -1;
+  var vals = sheet.getRange(1,1,2,lastCol).getValues();
+  var r1 = vals[0] || [];
+  var r2 = vals[1] || [];
+  var target = String(headerName).trim();
+  for (var i=0;i<lastCol;i++) {
+    var h1 = String(r1[i] || '').trim();
+    var h2 = String(r2[i] || '').trim();
+    if (h1 === target || h2 === target) return i+1;
+  }
+  return -1;
+}
+
+function colIndexByAnyHeader_(sheet, headerNames) {
+  var lastCol = sheet.getLastColumn();
+  if (lastCol <= 0) return -1;
+  var vals = sheet.getRange(1,1,2,lastCol).getValues();
+  var r1 = vals[0] || [];
+  var r2 = vals[1] || [];
+  var names = (headerNames || []).map(function(s){ return String(s).trim().toLowerCase(); });
+  for (var i=0;i<lastCol;i++) {
+    var h1 = String(r1[i] || '').trim().toLowerCase();
+    var h2 = String(r2[i] || '').trim().toLowerCase();
+    for (var j=0;j<names.length;j++) {
+      var t = names[j];
+      if (h1 === t || h2 === t) return i+1;
+    }
+  }
+  return -1;
+}
+// ========================================
+// ИНСТРУКЦИЯ ПО ОБНОВЛЕНИЮ GAS.txt
+// ========================================
+
+/* 
+ * ВАЖНО: doGet и doPost уже обновлены автоматически!
+ * Строки 181-182 и 216 уже содержат новые routes.
+ * 
+ * Осталось только скопировать 3 функции ниже
+ * и вставить их В КОНЕЦ файла GAS.txt (после строки 1211)
+ */
+
+// Скопируйте ВСЁ ЧТО НИЖЕ (включая комментарии) и вставьте в конец GAS.txt:
+
+// ========================================
+// НОВЫЕ МЕТОДЫ ДЛЯ ИЕРАРХИЧЕСКИХ ЧЕК-ЛИСТОВ
+// ========================================
+
+/**
+ * Получить схему чек-листа из листа database
+ * Читает строки 1-4: ключи, веса, targets, названия
+ */
+function getChecklistSchema() {
+  try {
+    var sh = sheet_('database');
+    if (!sh) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        error: 'sheet_database_not_found',
+        message: 'Sheet "database" not found in spreadsheet'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    var data = sh.getDataRange().getValues();
+    if (data.length < 4) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        error: 'not_enough_rows',
+        message: 'Database sheet has ' + data.length + ' rows, need at least 4'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    var row1 = data[0]; // Ключи (WBS коды: 1, 2, 2.1.1 и т.д.)
+    var row2 = data[1]; // Веса в процентах
+    var row3 = data[2]; // Targets (100%)
+    var row4 = data[3]; // Русские названия
+    
+    var items = [];
+    var itemsMap = {}; // Для быстрого поиска существующих элементов
+    
+    // Шаг 1: Собираем все существующие элементы из таблицы
+    // Начинаем с колонки D (индекс 3) - пропускаем A,B,C (id, резерв, дата)
+    for (var i = 3; i < row1.length; i++) {
+      var wbsKey = String(row1[i] || '').trim();
+      var label = String(row4[i] || '').trim();
+      var weightStr = String(row2[i] || '').trim();
+      
+      if (!wbsKey || !label) continue; // Пропускаем пустые
+      
+      // Парсим вес (убираем знак % если есть)
+      var weight = 0;
+      if (weightStr) {
+        var numStr = weightStr.replace('%', '').replace(',', '.').trim();
+        weight = parseFloat(numStr) || 0;
+      }
+      
+      // Определяем уровень по WBS коду
+      var level = 0;
+      var dotCount = (wbsKey.match(/\./g) || []).length;
+      if (dotCount === 2) {
+        level = 2; // 6.1.1
+      } else if (dotCount === 1) {
+        level = 1; // 6.1
+      } else {
+        level = 0; // 6
+      }
+      
+      // Создаем ключ для JS (заменяем точки на подчеркивания)
+      var key = wbsKey.replace(/\./g, '_');
+      
+      var item = {
+        key: key,
+        wbs: wbsKey,
+        label: label,
+        level: level,
+        weight: weight,
+        parent: null, // Установим позже
+        auto_calculated: level < 2 // Уровни 0 и 1 рассчитываются автоматически
+      };
+      
+      items.push(item);
+      itemsMap[key] = item;
+    }
+    
+    // Шаг 2: Автоматически создаем отсутствующие промежуточные узлы
+    var createdNodes = {}; // Чтобы не создавать дубликаты
+    
+    for (var j = 0; j < items.length; j++) {
+      var item = items[j];
+      var wbs = item.wbs;
+      var parts = wbs.split('.');
+      
+      // Создаем промежуточные уровни если их нет
+      if (parts.length === 3) {
+        // Для 2.1.1 нужен родитель 2.1
+        var level1Wbs = parts[0] + '.' + parts[1];
+        var level1Key = parts[0] + '_' + parts[1];
+        
+        if (!itemsMap[level1Key] && !createdNodes[level1Key]) {
+          // Создаем промежуточный узел уровня 1
+          var level1Item = {
+            key: level1Key,
+            wbs: level1Wbs,
+            label: 'Подраздел ' + level1Wbs, // Авто-название
+            level: 1,
+            weight: 0, // Будет пересчитан
+            parent: parts[0], // Родитель - уровень 0
+            auto_calculated: true
+          };
+          items.push(level1Item);
+          itemsMap[level1Key] = level1Item;
+          createdNodes[level1Key] = true;
+        }
+      }
+    }
+    
+    // Шаг 3: Устанавливаем родителей для всех элементов
+    for (var k = 0; k < items.length; k++) {
+      var item = items[k];
+      var wbs = item.wbs;
+      var parts = wbs.split('.');
+      
+      if (item.level === 1) {
+        // Родитель - уровень 0 (первая часть WBS)
+        item.parent = parts[0];
+      } else if (item.level === 2) {
+        // Родитель - уровень 1 (X_Y)
+        item.parent = parts[0] + '_' + parts[1];
+      } else {
+        // Уровень 0 - корень (нет родителя)
+        item.parent = null;
+      }
+    }
+    
+    var result = {
+      success: true,
+      schema: { 
+        items: items 
+      },
+      debug: {
+        total_items: items.length,
+        created_nodes: Object.keys(createdNodes).length
+      }
+    };
+    
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+    
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: 'exception',
+      message: error.toString(),
+      stack: error.stack || 'no stack trace'
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Получить конфигурацию адаптации чек-листа для конкретного объекта
+ * Disabled keys хранятся в database_custom как "-"
+ */
+function getObjectChecklistConfig(p) {
+  try {
+    var objectId = String(p.objectId || '');
+    if (!objectId) {
+      return json_({ success: false, message: 'objectId required' });
+    }
+    
+    var sh = sheet_('database_custom');
+    if (!sh) {
+      // Лист не создан - возвращаем пустую конфигурацию
+      return json_({
+        success: true,
+        object_id: objectId,
+        disabled_keys: []
+      });
+    }
+    
+    var data = sh.getDataRange().getValues();
+    if (data.length < 5) {
+      // Нет данных
+      return json_({
+        success: true,
+        object_id: objectId,
+        disabled_keys: []
+      });
+    }
+    
+    var row1 = data[0]; // Ключи
+    var row4 = data[3]; // Названия
+    
+    // Ищем object_id в колонке A
+    var disabledKeys = [];
+    for (var i = 4; i < data.length; i++) {
+      var rowObjId = String(data[i][0] || '').trim();
+      if (rowObjId === objectId) {
+        // Найдена строка с данным объектом
+        // Проверяем все колонки начиная с D (индекс 3)
+        for (var j = 3; j < data[i].length; j++) {
+          var cellValue = String(data[i][j] || '').trim();
+          if (cellValue === '-') {
+            // Этот элемент отключен
+            var wbsKey = String(row1[j] || '').trim();
+            if (wbsKey) {
+              var key = wbsKey.replace(/\./g, '_');
+              disabledKeys.push(key);
+            }
+          }
+        }
+        break;
+      }
+    }
+    
+    return json_({
+      success: true,
+      object_id: objectId,
+      disabled_keys: disabledKeys
+    });
+    
+  } catch (error) {
+    return json_({
+      success: false,
+      message: String(error)
+    });
+  }
+}
+
+/**
+ * Сохранить конфигурацию адаптации чек-листа для объекта
+ * Создает или обновляет строку в database_custom
+ */
+function saveObjectChecklistConfig(d) {
+  try {
+    var objectId = String(d.object_id || '');
+    var disabledKeys = Array.isArray(d.disabled_keys) ? d.disabled_keys : [];
+    
+    if (!objectId) {
+      return { success: false, message: 'object_id required' };
+    }
+    
+    var sh = sheet_('database_custom');
+    if (!sh) {
+      // Создаем лист database_custom если не существует
+      // Копируем структуру из database
+      var dbSh = sheet_('database');
+      if (!dbSh) {
+        return { success: false, message: 'database sheet not found' };
+      }
+      
+      sh = ss_().insertSheet('database_custom');
+      
+      // Копируем первые 4 строки (headers) из database
+      var dbData = dbSh.getDataRange().getValues();
+      if (dbData.length >= 4) {
+        for (var r = 0; r < 4; r++) {
+          sh.getRange(r + 1, 1, 1, dbData[r].length).setValues([dbData[r]]);
+        }
+      }
+    }
+    
+    var data = sh.getDataRange().getValues();
+    var row1 = data[0]; // Ключи
+    
+    // Ищем существующую строку с objectId
+    var rowIndex = -1;
+    for (var i = 4; i < data.length; i++) {
+      var rowObjId = String(data[i][0] || '').trim();
+      if (rowObjId === objectId) {
+        rowIndex = i + 1; // 1-based для getRange
+        break;
+      }
+    }
+    
+    // Преобразуем disabled_keys обратно в WBS формат для поиска
+    var disabledWBS = disabledKeys.map(function(k) {
+      return k.replace(/_/g, '.');
+    });
+    
+    var newRow = [];
+    
+    // Заполняем строку
+    for (var j = 0; j < row1.length; j++) {
+      if (j === 0) {
+        // Колонка A - object_id
+        newRow.push(objectId);
+      } else if (j === 1) {
+        // Колонка B - резерв (пустая)
+        newRow.push('');
+      } else if (j === 2) {
+        // Колонка C - дата
+        newRow.push(new Date());
+      } else {
+        // Колонки D+ - элементы чек-листа
+        var wbsKey = String(row1[j] || '').trim();
+        if (disabledWBS.indexOf(wbsKey) >= 0) {
+          newRow.push('-'); // Помечаем как отключенный
+        } else {
+          newRow.push(''); // Пустое значение (не заполнено)
+        }
+      }
+    }
+    
+    if (rowIndex > 0) {
+      // Обновляем существующую строку
+      sh.getRange(rowIndex, 1, 1, newRow.length).setValues([newRow]);
+    } else {
+      // Добавляем новую строку
+      sh.appendRow(newRow);
+    }
+    
+    return { success: true, message: 'config saved' };
+    
+  } catch (error) {
+    return { success: false, message: String(error) };
+  }
+}
+
+// ============================================
+// CHECKLIST API FUNCTIONS FOR GAS
+// ============================================
+
+/**
+ * Get the hierarchical checklist schema from the "database" sheet
+ * Row 1: Technical keys (dot-notation like 1, 2.1, 2.1.1)
+ * Row 4: Human-readable labels
+ * Columns D, E, F are special fields (mobilization, skud, grunt) and excluded from hierarchy
+ */
+function getChecklistSchema() {
+  try {
+    var sh = sheet_('database');
+    if (!sh || sh.getLastRow() < 4) {
+      return json_({ success: false, message: 'database sheet not found or has less than 4 rows' });
+    }
+    
+    // Get first 4 rows (row 1=keys, row 2=weights, row 3=sums, row 4=labels)
+    var data = sh.getRange(1, 1, 4, sh.getLastColumn()).getValues();
+    var row1 = data[0]; // Technical keys
+    var row2 = data[1]; // Weights (percentages)
+    var row4 = data[3]; // Human-readable labels
+    
+    // Extract special fields from columns D (3), E (4), F (5)
+    var specialFields = {
+      mobilization: { key: String(row1[3] || '').trim(), label: String(row4[3] || '').trim() },
+      skud: { key: String(row1[4] || '').trim(), label: String(row4[4] || '').trim() },
+      grunt: { key: String(row1[5] || '').trim(), label: String(row4[5] || '').trim() }
+    };
+    
+    var items = [];
+    
+    // Skip first 6 columns (id, дата, инспектор, mobilization, skud, grunt)
+    // Start from column G (index 6)
+    for (var i = 6; i < row1.length; i++) {
+      var key = String(row1[i]).trim();
+      var label = String(row4[i]).trim();
+      
+      if (!key || key === '' || !label || label === '') continue;
+      
+      // Parse level from key structure (dot-notation):
+      // Level 0: "1", "2", "3"                 -> 1 part
+      // Level 1: "2.1", "3.1", "4.1"          -> 2 parts
+      // Level 2: "2.1.1", "3.1.2", "5.2.1"    -> 3 parts
+      var parts = key.split('.');
+      var level = parts.length - 1;
+      
+      if (level > 2) level = 2; // Cap at level 2
+      
+      // Determine parent based on dot notation (ensure string type)
+      var parent = null;
+      if (level === 1) {
+        // Parent is level 0: "2.1" has parent "2"
+        parent = String(parts[0]);
+      } else if (level === 2) {
+        // Parent is level 1: "2.1.1" has parent "2.1"
+        parent = String(parts[0]) + '.' + String(parts[1]);
+      }
+      
+      // Read weight from Row 2
+      var weight = 0;
+      if (row2[i] !== undefined && row2[i] !== null && row2[i] !== '') {
+        weight = Number(row2[i]) || 0;
+      }
+      
+      items.push({
+        key: String(key),
+        wbs: String(key),
+        label: label,
+        level: level,
+        weight: weight, // From Row 2, not calculated
+        parent: parent,
+        auto_calculated: (level < 2)
+      });
+    }
+    
+    // Calculate weights AND fix parent relationships for missing intermediate levels
+    var parentCounts = {};
+    
+    // First pass: fix parent relationships
+    // If intermediate parent doesn't exist, link directly to grandparent
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].level === 2 && items[i].parent) {
+        // Check if parent exists
+        var parentExists = false;
+        for (var j = 0; j < items.length; j++) {
+          if (items[j].key === items[i].parent) {
+            parentExists = true;
+            break;
+          }
+        }
+        
+        // If parent doesn't exist, set parent to grandparent (first number)
+        if (!parentExists) {
+          var parts = String(items[i].key).split('.');
+          items[i].parent = String(parts[0]); // e.g., 2.1.1 -> parent = 2
+        }
+      }
+      
+      // Set all level 0 items (except '1') as children of '1' (СТРОИТЕЛЬНАЯ ГОТОВНОСТЬ)
+      if (items[i].level === 0 && items[i].key !== '1') {
+        items[i].parent = '1';
+      }
+    }
+    
+    
+    // Note: Weights are now read directly from Row 2, no need to calculate
+    // The weight represents the contribution of this item to its parent
+    
+    
+    return json_({
+      success: true,
+      schema: {
+        items: items,
+        specialFields: specialFields
+      },
+      debug: {
+        total_items: items.length,
+        created_nodes: items.length,
+        special_fields: specialFields
+      }
+    });
+  } catch (error) {
+    return json_({
+      success: false,
+      message: 'Error loading checklist schema: ' + String(error),
+      error: String(error)
+    });
+  }
+}
+
+/**
+ * Get the object-specific checklist configuration (disabled items)
+ */
+function getObjectChecklistConfig(p) {
+  try {
+    var objectId = String(p.objectId || p.object_id || '');
+    
+    if (!objectId) {
+      return json_({ success: true, object_id: '', disabled_keys: [] });
+    }
+    
+    // Try to load from checklist_config sheet
+    var ss = ss_();
+    var configSheet = ss.getSheetByName('checklist_config');
+    
+    if (!configSheet || configSheet.getLastRow() < 2) {
+      return json_({
+        success: true,
+        object_id: objectId,
+        disabled_keys: []
+      });
+    }
+    
+    // Find row for this object
+    var data = configSheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === objectId) {
+        var disabledKeysJson = String(data[i][1] || '[]');
+        var disabledKeys = [];
+        try {
+          disabledKeys = JSON.parse(disabledKeysJson);
+        } catch (e) {
+          disabledKeys = [];
+        }
+        
+        return json_({
+          success: true,
+          object_id: objectId,
+          disabled_keys: disabledKeys
+        });
+      }
+    }
+    
+    // Not found - return empty
+    return json_({
+      success: true,
+      object_id: objectId,
+      disabled_keys: []
+    });
+  } catch (error) {
+    return json_({
+      success: false,
+      message: 'Error loading: ' + String(error)
+    });
+  }
+}
+
+/**
+ * Save the object-specific checklist configuration
+ */
+function saveObjectChecklistConfig(payload) {
+  try {
+    var objectId = String(payload.object_id || '');
+    var disabledKeys = payload.disabled_keys || [];
+    
+    if (!objectId) {
+      return { success: false, message: 'object_id is required' };
+    }
+    
+    // Get or create checklist_config sheet
+    var ss = ss_();
+    var configSheet = ss.getSheetByName('checklist_config');
+    if (!configSheet) {
+      configSheet = ss.insertSheet('checklist_config');
+      configSheet.appendRow(['object_id', 'disabled_keys', 'last_updated']);
+    }
+    
+    // Find existing row
+    var data = configSheet.getDataRange().getValues();
+    var rowIndex = -1;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === objectId) {
+        rowIndex = i + 1;
+        break;
+      }
+    }
+    
+    var disabledKeysJson = JSON.stringify(disabledKeys);
+    var timestamp = new Date();
+    
+    if (rowIndex > 0) {
+      configSheet.getRange(rowIndex, 2).setValue(disabledKeysJson);
+      configSheet.getRange(rowIndex, 3).setValue(timestamp);
+    } else {
+      configSheet.appendRow([objectId, disabledKeysJson, timestamp]);
+    }
+    
+    return {
+      success: true,
+      object_id: objectId,
+      disabled_keys: disabledKeys,
+      saved_count: disabledKeys.length
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: 'Error saving: ' + String(error)
+    };
+  }
+}
+
+/**
+ * Save checklist data to database sheet
+ */
+function saveChecklist_(payload) {
+  try {
+    var sh = sheet_('database');
+    if (!sh) {
+      return { success: false, message: 'database sheet not found' };
+    }
+    
+    var objectId = String(payload.object_id || '');
+    if (!objectId) {
+      return { success: false, message: 'object_id is required' };
+    }
+    
+    // Get all data
+    var data = sh.getDataRange().getValues();
+    if (data.length < 4) {
+      return { success: false, message: 'database sheet has less than 4 rows' };
+    }
+    
+    var row1 = data[0]; // Technical keys
+    var row4 = data[3]; // Column headers (includes id, дата, etc.)
+    
+    // Find object_id column (should be column A, index 0)
+    var objectIdCol = 0;
+    
+    // Find existing row for this object
+    var rowIndex = -1;
+    for (var i = 4; i < data.length; i++) {
+      if (String(data[i][objectIdCol]) === objectId) {
+        rowIndex = i + 1; // 1-indexed for sheet
+        break;
+      }
+    }
+    
+    // Build new row
+    var newRow = [];
+    var colorRanges = []; // Track cells that need color formatting
+    
+    for (var col = 0; col < row1.length; col++) {
+      if (col === 0) {
+        // Column A: object_id
+        newRow.push(objectId);
+      } else if (col === 1) {
+        // Column B: дата
+        newRow.push(payload.monitoring_date || new Date());
+      } else if (col === 2) {
+        // Column C: inspector
+        newRow.push(payload.inspector || '');
+      } else if (col === 3) {
+        // Column D: mobilization (number)
+        var mobValue = payload.mobilization !== undefined ? payload.mobilization : '';
+        newRow.push(mobValue);
+      } else if (col === 4) {
+        // Column E: skud (boolean - true=работает=green, false=не работает=red)
+        var skudValue = payload.skud !== undefined ? payload.skud : false;
+        newRow.push(skudValue ? 'Работает' : 'Не работает');
+        colorRanges.push({ col: col, color: skudValue ? '#d4edda' : '#f8d7da' }); // green : red
+      } else if (col === 5) {
+        // Column F: grunt (boolean - false=отсутствуют=green, true=навалы=red)
+        var gruntValue = payload.grunt !== undefined ? payload.grunt : false;
+        newRow.push(gruntValue ? 'Навалы' : 'Отсутствуют');
+        colorRanges.push({ col: col, color: gruntValue ? '#f8d7da' : '#d4edda' }); // red : green
+      } else {
+        // Column G+: checklist items
+        var key = String(row1[col]).trim();
+        if (key && payload[key] !== undefined) {
+          newRow.push(payload[key]);
+        } else {
+          // Keep existing value if available
+          if (rowIndex > 0) {
+            newRow.push(data[rowIndex - 1][col]);
+          } else {
+            newRow.push('');
+          }
+        }
+      }
+    }
+    
+    if (rowIndex > 0) {
+      // Update existing row
+      sh.getRange(rowIndex, 1, 1, newRow.length).setValues([newRow]);
+      
+      // Apply color formatting to special fields
+      for (var i = 0; i < colorRanges.length; i++) {
+        sh.getRange(rowIndex, colorRanges[i].col + 1).setBackground(colorRanges[i].color);
+      }
+    } else {
+      // Append new row
+      sh.appendRow(newRow);
+      var lastRow = sh.getLastRow();
+      
+      // Apply color formatting to special fields
+      for (var i = 0; i < colorRanges.length; i++) {
+        sh.getRange(lastRow, colorRanges[i].col + 1).setBackground(colorRanges[i].color);
+      }
+    }
+    
+    return {
+      success: true,
+      message: 'Checklist saved successfully',
+      object_id: objectId
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: 'Error saving checklist: ' + String(error),
+      error: String(error)
+    };
+  }
+}
+/**
+ * Get object history - FINAL VERSION
+ */
+function getObjectHistory(p) {
+  console.log('getObjectHistory called with:', JSON.stringify(p));
+  try {
+    const objectId = String(p.object_id || '').trim();
+    console.log('objectId extracted:', objectId);
+    if (!objectId) {
+      console.log('No objectId, returning error');
+      return json_({ success: false, message: 'object_id required' });
+    }
+    
+    
+    const sh = sheet_('database');
+    if (!sh) return json_({ success: false, message: 'database sheet not found' });
+    
+    const allData = sh.getDataRange().getValues();
+    const sheetName = sh.getName();
+    const totalRows = allData.length;
+    const totalCols = allData.length > 0 ? allData[0].length : 0;
+    
+    // Debug: show what we got
+    if (totalRows < 2) {
+      return json_({ 
+        success: false, 
+        message: 'Sheet has less than 2 rows',
+        debug: { sheetName: sheetName, totalRows: totalRows, totalCols: totalCols }
+      });
+    }
+    
+    // Header is in row 4 (index 3) - columns: id, дата, Инспектор, 2.1.1, 2.1.2, etc.
+    // Row 5 (index 4) has labels: "id", "date", "Inspector", etc - use to find ID column
+    const labelRow = allData[3];
+    // Row 2 (index 1) has codes: 1, 2, 2.1.1, 2.1.2 - use for column names  
+    const codeRow = allData[0];
+    
+    // Find ID column by searching for "id" in label row
+    var idColIndex = -1;
+    for (var k = 0; k < labelRow.length; k++) {
+      var lbl = String(labelRow[k] || '').toLowerCase().trim();
+      if (lbl === 'id') {
+        idColIndex = k;
+        break;
+      }
+    }
+    if (idColIndex < 0) idColIndex = 0; // Fallback
+    
+    // Combine headers: use code from row 2, fallback to label from row 5
+    const header = [];
+    for (var h = 0; h < Math.max(codeRow.length, labelRow.length); h++) {
+      var cd = String(codeRow[h] || '').trim();
+      var lb = String(labelRow[h] || '').trim();
+      header[h] = cd || lb || ('col_' + h);
+    }
+    
+    // Debug info to return in response
+    var debugInfo = {
+      sheetName: sheetName,
+      totalRows: totalRows,
+      totalCols: totalCols,
+      idColIndex: idColIndex,
+      idColLabel: labelRow[idColIndex],
+      headerSample: header.slice(0, 10),
+      searchingFor: objectId
+    };
+    
+    // Search data starting from row 5 (index 4) where object data begins
+    const dataStartRow = 4; // Row 5 is first data row
+    const result = [];
+    for (var i = dataStartRow; i < allData.length; i++) {
+      const row = allData[i];
+      
+      // Skip empty rows
+      if (!row || row.length === 0 || !row[idColIndex]) {
+        continue;
+      }
+      
+      const rowId = String(row[idColIndex]).trim();
+      
+      // Match both string and number comparison
+      if (rowId === objectId || Number(rowId) === Number(objectId)) {
+        const rowObj = {};
+        for (var j = 0; j < Math.min(header.length, row.length); j++) {
+          const colName = String(header[j] || 'col_' + j);
+          rowObj[colName] = row[j];
+        }
+        result.push(rowObj);
+      }
+    }
+    
+    console.log('Found', result.length, 'matching rows');
+    const response = { 
+      success: true, 
+      rows: result, 
+      total: result.length,
+      searched_from_row: 7,
+      version: 'v78_correct_structure',
+      debug: debugInfo,
+      foundRows: result.length
+    };
+    return json_(response);
+  } catch (error) {
+    console.log('Error in getObjectHistory:', String(error));
+    return json_({ success: false, message: 'Error: ' + String(error) });
+  }
+}
+
+/**
+ * Get checklist schema from Google Sheets
+ * Builds hierarchical structure from row 1 (codes), row 2 (weights%), row 4 (names)
+ * Handles missing intermediate levels (e.g., has "2" and "2.1.1" but no "2.1")
+ */
+function getChecklistSchema(p) {
+  try {
+    const sh = sheet_('database');
+    if (!sh) return json_({ success: false, message: 'database sheet not found' });
+    
+    const allData = sh.getDataRange().getValues();
+    if (allData.length < 4) {
+      return json_({ success: false, message: 'Sheet needs at least 4 rows for schema' });
+    }
+    
+    // Row 1 (index 0): CODES - 1, 2, 2.1.1, 2.1.2, 2.1.3, etc.
+    // Row 2 (index 1): WEIGHTS% - 5%, 100%, 5%, 80%, 5%, 10%, etc.
+    // Row 4 (index 3): NAMES - "id", "дата", "СТРОИТЕЛЬНАЯ", "ПОДГОТОВИТЕЛЬНЫЙ", etc.
+    
+    const codeRow = allData[0];
+    const weightRow = allData[1];
+    const nameRow = allData[3];
+    
+    const items = [];
+    const codeSet = new Set(); // Track which codes exist
+    
+    // State for code inference
+    let lastCode = '';
+    
+    // First pass: collect all valid codes and create items
+    for (var i = 0; i < codeRow.length; i++) {
+      var code = String(codeRow[i] || '').trim();
+      const name = String(nameRow[i] || code).trim();
+      const weightValue = weightRow[i];
+      
+      // Fallback 1: Extract from name
+      if (!code || !/^\d+(\.\d+)*$/.test(code)) {
+        const match = name.match(/^(\d+(\.\d+)*)/);
+        if (match) code = match[1];
+      }
+
+      // Fallback 2: Infer from lastCode if still empty but looks like a valid item (has weight or meaningful name)
+      // Only infer if we have a parent context (lastCode is Level 1 or 2)
+      if ((!code || !/^\d+(\.\d+)*$/.test(code)) && lastCode) {
+         // Check if this looks like a continuation item (e.g. has weight or isn't just "id")
+         if (name && name !== 'id') {
+             const dotCount = (lastCode.match(/\./g) || []).length;
+             let prefix = '';
+             let nextIndex = 1;
+             
+             if (dotCount === 1) { // 6.1 -> 6.1.1
+                 prefix = lastCode;
+             } else if (dotCount === 2) { // 6.1.1 -> 6.1.2
+                 const parts = lastCode.split('.');
+                 prefix = parts[0] + '.' + parts[1];
+                 nextIndex = parseInt(parts[2], 10) + 1;
+             }
+             
+             if (prefix) {
+                 code = prefix + '.' + nextIndex;
+             }
+         }
+      }
+      
+      // Skip strings that are definitely not checklist items
+      if (!code || code === 'id' || code === 'дата' || code === '№' || items.some(it => it.key === code)) continue;
+
+      // Check if it looks like a checklist code (contains digits and optional dots)
+      if (!/^\d+(\.\d+)*$/.test(code)) continue;
+      
+      lastCode = code; // Update last valid code
+      
+      codeSet.add(code);
+      
+      // Parse weight - Google Sheets returns percentage as decimal (0.25 for 25%)
+      var weight = 0;
+      if (weightValue !== null && weightValue !== undefined && weightValue !== '') {
+        if (typeof weightValue === 'number') {
+          // Already decimal from Google Sheets (e.g., 0.25 for 25%)
+          weight = weightValue;
+        } else {
+          // String like "25%" - extract number and convert
+          const weightStr = String(weightValue).trim();
+          const match = weightStr.match(/(\d+(\.\d+)?)/);
+          if (match) {
+            weight = parseFloat(match[1]) / 100;
+          }
+        }
+      }
+      
+      // Determine level by counting dots
+      const dotCount = (code.match(/\./g) || []).length;
+      const level = dotCount; // 0 dots = level 0, 1 dot = level 1, 2 dots = level 2
+      
+      items.push({
+        key: code,
+        label: name,
+        level: null, // Will calculate based on parent hierarchy
+        weight: weight,
+        parent: null, // Will set in second pass
+        auto_calculated: false, // Will set in third pass
+        value: 0
+      });
+    }
+    
+    // Second pass: determine parent for each item
+    items.forEach(function(item) {
+      // For "2.1.1", try to find parent in this order: "2.1" -> "2" -> null
+      // For "2", try to find parent "1" or null
+      const parts = item.key.split('.');
+      
+      // Try removing last segment iteratively
+      for (var p = parts.length - 1; p > 0; p--) {
+        const candidateParent = parts.slice(0, p).join('.');
+        if (codeSet.has(candidateParent)) {
+          item.parent = candidateParent;
+          return;
+        }
+      }
+      
+      // No parent found via dotted notation
+      // Link all top-level items (except "1") to "1" for calculation
+      if (item.key !== '1' && codeSet.has('1')) {
+          item.parent = '1';
+      } else {
+          item.parent = null;
+      }
+    });
+    
+    // 2.5 pass: Calculate levels based on parent hierarchy
+    const itemMap = {};
+    items.forEach(function(item) {
+      itemMap[item.key] = item;
+    });
+    
+    function calculateLevel(item) {
+      if (item.level !== null) return item.level;
+      if (!item.parent) {
+        item.level = 0;
+        return 0;
+      }
+      const parentItem = itemMap[item.parent];
+      if (!parentItem) {
+        item.level = 0;
+        return 0;
+      }
+      item.level = calculateLevel(parentItem) + 1;
+      return item.level;
+    }
+    
+    items.forEach(function(item) {
+      calculateLevel(item);
+    });
+    
+    // Third pass: mark items with children as auto_calculated
+    const itemsWithChildren = new Set();
+    items.forEach(function(item) {
+      if (item.parent) {
+        itemsWithChildren.add(item.parent);
+      }
+    });
+    
+    items.forEach(function(item) {
+      if (itemsWithChildren.has(item.key)) {
+        item.auto_calculated = true;
+      }
+    });
+    
+    return json_({
+      success: true,
+      schema: {
+        items: items,
+        version: 'v1_smart_hierarchy'
+      }
+    });
+    
+  } catch (error) {
+    return json_({ success: false, message: 'Error: ' + String(error) });
+  }
+}
+
+
+// ============================================================================
+// GET LAST MONITORING - Load most recent checklist data for object
+// ============================================================================
+
+function getLastMonitoring(p) {
+  try {
+    var objectId = String(p.object_id || '').trim();
+    if (!objectId) {
+      return json_({ success: false, message: 'object_id required' });
+    }
+    
+    Logger.log('getLastMonitoring for object_id: ' + objectId);
+    
+    var sh = sheet_('database');
+    if (!sh) {
+      return json_({ success: false, message: 'database sheet not found' });
+    }
+    
+    // Get all data
+    var lastRow = sh.getLastRow();
+    var lastCol = sh.getLastColumn();
+    
+    if (lastRow < 5) {
+      return json_({ success: false, message: 'No data in database' });
+    }
+    
+    // Get headers from row 4
+    var headers = sh.getRange(4, 1, 1, lastCol).getValues()[0];
+    
+    // Find id column index
+    var idColIndex = -1;
+    for (var i = 0; i < headers.length; i++) {
+      if (headers[i] === 'id' || headers[i] === 'object_id') {
+        idColIndex = i;
+        break;
+      }
+    }
+    
+    if (idColIndex === -1) {
+      return json_({ success: false, message: 'id column not found in headers' });
+    }
+    
+    // Search for last row with matching object_id (from bottom up)
+    var data = sh.getRange(5, 1, lastRow - 4, lastCol).getValues();
+    
+    var lastMatchRow = null;
+    for (var r = data.length - 1; r >= 0; r--) {
+      if (String(data[r][idColIndex]) === objectId) {
+        lastMatchRow = data[r];
+        break;
+      }
+    }
+    
+    if (!lastMatchRow) {
+      return json_({ 
+        success: true, 
+        hasData: false,
+        message: 'No previous monitoring found for object ' + objectId 
+      });
+    }
+    
+    // Build result object with header names as keys
+    var result = {};
+    for (var i = 0; i < headers.length; i++) {
+      result[headers[i]] = lastMatchRow[i];
+    }
+    
+    Logger.log('Found last monitoring: ' + JSON.stringify(result));
+    
+    return json_({
+      success: true,
+      hasData: true,
+      data: result
+    });
+    
+  } catch (error) {
+    Logger.log('ERROR in getLastMonitoring: ' + String(error));
+    return json_({ success: false, message: 'Error: ' + String(error) });
+  }
+}
+
+// ============================================================================
+// SUBMIT CHECKLIST - Save checklist data to database sheet
+// ============================================================================
+
+function submitChecklist(p) {
+  try {
+    Logger.log('submitChecklist called with payload: ' + JSON.stringify(p));
+    
+    var sh = sheet_('database');
+    if (!sh) {
+      Logger.log('ERROR: Database sheet not found');
+      return json_({ success: false, message: 'Database sheet not found' });
+    }
+    
+    Logger.log('Database sheet found');
+    
+    // Get headers from row 1 (where checklist item headers are located)
+    // Metadata (id, дата, Инспектор, Мобилизация, СКУД, ГРУНТ) in columns A-F will use position-based mapping
+    var lastCol = sh.getLastColumn();
+    Logger.log('Last column: ' + lastCol);
+    
+    var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    Logger.log('Headers: ' + JSON.stringify(headers));
+    Logger.log('Headers count: ' + headers.length);
+    
+    // ⭐ Log first 10 headers with their exact values
+    Logger.log('🔍 First 10 headers:');
+    for (var i = 0; i < Math.min(10, headers.length); i++) {
+      Logger.log('  [' + i + '] = "' + String(headers[i]) + '" (type: ' + typeof headers[i] + ')');
+    }
+    
+    // ⭐ Log special field values from payload
+    Logger.log('🔍 Payload special fields check:');
+    Logger.log('  p.object_id = ' + String(p.object_id || 'EMPTY'));
+    Logger.log('  p.monitoring_date = ' + String(p.monitoring_date || 'EMPTY'));
+    Logger.log('  p.inspector = ' + String(p.inspector || 'EMPTY'));
+    Logger.log('  p.SPECIAL_SKUD = ' + String(p.SPECIAL_SKUD || 'EMPTY'));
+    Logger.log('  p.SPECIAL_MOB = ' + String(p.SPECIAL_MOB || 'EMPTY'));
+    Logger.log('  p.SPECIAL_GRUNT = ' + String(p.SPECIAL_GRUNT || 'EMPTY'));
+    
+    // Prepare row data
+    var row = [];
+    var mobColumnFound = false;
+    for (var i = 0; i < headers.length; i++) {
+      var header = String(headers[i]).trim();
+      
+      // POSITION-BASED mapping for metadata columns A-F (indices 0-5)
+      if (i === 0) {
+        // Column A: id
+        row.push(p.object_id || '');
+      } else if (i === 1) {
+        // Column B: дата
+        row.push(p.monitoring_date || '');
+      } else if (i === 2) {
+        // Column C: Инспектор
+        row.push(normalizeInspectorName_(p.inspector) || '');
+      } else if (i === 3) {
+        // Column D: Мобилизация трудовых резервов
+        var mobValue = p.SPECIAL_MOB || p.MOB || '';
+        Logger.log('🔥 MOBILIZATION COLUMN [3] mapped');
+        row.push(mobValue);
+        mobColumnFound = true;
+      } else if (i === 4) {
+        // Column E: СКУД
+        row.push(p.SPECIAL_SKUD || p.SKUD || '');
+      } else if (i === 5) {
+        // Column F: ГРУНТ
+        row.push(p.SPECIAL_GRUNT || p.GRUNT || '');
+      } else {
+        // For all other columns, check if we have a value in payload
+        row.push(p[header] !== undefined ? p[header] : '');
+      }
+    }
+    
+    Logger.log('Row to append length: ' + row.length);
+    Logger.log('Row to append: ' + JSON.stringify(row));
+    Logger.log('🔍 First 10 elements of row:');
+    for (var i = 0; i < Math.min(10, row.length); i++) {
+      Logger.log('  [' + i + '] ' + String(headers[i]) + ' = ' + JSON.stringify(row[i]));
+    }
+    
+    // ✅ Actually save to database!
+    sh.appendRow(row);
+    Logger.log('✅ Row successfully appended to database');
+    
+    // Build debug info with first 10 elements
+    var debugRow = {};
+    for (var i = 0; i < Math.min(10, headers.length); i++) {
+      debugRow[headers[i]] = row[i];
+    }
+    
+    // Mobilization is always at position 3 (column D)
+    var mobColIndex = 3;
+    var mobHeader = headers[3] || '';
+    
+    return json_({
+      success: true,
+      message: 'Checklist saved successfully!',
+      debug: {
+        first10Elements: debugRow,
+        first10Headers: headers.slice(0, 10),
+        headersCount: headers.length,
+        rowLength: row.length,
+        mobilization: {
+          colIndex: mobColIndex,
+          header: mobHeader,
+          payloadMOB: String(p.SPECIAL_MOB || ''),
+          rowValue: mobColIndex >= 0 ? String(row[mobColIndex]) : 'N/A'
+        }
+      }
+    });
+    
+  } catch (error) {
+    Logger.log('ERROR in submitChecklist: ' + String(error));
+    return json_({
+      success: false,
+      message: 'Error saving checklist: ' + String(error)
+    });
+  }
+}
+
+// ============================================================================
+// PHOTO UPLOAD FUNCTIONALITY
+// ============================================================================
+
+/**
+ * Upload photo to Yandex Disk
+ */
+function uploadPhoto(p) {
+  try {
+    Logger.log('uploadPhoto called with: ' + JSON.stringify(p));
+    var objectId = String(p.object_id || '');
+    var monitoringDate = String(p.monitoring_date || '');
+    var category = String(p.category || 'general');
+    var seq = String(p.seq || '1');
+    var dataUrl = String(p.dataUrl || '');
+    
+    if (!objectId || !dataUrl) {
+      Logger.log('Missing object_id or dataUrl');
+      return json_({ success: false, message: 'Missing object_id or dataUrl' });
+    }
+    
+    // Extract base64 from data:image/jpeg;base64,XXXXX
+    var base64Data = dataUrl.split(',')[1] || dataUrl;
+    Logger.log('Base64 data length: ' + base64Data.length);
+    
+    // Create folder structure on Yandex Disk
+    var folderPath = ensureYDFolderStructure_(objectId, monitoringDate, category);
+    Logger.log('Folder path: ' + folderPath);
+    
+    // Generate unique filename
+    var timestamp = new Date().getTime();
+    var filename = 'photo_' + seq + '_' + timestamp + '.jpg';
+    Logger.log('Filename: ' + filename);
+    
+    // Upload to Yandex Disk
+    Logger.log('Starting Yandex upload...');
+    var result = ydUploadFile_(folderPath, filename, base64Data);
+    Logger.log('Upload result: ' + JSON.stringify(result));
+    
+    if (result.success) {
+      // Note: ensureFolderRecord_ is now called separately before batch upload for performance
+      return json_({ success: true, url: result.url, path: result.path });
+    } else {
+      Logger.log('Upload failed: ' + JSON.stringify(result));
+      return json_({ success: false, message: 'Upload failed', error: result });
+    }
+  } catch (e) {
+    Logger.log('ERROR in uploadPhoto: ' + String(e));
+    return json_({ success: false, message: 'Error uploading photo: ' + String(e) });
+  }
+}
+
+/**
+ * Action called by client once before a batch upload to ensure folders and sheet record.
+ */
+function ensurePhotoFolder(p) {
+  try {
+    var objectId = String(p.objectId || p.object_id || '').trim();
+    var date = String(p.date || p.monitoring_date || '').trim() || formatDateRU_(new Date());
+    var inspector = String(p.inspector || '').trim();
+    
+    // 1. Ensure folder structure on Yandex (Root -> Object -> Date)
+    var root = YANDEX_ROOT_SOLDER;
+    ydMkdir_(root);
+    ydMkdir_(root + '/' + objectId);
+    var datePath = root + '/' + objectId + '/' + date;
+    ydMkdir_(datePath);
+
+    // 2. Ensure Sheet record
+    ensureFolderRecord_(objectId, date, inspector);
+
+    return json_({ success: true, folderPath: datePath });
+  } catch (e) {
+    Logger.log('ERROR in ensurePhotoFolder: ' + String(e));
+    return json_({ success: false, message: String(e) });
+  }
+}
+
+/**
+ * Ensure there is a folder record for this object/date in the Photos sheet.
+ * Logs only one entry per object per day pointing to the Yandex Disk folder.
+ * Matches structure: A:timestamp, B:inspector, C:object_id, D:date, E:folder_url
+ */
+function ensureFolderRecord_(objectId, date, inspector) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000); // 15s lock to prevent race conditions
+    inspector = normalizeInspectorName_(inspector);
+
+    var sh = sheet_('Photos');
+    if (!sh) {
+      sh = ss_().insertSheet('Photos');
+    }
+    
+    // Always ensure headers are correct and up-to-date
+    var headers = ['timestamp', 'inspector', 'object_id', 'monitoring_date', 'folder_url'];
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    SpreadsheetApp.flush();
+
+    var lastRow = sh.getLastRow();
+    if (lastRow > 1) {
+      // Check Col C (object_id) and Col D (monitoring_date)
+      var data = sh.getRange(2, 3, lastRow - 1, 2).getValues();
+      for (var i = 0; i < data.length; i++) {
+        if (String(data[i][0]) === String(objectId) && String(data[i][1]) === String(date)) {
+          Logger.log('Record already exists for ' + objectId + ' on ' + date);
+          return; // Already exists
+        }
+      }
+    }
+
+    // Record doesn't exist, get public link for the folder
+    var folderPath = YANDEX_ROOT_SOLDER + '/' + objectId + '/' + date;
+    var publicUrl = ydGetPublicLink_(folderPath);
+    
+    // Append row: [timestamp, inspector, object_id, monitoring_date, folder_url]
+    sh.appendRow([new Date(), inspector, objectId, date, publicUrl || folderPath]);
+    SpreadsheetApp.flush();
+    Logger.log('Created folder record for ' + objectId + ' on ' + date);
+  } catch (e) {
+    Logger.log('ERROR in ensureFolderRecord_: ' + String(e));
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Publishes a resource on Yandex Disk and returns the public link.
+ */
+function ydGetPublicLink_(path) {
+  try {
+    var token = YANDEX_OAUTH_TOKEN;
+    if (!token) return null;
+
+    // Publish resource
+    var publishUrl = 'https://cloud-api.yandex.net/v1/disk/resources/publish?path=' + encodeURIComponent(path);
+    UrlFetchApp.fetch(publishUrl, {
+      method: 'PUT',
+      headers: { 'Authorization': 'OAuth ' + token },
+      muteHttpExceptions: true
+    });
+
+    // Get resource info (including public_url)
+    var infoUrl = 'https://cloud-api.yandex.net/v1/disk/resources?path=' + encodeURIComponent(path) + '&fields=public_url';
+    var response = UrlFetchApp.fetch(infoUrl, {
+      method: 'GET',
+      headers: { 'Authorization': 'OAuth ' + token },
+      muteHttpExceptions: true
+    });
+
+    var res = JSON.parse(response.getContentText());
+    if (res.public_url) {
+      return res.public_url;
+    }
+    
+    Logger.log('Could not get public URL for ' + path + ': ' + response.getContentText());
+    return null;
+  } catch (e) {
+    Logger.log('ERROR in ydGetPublicLink_: ' + String(e));
+    return null;
+  }
+}
+
+/**
+ * Deprecated: Save individual photo record (now using ensureFolderRecord_)
+ */
+function savePhotoRecord_(objectId, date, category, seq, url, obs) {
+  // Logic preserved but no longer called by default
+}
+
+// ============================================================================
+// YANDEX.DISK HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Ensure folder structure on Yandex.Disk
+ * Creates: smg_ph/{objectId}/{date}/{category}/
+ * Returns: full folder path OR null if creation failed
+ */
+function ensureYDFolderStructure_(objectId, monitoringDate, category) {
+  var rootPath = YANDEX_ROOT_SOLDER;
+  var datePath = monitoringDate || formatDateRU_(new Date());
+  var categoryPath = category || 'general';
+  
+  Logger.log('Creating folder structure: ' + rootPath + '/' + objectId + '/' + datePath + '/' + categoryPath);
+  
+  // Create each folder in sequence
+  var paths = [
+    rootPath,
+    rootPath + '/' + objectId,
+    rootPath + '/' + objectId + '/' + datePath,
+    rootPath + '/' + objectId + '/' + datePath + '/' + categoryPath
+  ];
+  
+  for (var i = 0; i < paths.length; i++) {
+    var created = ydMkdir_(paths[i]);
+    Logger.log('Folder ' + paths[i] + ': ' + (created ? 'OK' : 'FAILED'));
+    
+    if (!created) {
+      Logger.log('ERROR: Failed to create folder ' + paths[i]);
+      return null; // Return null on failure
+    }
+  }
+  
+  return paths[paths.length - 1]; // Return full path
+}
+
+/**
+ * Create directory on Yandex.Disk (if not exists)
+ */
+function ydMkdir_(path) {
+  // 🔥 DIAGNOSTIC LOGGING
+  Logger.log('=== ydMkdir_ START ===');
+  Logger.log('Input path: ' + path);
+  Logger.log('OAuth token exists: ' + !!YANDEX_OAUTH_TOKEN);
+  Logger.log('OAuth token length: ' + (YANDEX_OAUTH_TOKEN ? YANDEX_OAUTH_TOKEN.length : 0));
+  
+  // 🔥 FIX: Remove 'disk:/' prefix - Yandex API expects just the path
+  var url = 'https://cloud-api.yandex.net/v1/disk/resources?path=' + encodeURIComponent(path);
+  
+  Logger.log('Request URL: ' + url);
+  
+  var options = {
+    method: 'put',
+    headers: { 'Authorization': 'OAuth ' + YANDEX_OAUTH_TOKEN },
+    muteHttpExceptions: true
+  };
+  
+  Logger.log('Making PUT request...');
+  
+  try {
+    var response = UrlFetchApp.fetch(url, options);
+    var code = response.getResponseCode();
+    var text = response.getContentText();
+    
+    Logger.log('Response code: ' + code);
+    Logger.log('Response text: ' + text);
+    
+    if (code === 201) {
+      Logger.log('✅ Folder created successfully');
+      return true;
+    }
+    if (code === 409) {
+      Logger.log('⚠️ Folder already exists (409)');
+      return true;
+    }
+    
+    Logger.log('❌ Unexpected response code: ' + code);
+    Logger.log('Error response: ' + text);
+    return false;
+    
+  } catch (e) {
+    Logger.log('❌ EXCEPTION in ydMkdir_: ' + e.toString());
+    return false;
+  }
+}
+
+/**
+ * Upload file to Yandex.Disk
+ * @param {string} folderPath - Full folder path on Yandex.Disk
+ * @param {string} fileName - File name
+ * @param {string} base64Data - Base64 encoded file data (without prefix)
+ * @return {object} {success: boolean, url: string, path: string}
+ */
+function ydUploadFile_(folderPath, fileName, base64Data) {
+  Logger.log('=== ydUploadFile_ START ===');
+  Logger.log('Folder path: ' + folderPath);
+  Logger.log('File name: ' + fileName);
+  Logger.log('Base64 data length: ' + (base64Data ? base64Data.length : 0));
+  
+  try {
+    var fullPath = folderPath + '/' + fileName;
+    Logger.log('Full path: ' + fullPath);
+    
+    // Step 1: Get upload URL
+    var uploadUrl = 'https://cloud-api.yandex.net/v1/disk/resources/upload?path=' + encodeURIComponent(fullPath) + '&overwrite=true';
+    Logger.log('Step 1: Getting upload URL...');
+    Logger.log('Request URL: ' + uploadUrl);
+    
+    var opts1 = {
+      method: 'get',
+      headers: { 'Authorization': 'OAuth ' + YANDEX_OAUTH_TOKEN },
+      muteHttpExceptions: true
+    };
+    
+    var response1 = UrlFetchApp.fetch(uploadUrl, opts1);
+    var code1 = response1.getResponseCode();
+    Logger.log('Response code: ' + code1);
+    
+    if (code1 !== 200) {
+      Logger.log('❌ Failed to get upload URL: ' + response1.getContentText());
+      return { success: false, message: 'Failed to get upload URL, code: ' + code1 };
+    }
+    
+    var uploadData = JSON.parse(response1.getContentText());
+    var href = uploadData.href;
+    Logger.log('Upload href: ' + href);
+    
+    if (!href) {
+      Logger.log('❌ No upload href in response');
+      return { success: false, message: 'No upload URL in response' };
+    }
+    
+    // Step 2: Upload file data
+    Logger.log('Step 2: Uploading file data...');
+    var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), 'image/png', fileName);
+    Logger.log('Blob size: ' + blob.getBytes().length + ' bytes');
+    
+    var opts2 = {
+      method: 'put',
+      payload: blob.getBytes(),
+      contentType: 'application/octet-stream',
+      muteHttpExceptions: true
+    };
+    
+    var response2 = UrlFetchApp.fetch(href, opts2);
+    var code2 = response2.getResponseCode();
+    Logger.log('Upload response code: ' + code2);
+    
+    if (code2 !== 201) {
+      Logger.log('❌ Upload failed: ' + response2.getContentText());
+      return { success: false, message: 'Upload failed, code: ' + code2 };
+    }
+    
+    Logger.log('✅ File uploaded successfully!');
+    
+    // Step 3: Get public URL
+    Logger.log('Step 3: Getting public URL...');
+    var publicUrl = ydGetPublicLink_(fullPath);
+    Logger.log('Public URL: ' + publicUrl);
+    
+    return {
+      success: true,
+      url: publicUrl || '',
+      path: fullPath
+    };
+    
+  } catch (e) {
+    Logger.log('❌ EXCEPTION in ydUploadFile_: ' + String(e));
+    return { success: false, message: String(e) };
+  }
+}
+
+/**
+ * Get or create public link for file on Yandex.Disk
+ */
+function ydGetPublicLink_(path) {
+  try {
+    // Publish the file
+    var publishUrl = 'https://cloud-api.yandex.net/v1/disk/resources/publish?path=' + encodeURIComponent(path);
+    var opts = {
+      method: 'put',
+      headers: { 'Authorization': 'OAuth ' + YANDEX_OAUTH_TOKEN },
+      muteHttpExceptions: true
+    };
+    
+    UrlFetchApp.fetch(publishUrl, opts);
+    
+    // Get public URL
+    var infoUrl = 'https://cloud-api.yandex.net/v1/disk/resources?path=' + encodeURIComponent(path);
+    var opts2 = {
+      method: 'get',
+      headers: { 'Authorization': 'OAuth ' + YANDEX_OAUTH_TOKEN },
+      muteHttpExceptions: true
+    };
+    
+    var response = UrlFetchApp.fetch(infoUrl, opts2);
+    if (response.getResponseCode() === 200) {
+      var res = JSON.parse(response.getContentText());
+      return res.public_url || null;
+    }
+    
+    return null;
+  } catch (e) {
+    Logger.log('ERROR in ydGetPublicLink_: ' + String(e));
+    return null;
+  }
+}
+
+// ============================================================================
+// 🔥 PWA SUPPORT: Batch Verify Uploaded Files on Yandex.Disk
+// ============================================================================
+
+/**
+ * Verify that multiple uploaded files actually exist on Yandex.Disk
+ * Used by PWA Service Worker to confirm successful uploads
+ * 
+ * @param {Object} p - Payload with files array
+ * @param {Array} p.files - Array of {uploadId, objectId, fileName, monitoring_date, category}
+ * @return {Object} - {success: true, files: [{uploadId, verified, fileInfo, error}]}
+ */
+function batchVerify(p) {
+  try {
+    Logger.log('batchVerify called with: ' + JSON.stringify(p));
+    
+    var files = p.files || [];
+    if (!files || files.length === 0) {
+      return json_({ success: false, message: 'No files to verify' });
+    }
+    
+    var results = [];
+    
+    for (var i = 0; i < files.length; i++) {
+      var file = files[i];
+      var uploadId = file.uploadId || '';
+      var objectId = String(file.objectId || '').trim();
+      var fileName = String(file.fileName || '').trim();
+      var monitoringDate = String(file.monitoring_date || '').trim();
+      var category = String(file.category || 'general').trim();
+      
+      Logger.log('Verifying file ' + (i+1) + '/' + files.length + ': ' + fileName + ' for object ' + objectId);
+      
+      if (!objectId || !fileName) {
+        results.push({
+          uploadId: uploadId,
+          objectId: objectId,
+          fileName: fileName,
+          verified: false,
+          error: 'Missing objectId or fileName'
+        });
+        continue;
+      }
+      
+      // Construct expected path on Yandex.Disk
+      // Format: smg_ph/{objectId}/{date}/{category}/{fileName}
+      var datePath = monitoringDate || formatDateRU_(new Date());
+      
+      // 🔥 ADDED: Log all components
+      Logger.log('  Components: ROOT=' + YANDEX_ROOT_SOLDER + ', objectId=' + objectId + ', date=' + datePath + ', category=' + category + ', fileName=' + fileName);
+      
+      var expectedPath = YANDEX_ROOT_SOLDER + '/' + objectId + '/' + datePath + '/' + category + '/' + fileName;
+      
+      Logger.log('Expected path: ' + expectedPath);
+      
+      // Verify file exists on Yandex.Disk via API
+      var verified = false;
+      var fileInfo = null;
+      var error = null;
+      
+      try {
+        var infoUrl = 'https://cloud-api.yandex.net/v1/disk/resources?path=' + encodeURIComponent(expectedPath);
+        var infoOpts = {
+          method: 'get',
+          headers: { 'Authorization': 'OAuth ' + YANDEX_OAUTH_TOKEN },
+          muteHttpExceptions: true
+        };
+        
+        var infoResp = UrlFetchApp.fetch(infoUrl, infoOpts);
+        var responseCode = infoResp.getResponseCode();
+        
+        Logger.log('Yandex API response code: ' + responseCode);
+        
+        if (responseCode === 200) {
+          var infoJson = JSON.parse(infoResp.getContentText());
+          
+          // Check that file actually exists and has size > 0
+          if (infoJson && infoJson.size && infoJson.size > 0) {
+            verified = true;
+            fileInfo = {
+              size: infoJson.size,
+              path: infoJson.path,
+              created: infoJson.created || null,
+              modified: infoJson.modified || null
+            };
+            Logger.log('✅ File verified: ' + fileName + ' (' + infoJson.size + ' bytes)');
+          } else {
+            error = 'File exists but size is 0 bytes';
+            Logger.log('⚠️ File has zero size: ' + fileName);
+          }
+        } else if (responseCode === 404) {
+          error = 'File not found on Yandex.Disk';
+          Logger.log('❌ File not found: ' + fileName);
+        } else {
+          error = 'Yandex.Disk API error: ' + responseCode;
+          Logger.log('❌ API error ' + responseCode + ' for ' + fileName);
+        }
+      } catch (e) {
+        error = 'Verification error: ' + String(e);
+        Logger.log('❌ Exception verifying ' + fileName + ': ' + String(e));
+      }
+      
+      results.push({
+        uploadId: uploadId,
+        objectId: objectId,
+        fileName: fileName,
+        verified: verified,
+        fileInfo: fileInfo,
+        error: error
+      });
+    }
+    
+    // Summary stats
+    var verifiedCount = 0;
+    var failedCount = 0;
+    for (var j = 0; j < results.length; j++) {
+      if (results[j].verified) {
+        verifiedCount++;
+      } else {
+        failedCount++;
+      }
+    }
+    
+    Logger.log('Batch verification complete: ' + verifiedCount + ' verified, ' + failedCount + ' failed');
+    
+    return json_({
+      success: true,
+      files: results,
+      summary: {
+        total: results.length,
+        verified: verifiedCount,
+        failed: failedCount
+      }
+    });
+    
+  } catch (error) {
+    Logger.log('ERROR in batchVerify: ' + String(error));
+    return json_({
+      success: false,
+      message: 'Batch verification error: ' + String(error)
+    });
+  }
+}

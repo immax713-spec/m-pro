@@ -1,0 +1,1434 @@
+var SPREADSHEET_ID = '1H0BDSDHnBXt4Ot7MaCxNf6FdqMP6yeSEDjyKkjir7KU';
+var PHOTOS_FOLDER_ID = '1bWy_Hcmip0dUc-70gNDl6WV5tTRICS-M';
+// 🔥 YANDEX DISK INTEGRATION (Корпоративный)
+var YANDEX_OAUTH_TOKEN = 'y0__xCtoIulqveAAhjinD0gyIzumRaVmdCKk27u3ItXUoc6rNG4XSwS7w';
+var YANDEX_ROOT_PATH = 'disk:/Осмотры объектов АНО СМГ';
+var WORKDAY_SHEET_NAME = 'WorkDay1';
+
+function json_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function jsonp_(cb, o) {
+  var body = (cb ? cb : 'callback') + '(' + JSON.stringify(o) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function ss_() { return SpreadsheetApp.openById(SPREADSHEET_ID); }
+function sheet_(name) { return ss_().getSheetByName(name); }
+
+function indexOf_(hdr, key) {
+  for (var i = 0; i < hdr.length; i++) if (String(hdr[i]).trim() === String(key).trim()) return i;
+  return -1;
+}
+
+function indexOfAny_(hdr, keys) {
+  if (!hdr || !hdr.length) return -1;
+  for (var k = 0; k < keys.length; k++) {
+    var key = String(keys[k]).toLowerCase();
+    for (var i = 0; i < hdr.length; i++) {
+      if (String(hdr[i]).toLowerCase() === key) return i;
+    }
+  }
+  return -1;
+}
+
+function pickCell_(row, idx, fallbacks) {
+  if (idx >= 0 && idx < row.length) return row[idx];
+  if (fallbacks && fallbacks.length) {
+    for (var i = 0; i < fallbacks.length; i++) {
+      var j = fallbacks[i];
+      if (j >= 0 && j < row.length && row[j] !== '') return row[j];
+    }
+  }
+  return '';
+}
+
+function asObj_(hdr, row) {
+  var o = {};
+  for (var i = 0; i < hdr.length; i++) o[String(hdr[i]).trim()] = row[i];
+  return o;
+}
+
+function formatDateRU_(d) {
+  var dd = d.getDate();
+  var mm = d.getMonth() + 1;
+  var yyyy = d.getFullYear();
+  var sdd = dd < 10 ? ('0' + dd) : String(dd);
+  var smm = mm < 10 ? ('0' + mm) : String(mm);
+  return sdd + '.' + smm + '.' + yyyy;
+}
+
+function getOrCreateChildFolder_(parent, name) {
+  var it = parent.getFoldersByName(String(name));
+  if (it.hasNext()) return it.next();
+  return parent.createFolder(String(name));
+}
+
+function ensurePhotoFolder_(objectId, dateStr, category) {
+  var root = DriveApp.getFolderById(PHOTOS_FOLDER_ID);
+  var objFolder = getOrCreateChildFolder_(root, String(objectId));
+  var todayStr = dateStr && String(dateStr).trim() ? String(dateStr).trim() : formatDateRU_(new Date());
+  var dateFolder = getOrCreateChildFolder_(objFolder, todayStr);
+  var catFolder = getOrCreateChildFolder_(dateFolder, String(category));
+  return catFolder;
+}
+
+function doGet(e) {
+  var p = e && e.parameter ? e.parameter : {};
+  var a = String(p.action || '');
+  if (a === 'getData') return jsonp_(p.callback, getData_(p));
+  if (a === 'verifyPassword') return jsonp_(p.callback, verifyPassword_(p));
+  if (a === 'getLatestChecklist') return json_(getLatestChecklist_(p));
+  if (a === 'getObjectHistory') return json_(getObjectHistory_(p));
+  if (a === 'getDatabaseHeaders') return json_(getDatabaseHeaders_());
+  if (a === 'getPhotos') return json_(getPhotosLatest_(p));
+
+  if (a === 'reassign') return jsonp_(p.callback, reassignInspector_(p));
+  if (a === 'checkWorkDay') return jsonp_(p.callback, checkWorkDay_(p));
+  if (a === 'startWorkDay') return jsonp_(p.callback, startWorkDay_(p));
+  if (a === 'endWorkDay') return jsonp_(p.callback, endWorkDay_(p));
+  if (a === 'saveInspectorConfig') return jsonp_(p.callback, saveInspectorConfig_(p));
+  if (a === 'saveGlobalFilters') return jsonp_(p.callback, saveGlobalFilters_(p));
+  if (a === 'getGlobalFilters') return jsonp_(p.callback, getGlobalFilters_(p));
+  if (a === 'moveObjectToMap') return jsonp_(p.callback, moveObjectToMap_(p));
+  if (a === 'createYandexFolders') return jsonp_(p.callback, createMonitoringFolders_(p));
+  if (a === 'getWorkDayData') return jsonp_(p.callback, getWorkDayData_(p));
+  if (a === 'entry') return jsonp_(p.callback, entry_(p));
+  if (a === 'exit') return jsonp_(p.callback, exit_(p));
+  if (a === 'cancelEntry') return jsonp_(p.callback, cancelEntry_(p));
+  if (a === 'archiveCompleted') return jsonp_(p.callback, archiveCompletedObjects_(p));
+  return jsonp_(p.callback, { success: false, message: 'unknown action' });
+}
+
+function doPost(e) {
+  var p = e && e.parameter ? e.parameter : {};
+  var a = String(p.action || '');
+  var body = (e && e.postData && e.postData.contents) || '';
+  var type = (e && e.postData && e.postData.type) || '';
+  var payloadStr = '';
+  if (type && type.indexOf('application/x-www-form-urlencoded') >= 0) {
+    var m = body.match(/(?:^|&)payload=([^&]+)/);
+    if (m) {
+      try { payloadStr = decodeURIComponent(m[1]); } catch (_) { payloadStr = m[1]; }
+    }
+  } else {
+    payloadStr = body;
+  }
+  var raw = p.payload ? p.payload : payloadStr;
+  var d = {};
+  try { d = raw ? JSON.parse(raw) : {}; } catch (_) { d = {}; }
+  if (a === 'saveChecklist') return json_(saveChecklist_(d));
+  if (a === 'uploadPhoto') return json_(uploadPhoto_(d));
+  if (a === 'moveObjectToMap') return json_(moveObjectToMap_(d));
+  return json_({ success: false, message: 'unknown action' });
+}
+
+function getData_(p) {
+  // 🔥 ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ КЭШ GOOGLE SHEETS
+  SpreadsheetApp.flush();
+  
+  var inspSheet = sheet_('Инспектора');
+  var inspectorsData = {};
+  var inspectorsHomes = {};
+  var inspectorsConfig = {};
+  var availableIcons = { default: '📍', icons: ['💎','⭐','👑','🌪️','🌀','🦍','🦸','🏅','🥷','🦾','🧜‍♂️','🦁','🐯','⚡','🔥','💥','🤺','🥋','💩','🐢','🤡','🤮','🦑','🐙','🦄','🌈','🤥','🧟','👻','🐌','🦥','🙈','🙉','🙊'] };
+  var availableColors = ['#FF0000','#00FF00','#0000FF','#FFFF00','#FF00FF','#00FFFF','#FFA500','#800080','#008000','#000080','#800000','#808000','#008080','#808080','#A52A2A','#FFC0CB','#FFD700','#C0C0C0','#40E0D0','#EE82EE','#F5F5DC','#FF6347','#7FFFD4','#D2691E'];
+  if (inspSheet) {
+    // 🔥 ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ ДАННЫЕ ИЗ ТАБЛИЦЫ
+    var range = inspSheet.getDataRange();
+    var values = range.getValues();
+    var hdr = values.length > 0 ? values[0] : [];
+    // 🔥 ИЩЕМ КОЛОНКУ С ИМЕНЕМ - В ТАБЛИЦЕ ОНА НАЗЫВАЕТСЯ "Инспектор"
+    var nameCol = indexOfAny_(hdr, ['Инспектор','инспектор','fullName','ФИО','фио','name','имя']); 
+    if (nameCol < 0) nameCol = 0;
+    // 🔥 ИЩЕМ КОЛОНКУ С ПРАВАМИ - В ТАБЛИЦЕ ОНА НАЗЫВАЕТСЯ "Права"
+    var accessCol = indexOfAny_(hdr, ['Права','права','accessRights','роль','Роль','role','доступ']); 
+    if (accessCol < 0) accessCol = 1;
+    // 🔥 ИЩЕМ КОЛОНКУ С ПАРОЛЕМ - В ТАБЛИЦЕ ОНА НАЗЫВАЕТСЯ "Пароль"
+    var passCol = indexOfAny_(hdr, ['Пароль','пароль','password','Password']); 
+    if (passCol < 0) passCol = 2;
+    var latCol = indexOfAny_(hdr, ['lat','latitude']); if (latCol < 0) latCol = 3;
+    var lonCol = indexOfAny_(hdr, ['lon','longitude']); if (lonCol < 0) lonCol = 4;
+    var addrCol = indexOfAny_(hdr, ['address','адрес']); if (addrCol < 0) addrCol = 5;
+    var colorCol = indexOfAny_(hdr, ['color','цвет','Цвет']);
+    var iconCol = indexOfAny_(hdr, ['icon','иконка','Иконка','emoji']);
+    var statusCol = indexOfAny_(hdr, ['status','статус','Статус']);
+    for (var i = 1; i < values.length; i++) {
+      var row = values[i];
+      var fullName = String(pickCell_(row, nameCol, [0]) || '').trim();
+      if (!fullName) continue;
+      var accessRights = pickCell_(row, accessCol, [1]) || 'Инспектор';
+      var password = pickCell_(row, passCol, [2]) || '';
+      var lat = pickCell_(row, latCol, [3]);
+      var lon = pickCell_(row, lonCol, [4]);
+      var address = pickCell_(row, addrCol, [5]) || '';
+      var colorVal = colorCol >= 0 ? String(row[colorCol] || '').trim() : '';
+      var iconVal = iconCol >= 0 ? String(row[iconCol] || '').trim() : '';
+      var statusVal = statusCol >= 0 ? String(row[statusCol] || 'active').trim() : 'active';
+      inspectorsData[fullName] = String(password);
+      if (lat && lon) inspectorsHomes[fullName] = { lat: parseFloat(lat), lon: parseFloat(lon), address: address };
+      
+      // 🔥 ВАЖНО: используем fallback ТОЛЬКО если значение действительно пустое
+      // Если цвет сохранен в таблице (даже если это пустая строка), используем его
+      var fallbackColor = availableColors[i % availableColors.length];
+      var fallbackIcon = '⭐';
+      
+      // 🔥 ПРИОРИТЕТ: сохраненное значение > fallback
+      // Если colorVal не пустой - используем его, иначе fallback
+      inspectorsConfig[fullName] = { 
+        color: colorVal || fallbackColor, 
+        icon: iconVal || fallbackIcon, 
+        status: statusVal || 'active', 
+        accessRights: accessRights 
+      };
+    }
+  }
+
+  // 🔥 FETCH ADD_OBJECT SHEET
+  var addObjSheet = sheet_('add_object');
+  var addedObjects = [];
+  if (addObjSheet) {
+    var vals = addObjSheet.getDataRange().getValues();
+    // Start from row 5 (index 4). Header is at row 4 (index 3).
+    if (vals.length > 4) {
+        var hdr = vals[3]; 
+        var idCol = indexOfAny_(hdr, ['id','№','№ точки','object_id','no','номер']);
+        var latCol = indexOfAny_(hdr, ['latitude','lat','широта']);
+        var lonCol = indexOfAny_(hdr, ['longitude','lon','lng','долгота']);
+        var addrCol = indexOfAny_(hdr, ['address','адрес']);
+        var listCol = indexOfAny_(hdr, ['list','список','лист']);
+        var inspCol = indexOfAny_(hdr, ['inspector','инспектор','ответственный']);
+        
+        for (var r = 4; r < vals.length; r++) {
+            var row = vals[r];
+            var id = pickCell_(row, idCol, [0]); // Fallback to col A
+            var lat = pickCell_(row, latCol, [2]); // Fallback to col C
+            var lon = pickCell_(row, lonCol, [3]); // Fallback to col D
+            var addr = pickCell_(row, addrCol, [1]); // Fallback to col B (Address)
+            var list = pickCell_(row, listCol, [5]) || 'Без списка';
+            var insp = pickCell_(row, inspCol, []) || 'Admin';
+            
+            var latNum = (typeof lat === 'number') ? lat : parseFloat(String(lat).replace(',', '.'));
+            var lonNum = (typeof lon === 'number') ? lon : parseFloat(String(lon).replace(',', '.'));
+            
+            if (id) { 
+                addedObjects.push({ id: id, latitude: latNum, longitude: lonNum, address: addr || '', inspector: insp, list: list });
+            }
+        }
+    }
+  }
+
+  var sh = sheet_('map7') || sheet_('points');
+  var points = [];
+  if (sh) {
+    var vals = sh.getDataRange().getValues();
+    var hdr = vals.length > 0 ? vals[0] : [];
+    var idCol = indexOfAny_(hdr, ['id','№','№ точки','object_id','no','номер']);
+    var latCol = indexOfAny_(hdr, ['latitude','lat','широта']);
+    var lonCol = indexOfAny_(hdr, ['longitude','lon','lng','долгота']);
+    var addrCol = indexOfAny_(hdr, ['address','адрес']);
+    var listCol = indexOfAny_(hdr, ['list','список','лист']);
+    var inspCol = indexOfAny_(hdr, ['inspector','инспектор','ответственный']);
+    var checklistCol = indexOfAny_(hdr, ['checklist','checklistlink','чеклист','чек-лист','чек_лист','ссылка_чеклист']);
+    var yandexCol = indexOfAny_(hdr, ['yandex','yandexdisk','yandex_disk','яндекс','яндекс_диск','яндексдиск','ссылка_яндекс']);
+    var entryCol = indexOfAny_(hdr, ['entry','entrytime','entry_time','вход','время_входа']);
+    var exitCol = indexOfAny_(hdr, ['exit','exittime','exit_time','выход','время_выхода']);
+    
+    // Если колонки не найдены по названиям, используем стандартную структуру
+    if (idCol < 0) idCol = 0;
+    if (addrCol < 0) addrCol = 1;
+    if (latCol < 0) latCol = 2;
+    if (lonCol < 0) lonCol = 3;
+    if (inspCol < 0) inspCol = 4;
+    if (listCol < 0) listCol = 5;
+    if (entryCol < 0) entryCol = 6;
+    if (exitCol < 0) exitCol = 7;
+    if (checklistCol < 0) checklistCol = 9;
+    if (yandexCol < 0) yandexCol = 10;
+    
+    for (var r = 1; r < vals.length; r++) {
+      var row = vals[r];
+      // Пропускаем пустые строки
+      if (!row[0] && !row[1] && !row[2] && !row[3]) continue;
+      
+      var id = pickCell_(row, idCol, [0]);
+      var lat = pickCell_(row, latCol, [2]);
+      var lon = pickCell_(row, lonCol, [3]);
+      var addr = pickCell_(row, addrCol, [1]);
+      var list = pickCell_(row, listCol, [5]) || 'Без списка';
+      var insp = pickCell_(row, inspCol, [4]) || 'Admin';
+      var checklistLink = pickCell_(row, checklistCol, [9]);
+      var yandexDiskLink = pickCell_(row, yandexCol, [10]);
+      var entry = pickCell_(row, entryCol, [6]);
+      var exit = pickCell_(row, exitCol, [7]);
+      
+      // Проверяем координаты
+      if (!lat || !lon) continue;
+      lat = parseFloat(lat);
+      lon = parseFloat(lon);
+      if (isNaN(lat) || isNaN(lon)) continue;
+      
+      // Обрабатываем даты
+      if (entry && Object.prototype.toString.call(entry) === '[object Date]') {
+        entry = entry.toISOString();
+      } else if (entry) {
+        entry = String(entry);
+      } else {
+        entry = '';
+      }
+      if (exit && Object.prototype.toString.call(exit) === '[object Date]') {
+        exit = exit.toISOString();
+      } else if (exit) {
+        exit = String(exit);
+      } else {
+        exit = '';
+      }
+      
+      if (id) {
+        points.push({ 
+          id: id, 
+          latitude: lat, 
+          longitude: lon, 
+          address: addr || '', 
+          inspector: insp, 
+          list: list, 
+          checklistLink: checklistLink || '', 
+          yandexDiskLink: yandexDiskLink || '', 
+          entryTime: entry, 
+          exitTime: exit 
+        });
+      }
+    }
+  }
+  return { success: true, points: points, addedObjects: addedObjects, inspectorsData: inspectorsData, inspectorsConfig: inspectorsConfig, inspectorsHomes: inspectorsHomes, availableIcons: availableIcons, availableColors: availableColors };
+}
+
+function verifyPassword_(p) {
+  var name = String(p.inspector || p.username || '').trim();
+  var pass = String(p.password || '').trim();
+  var inspSheet = sheet_('Инспектора');
+  var valid = false;
+  var access = 'Инспектор';
+  if (inspSheet) {
+    var values = inspSheet.getDataRange().getValues();
+    for (var i = 1; i < values.length; i++) {
+      var rowName = String(values[i][0] || '').trim();
+      var rowPass = String(values[i][2] || '').trim();
+      if (rowName === name && rowPass === pass) {
+        valid = true;
+        access = String(values[i][1] || 'Инспектор').trim();
+        break;
+      }
+    }
+  }
+  return { success: valid, verified: valid, accessRights: valid ? access : '', user: valid ? { role: access } : null, message: valid ? '' : 'invalid' };
+}
+
+function getLatestChecklist_(p) {
+  var objectId = String(p.objectId || p.object_id || '');
+  var target = String(p.target || '');
+  var sh = sheet_(target === 'database_custom' ? 'database_custom' : 'database');
+  if (!sh) return { success: false, message: 'no sheet' };
+  var vals = sh.getDataRange().getValues();
+  var r1 = vals[0] || [];
+  var r2 = vals.length > 1 ? vals[1] : [];
+  var latest = null;
+  for (var i = 2; i < vals.length; i++) {
+    var o1 = asObj_(r1, vals[i]);
+    var o2 = asObj_(r2, vals[i]);
+    var oid = String(o1.object_id || o2.object_id || o1.objectId || o2.objectId || '');
+    if (oid === objectId) {
+      var merged = {};
+      for (var k in o1) merged[k] = o1[k];
+      for (var k2 in o2) merged[k2] = o2[k2];
+      latest = merged;
+    }
+  }
+  return { success: !!latest, row: latest || null };
+}
+
+function getObjectHistory_(p) {
+  var objectId = String(p.objectId || p.object_id || '');
+  var target = String(p.target || '');
+  var limit = Math.max(1, parseInt(String(p.limit || '5'), 10));
+  var sh = sheet_(target === 'database_custom' ? 'database_custom' : 'database');
+  if (!sh) return { success: false, message: 'no sheet' };
+  var vals = sh.getDataRange().getValues();
+  var r1 = vals[0] || [];
+  var r2 = vals.length > 1 ? vals[1] : [];
+  var rows = [];
+  for (var i = 2; i < vals.length; i++) {
+    var o1 = asObj_(r1, vals[i]);
+    var o2 = asObj_(r2, vals[i]);
+    var oid = String(o1.object_id || o2.object_id || o1.objectId || o2.objectId || '');
+    if (oid === objectId) {
+      var merged = {};
+      for (var k in o1) merged[k] = o1[k];
+      for (var k2 in o2) merged[k2] = o2[k2];
+      rows.push(merged);
+    }
+  }
+  var start = Math.max(rows.length - limit, 0);
+  return { success: true, rows: rows.slice(start) };
+}
+
+
+
+function reassignInspector_(p) {
+  var objectId = String(p.objectId || p.object_id || '');
+  var inspector = String(p.inspector || p.newInspector || '');
+  var sh = sheet_('map7') || sheet_('points');
+  if (!sh) return { success: false, message: 'no points/map7 sheet' };
+  var range = sh.getDataRange();
+  var vals = range.getValues();
+  var hdr = vals[0] || [];
+  var idCol = indexOfAny_(hdr, ['id','№','№ точки','object_id','no']);
+  var inspCol = indexOfAny_(hdr, ['inspector','инспектор','ответственный']);
+  if (idCol < 0) idCol = 0;
+  if (inspCol < 0) inspCol = 1;
+  var found = false;
+  for (var i = 1; i < vals.length; i++) {
+    if (String(vals[i][idCol]) === objectId) { vals[i][inspCol] = inspector; found = true; }
+  }
+  if (found) range.setValues(vals);
+  return { success: found, updated: found };
+}
+
+
+
+// --- 18-COLUMN WORKDAY SCHEMA HELPERS ---
+// 1:date, 2:inspector, 3:time_open, 4:open_coordinats, 5:coordinates_first_object, 
+// 6:coordinate_correspondence, 7:open_comment, 8:time_close, 9:close_coordinats, 
+// 10:coordinates_last_object, 11:coordinate_correspondence, 12:close_comment, 
+// 13:quality, 14:base_point, 15:object_point, 16:distance_point, 
+// 17:point_construction_readiness, 18:sum_point
+
+function ensureWorkDaySheet_() {
+  var sh = sheet_(WORKDAY_SHEET_NAME);
+  if (!sh) { 
+    sh = ss_().insertSheet(WORKDAY_SHEET_NAME); 
+    // Header for 18 columns
+    sh.appendRow([
+      'date', 'inspector', 'time_open', 'open_coordinats', 
+      'coordinates_first_object', 'coordinate_correspondence', 'open_comment',
+      'time_close', 'close_coordinats', 'coordinates_last_object', 'coordinate_correspondence', 'close_comment',
+      'quality', 'base_point', 'object_point', 'distance_point', 'point_construction_readiness', 'sum_point'
+    ]);
+  }
+  return sh;
+}
+
+function startWorkDay_(p) {
+  var inspector = String(p.inspector || '').trim();
+  if (!inspector) return { success: false, message: 'No inspector name' };
+  
+  var sh = ensureWorkDaySheet_();
+  var now = new Date();
+  var dateStr = formatDateRU_(now); // DD.MM.YYYY
+  var timeStr = now.toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'}); // HH:MM
+  
+  // Check if row exists
+  var rowIdx = getWorkDayRowIndex_(sh, inspector, now);
+  if (rowIdx > 0) {
+     // Row exists. Check if it is closed.
+     var range = sh.getRange(rowIdx, 1, 1, 18);
+     var vals = range.getValues()[0];
+     var closeTime = vals[7]; // H: time_close
+
+     if (!closeTime) {
+        // It is already open
+        return { success: false, message: 'WorkDay already open today' };
+     } else {
+        // It was closed. Re-open it by clearing closure data.
+        vals[7] = ''; // time_close
+        vals[8] = ''; // close_coords
+        vals[9] = ''; // coordinates_last_object (optional: keep or clear? Keep usually better for history, but if resuming, maybe clear)
+        vals[10] = ''; // coordinate_correspondence (end)
+        vals[11] = ''; // close_comment
+        
+        // Update open time? 
+        // Logic: If resuming, maybe we want to keep original open time. 
+        // But if we want to track 're-open', maybe update open_coordinates if provided?
+        // Let's UPDATE open coordinates/comment if provided, but keep original time_open (C) or maybe not?
+        // Let's KEEP original time_open (vals[2]) to show when the day *first* started.
+        
+        if (p.open_coordinates) vals[3] = p.open_coordinates; 
+        if (p.open_comment) vals[6] = vals[6] + ' | Re-open: ' + p.open_comment;
+        
+        range.setValues([vals]);
+        return { success: true, message: 'WorkDay re-opened', openTime: vals[2] };
+     }
+  }
+  
+  // Create NEW row
+  var row = new Array(18).fill('');
+  row[0] = dateStr; // A: date
+  row[1] = inspector; // B: inspector
+  row[2] = timeStr; // C: time_open
+  row[3] = p.open_coordinates || p.coords || ''; // D: open_coordinats (geo)
+  row[6] = p.open_comment || ''; // G: open_comment
+  
+  sh.appendRow(row);
+  return { success: true, openTime: now.toISOString() };
+}
+
+function endWorkDay_(p) {
+  var inspector = String(p.inspector || '').trim();
+  if (!inspector) return { success: false, message: 'No inspector name' };
+  
+  var sh = ensureWorkDaySheet_();
+  var now = new Date();
+  var timeStr = now.toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'}); // HH:MM
+  
+  var rowIdx = getWorkDayRowIndex_(sh, inspector, now);
+  if (rowIdx < 0) return { success: false, message: 'WorkDay not found for today' };
+  
+  var range = sh.getRange(rowIdx, 1, 1, 18);
+  var row = range.getValues()[0];
+  
+  // Update Close data
+  row[7] = timeStr; // H: time_close
+  row[8] = p.close_coordinates || p.coords || ''; // I: close_coordinats (geo)
+  row[11] = p.close_comment || ''; // L: close_comment
+  
+  // 🔥 AUTO-CALCULATE CORRESPONDENCE FOR CLOSE
+  var lastCoords = row[9]; // coordinates_last_object (Updated by exit_)
+  var closeCoords = row[8];
+  
+  if (lastCoords && closeCoords) {
+     var c1 = closeCoords.split(',');
+     var c2 = lastCoords.split(',');
+     if (c1.length == 2 && c2.length == 2) {
+       var dist = getDistance_(parseFloat(c1[0]), parseFloat(c1[1]), parseFloat(c2[0]), parseFloat(c2[1]));
+       row[10] = dist <= 500 ? '✅' : '❌'; // K: coordinate_correspondence
+     }
+  }
+  
+  range.setValues([row]);
+  
+  // Call scoring logic
+  calculateDailyScore_(inspector, now);
+  
+  return { success: true, closedTime: now.toISOString() };
+}
+
+
+function saveGlobalFilters_(p) {
+  var stateRaw = p.state || '{}';
+  PropertiesService.getScriptProperties().setProperty('GLOBAL_FILTERS', stateRaw);
+  return { success: true };
+}
+
+function getGlobalFilters_(p) {
+  var stateRaw = PropertiesService.getScriptProperties().getProperty('GLOBAL_FILTERS');
+  var state = null;
+  try { state = stateRaw ? JSON.parse(stateRaw) : null; } catch (_) { state = null; }
+  return { success: !!state, state: state };
+}
+
+function saveInspectorConfig_(p) {
+  var name = String(p.inspector || '').trim();
+  if (!name) return { success: false, message: 'Не указано имя инспектора' };
+  
+  var sh = sheet_('Инспектора');
+  if (!sh) return { success: false, message: 'Лист "Инспектора" не найден' };
+  
+  var range = sh.getDataRange();
+  var vals = range.getValues();
+  var hdr = vals[0] || [];
+  // 🔥 ИЩЕМ КОЛОНКУ С ИМЕНЕМ - В ТАБЛИЦЕ ОНА НАЗЫВАЕТСЯ "Инспектор"
+  var nameCol = indexOfAny_(hdr, ['Инспектор','инспектор','fullName','ФИО','фио','name','имя']); 
+  if (nameCol < 0) nameCol = 0;
+  var colorCol = indexOfAny_(hdr, ['color','цвет','Цвет']);
+  var iconCol = indexOfAny_(hdr, ['icon','иконка','Иконка','emoji']);
+  var statusCol = indexOfAny_(hdr, ['status','статус','Статус']);
+
+  // 🔥 СОЗДАЕМ КОЛОНКИ, ЕСЛИ ИХ НЕТ
+  var addHeaders = [];
+  if (colorCol < 0) addHeaders.push('color');
+  if (iconCol < 0) addHeaders.push('icon');
+  // status уже есть, не создаем
+  
+  if (addHeaders.length > 0) {
+    // 🔥 СОЗДАЕМ КОЛОНКИ ПОСЛЕ ПОСЛЕДНЕЙ СУЩЕСТВУЮЩЕЙ
+    var lastCol = sh.getLastColumn();
+    for (var k = 0; k < addHeaders.length; k++) {
+      sh.insertColumnAfter(lastCol + k);
+      var newCol = lastCol + k + 1;
+      sh.getRange(1, newCol, 1, 1).setValue(addHeaders[k]);
+    }
+    // 🔥 ПЕРЕЗАГРУЖАЕМ ДАННЫЕ ПОСЛЕ СОЗДАНИЯ КОЛОНОК
+    SpreadsheetApp.flush();
+    Utilities.sleep(200); // Небольшая задержка для гарантии
+    range = sh.getDataRange();
+    vals = range.getValues();
+    hdr = vals[0] || [];
+    // 🔥 ПЕРЕСЧИТЫВАЕМ ИНДЕКСЫ КОЛОНОК
+    nameCol = indexOfAny_(hdr, ['Инспектор','инспектор','fullName','ФИО','фио','name','имя']); 
+    if (nameCol < 0) nameCol = 0;
+    colorCol = indexOfAny_(hdr, ['color','цвет','Цвет']);
+    iconCol = indexOfAny_(hdr, ['icon','иконка','Иконка','emoji']);
+    statusCol = indexOfAny_(hdr, ['status','статус','Статус']);
+  }
+  // 🔥 ПОДДЕРЖКА КАК ОТДЕЛЬНЫХ ПАРАМЕТРОВ, ТАК И JSON CONFIG (для обратной совместимости)
+  var configObj = null;
+  if (p.config) {
+    try {
+      configObj = JSON.parse(p.config);
+    } catch (_) {}
+  }
+  var colorVal = configObj ? (configObj.color || '') : (p.color || '');
+  var iconVal = configObj ? (configObj.icon || '') : (p.icon || '');
+  var statusVal = configObj ? (configObj.status || '') : (p.status || '');
+  
+  var found = false;
+  var updated = false;
+  for (var i = 1; i < vals.length; i++) {
+    var rowName = String(vals[i][nameCol] || '').trim();
+    if (rowName === name) {
+      found = true;
+      // 🔥 ОБНОВЛЯЕМ ВСЕ ПЕРЕДАННЫЕ ЗНАЧЕНИЯ
+      if (colorCol >= 0 && colorVal) {
+        vals[i][colorCol] = colorVal;
+        updated = true;
+      }
+      if (iconCol >= 0 && iconVal) {
+        vals[i][iconCol] = iconVal;
+        updated = true;
+      }
+      if (statusCol >= 0 && statusVal) {
+        vals[i][statusCol] = statusVal;
+        updated = true;
+      }
+      break; // Нашли инспектора, выходим из цикла
+    }
+  }
+  
+  if (!found) {
+    return { success: false, message: 'Инспектор "' + name + '" не найден в таблице' };
+  }
+  
+  if (updated) {
+    range.setValues(vals);
+    SpreadsheetApp.flush(); // 🔥 НЕМЕДЛЕННОЕ СОХРАНЕНИЕ ИЗМЕНЕНИЙ В ТАБЛИЦУ
+    
+    // 🔥 ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: ЧИТАЕМ ОБНОВЛЕННЫЕ ДАННЫЕ ОБРАТНО
+    Utilities.sleep(100); // Небольшая задержка для гарантии сохранения
+    var verifyRange = sh.getDataRange();
+    var verifyVals = verifyRange.getValues();
+    var verifyHdr = verifyVals[0] || [];
+    var verifyNameCol = indexOfAny_(verifyHdr, ['fullName','ФИО','фио','name','имя']); if (verifyNameCol < 0) verifyNameCol = 0;
+    var verifyColorCol = indexOfAny_(verifyHdr, ['color','цвет','Цвет']);
+    var verifyIconCol = indexOfAny_(verifyHdr, ['icon','иконка','Иконка','emoji']);
+    var verifyStatusCol = indexOfAny_(verifyHdr, ['status','статус','Статус']);
+    
+    for (var j = 1; j < verifyVals.length; j++) {
+      var verifyRowName = String(verifyVals[j][verifyNameCol] || '').trim();
+      if (verifyRowName === name) {
+        var savedColor = verifyColorCol >= 0 ? String(verifyVals[j][verifyColorCol] || '').trim() : '';
+        var savedIcon = verifyIconCol >= 0 ? String(verifyVals[j][verifyIconCol] || '').trim() : '';
+        var savedStatus = verifyStatusCol >= 0 ? String(verifyVals[j][verifyStatusCol] || '').trim() : '';
+        return { 
+          success: true, 
+          message: 'Конфигурация успешно сохранена',
+          saved: { color: savedColor, icon: savedIcon, status: savedStatus }
+        };
+      }
+    }
+    
+    return { success: true, message: 'Конфигурация успешно сохранена' };
+  } else {
+    return { success: false, message: 'Не передано ни одного значения для обновления' };
+  }
+}
+
+function saveChecklist_(d) {
+  var target = String(d.target || '');
+  var sh = sheet_(target === 'database_custom' ? 'database_custom' : 'database');
+  if (!sh) {
+    if (target === 'database_custom') {
+      var base = sheet_('database');
+      if (!base) { sh = ss_().insertSheet('database_custom'); }
+      else {
+        var baseVals = base.getDataRange().getValues();
+        sh = ss_().insertSheet('database_custom');
+        var widthCopy = baseVals[0] ? baseVals[0].length : 0;
+        if (widthCopy > 0) {
+          var rowsToCopy = Math.min(3, baseVals.length);
+          var copyRows = [];
+          for (var r = 0; r < rowsToCopy; r++) copyRows.push(baseVals[r]);
+          sh.getRange(1, 1, copyRows.length, widthCopy).setValues(copyRows);
+        }
+      }
+    } else {
+      sh = ss_().insertSheet('database');
+    }
+  }
+  var vals = sh.getDataRange().getValues();
+  var r1 = vals[0] || [];
+  var r2 = vals.length > 1 ? vals[1] : [];
+  var width = Math.max(r1.length, r2.length);
+  var existing = {};
+  for (var i = 0; i < width; i++) {
+    var k1 = String(r1[i] || '').trim();
+    var k2 = String(r2[i] || '').trim();
+    if (k1) existing[k1] = i;
+    if (k2) existing[k2] = i;
+  }
+  var now = new Date();
+  var newRow = new Array(width);
+  for (var c = 0; c < width; c++) newRow[c] = '';
+  var metaKeys = { object_id:1, objectId:1, monitoring_date:1, inspector:1, address:1, list:1, timestamp:1 };
+  for (var kk in d) {
+    var idx = existing[String(kk).trim()];
+    if (idx !== undefined) {
+      var val = d[kk];
+      if (!metaKeys[String(kk).trim()]) {
+        if (typeof val === 'string') {
+          var s = val.trim().replace(',', '.');
+          if (/^-?\d+(?:\.\d+)?$/.test(s)) {
+            var num = parseFloat(s);
+            if (isFinite(num)) { if (num > 100) num = 100; val = num; }
+          }
+        }
+      }
+      newRow[idx] = val;
+    }
+  }
+  if (existing['timestamp'] !== undefined) newRow[existing['timestamp']] = now;
+  var writeRow = sh.getLastRow() + 1;
+  sh.getRange(writeRow, 1, 1, width).setValues([newRow]);
+  return { success: true, updated: true };
+}
+
+function entry_(p) {
+  var id = String(p.objectId || '');
+  var sh = sheet_('map7') || sheet_('points');
+  if (!sh || !id) return { success: false, message: 'No ID or sheet' };
+  
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return { success: false, message: 'Sheet is empty' };
+  
+  var hdr = data[0];
+  var idCol = indexOfAny_(hdr, ['id', '№', '№ точки', 'id_объекта', 'object_id', 'no', 'номер']);
+  var entryCol = indexOfAny_(hdr, ['entry', 'entry_time', 'вход', 'время_входа', 'Время/дата входа', 'entrytime']);
+  
+  if (idCol < 0) idCol = 0;
+  if (entryCol < 0) entryCol = 6;
+  
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) == id) {
+      sh.getRange(i + 1, entryCol + 1).setValue(new Date());
+      SpreadsheetApp.flush();
+      return { success: true, updated: true };
+    }
+  }
+  return { success: false, message: 'Object not found' };
+}
+
+function exit_(p) {
+  var id = String(p.objectId || '');
+  var sh = sheet_('map7') || sheet_('points');
+  if (!sh || !id) return { success: false, message: 'No ID or sheet' };
+  
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return { success: false, message: 'Sheet is empty' };
+  
+  var hdr = data[0];
+  var idCol = indexOfAny_(hdr, ['id', '№', '№ точки', 'id_объекта', 'object_id', 'no', 'номер']);
+  var exitCol = indexOfAny_(hdr, ['exit', 'exit_time', 'выход', 'время_выхода', 'Время/дата выхода', 'exittime']);
+  // 🔥 AUTO-SEQUENCE LOGIC
+  var seqCol = indexOfAny_(hdr, ['номер по счету', 'sequence', 'seq', 'номер']);
+  var inspCol = indexOfAny_(hdr, ['inspector','инспектор','ответственный']);
+  var entryCol = indexOfAny_(hdr, ['entry', 'entry_time', 'вход', 'время_входа', 'Время/дата входа', 'entrytime']);
+  
+  if (idCol < 0) idCol = 0;
+  if (exitCol < 0) exitCol = 7;
+  // If seq column not found by name, try column M (index 12) if header length allows
+  if (seqCol < 0 && hdr.length > 12) seqCol = 12; 
+  
+  var targetRowIdx = -1;
+  var targetInspector = '';
+  
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) == id) {
+      targetRowIdx = i;
+      targetInspector = (inspCol >= 0) ? String(data[i][inspCol]) : '';
+      break;
+    }
+  }
+  
+  if (targetRowIdx < 0) return { success: false, message: 'Object not found' };
+  
+  var now = new Date();
+  
+  // 1. Set Exit Time
+  sh.getRange(targetRowIdx + 1, exitCol + 1).setValue(now);
+  
+  // 2. Set Sequence Number
+  if (seqCol >= 0 && targetInspector) {
+      var todayStr = formatDateRU_(now);
+      var maxSeq = 0;
+      
+      for (var j = 1; j < data.length; j++) {
+          if (j === targetRowIdx) continue; // Skip self
+          
+          // Check Inspector
+          var rInsp = (inspCol >= 0) ? String(data[j][inspCol]) : '';
+          if (rInsp !== targetInspector) continue;
+          
+          // Check Date (based on Entry time)
+          var rEntry = (entryCol >= 0) ? data[j][entryCol] : null;
+          var rEntryStr = '';
+          if (rEntry instanceof Date) rEntryStr = formatDateRU_(rEntry);
+          else if (rEntry) rEntryStr = String(rEntry).split('T')[0]; // Simple fallback
+          
+          // If formats match (DD.MM.YYYY)
+          if (rEntryStr === todayStr) {
+              var s = parseInt(data[j][seqCol], 10) || 0;
+              if (s > maxSeq) maxSeq = s;
+          }
+      }
+      
+      var newSeq = maxSeq + 1;
+      sh.getRange(targetRowIdx + 1, seqCol + 1).setValue(newSeq);
+  }
+  
+  SpreadsheetApp.flush();
+  
+  // Update WorkDay visit metric
+  try {
+    updateWorkDayVisit_(p);
+  } catch(e) {
+    Logger.log('Error updating workday visit: ' + e.message);
+  }
+  
+  return { success: true, updated: true };
+}
+
+function cancelEntry_(p) {
+  var id = String(p.objectId || '');
+  var sh = sheet_('map7') || sheet_('points');
+  if (!sh || !id) return { success: false, message: 'No ID or sheet' };
+  
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return { success: false, message: 'Sheet is empty' };
+  
+  var hdr = data[0];
+  var idCol = indexOfAny_(hdr, ['id', '№', '№ точки', 'id_объекта', 'object_id', 'no', 'номер']);
+  var entryCol = indexOfAny_(hdr, ['entry', 'entry_time', 'вход', 'время_входа', 'Время/дата входа', 'entrytime']);
+  var exitCol = indexOfAny_(hdr, ['exit', 'exit_time', 'выход', 'время_выхода', 'Время/дата выхода', 'exittime']);
+  
+  if (idCol < 0) idCol = 0;
+  if (entryCol < 0) entryCol = 6;
+  if (exitCol < 0) exitCol = 7;
+  
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) == id) {
+      sh.getRange(i + 1, entryCol + 1).setValue('');
+      if (exitCol >= 0) sh.getRange(i + 1, exitCol + 1).setValue('');
+      SpreadsheetApp.flush();
+      return { success: true, updated: true };
+    }
+  }
+  return { success: false, message: 'Object not found' };
+}
+
+function uploadPhoto_(d) {
+  var objId = String(d.object_id || d.objectId || '');
+  var dataUrl = String(d.dataUrl || d.base64 || '');
+  var categoryRaw = String(d.category || 'general');
+  var seq = String(d.seq || '1');
+  var name = String(d.fileName || ('photo_' + categoryRaw + '_' + objId + '_' + seq + '_' + Date.now() + '.png'));
+  var comment = String(d.comment || '');
+  var obsRefs = d.obs || d.obsRefs || '';
+  if (!dataUrl) return { success: false, message: 'no data' };
+  var catNorm = (function(s){
+    var t = String(s).trim().toLowerCase();
+    if (['общий фотоотчет','общий','general'].indexOf(t) >= 0) return 'Общий фотоотчет';
+    if (['оценка строительной площадки','замечания по строительной площадке','site','comments'].indexOf(t) >= 0) return 'Замечания по строительной площадке';
+    return s;
+  })(categoryRaw);
+  var bytes = Utilities.base64Decode(dataUrl.replace(/^data:[^;]+;base64,/, ''));
+  var blob = Utilities.newBlob(bytes, 'image/png', name);
+  var folder = ensurePhotoFolder_(objId, '', catNorm);
+  var file = folder.createFile(blob);
+  try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (_){ }
+  var sh = sheet_('photos');
+  if (!sh) { sh = ss_().insertSheet('photos'); sh.appendRow(['timestamp','object_id','category','seq','fileId','fileName','url','comment','obs']); }
+  var hdr = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0] || [];
+  var needComment = indexOf_(hdr,'comment') < 0;
+  var needObs = indexOf_(hdr,'obs') < 0;
+  if (needComment || needObs) {
+    hdr = hdr.slice();
+    if (needComment) hdr.push('comment');
+    if (needObs) hdr.push('obs');
+    sh.getRange(1,1,1,hdr.length).setValues([hdr]);
+  }
+  var obsStr = Array.isArray(obsRefs) ? obsRefs.join(',') : String(obsRefs || '').trim();
+  sh.appendRow([new Date(), objId, catNorm, seq, file.getId(), file.getName(), file.getUrl(), comment, obsStr]);
+  return { success: true, fileId: file.getId(), url: file.getUrl(), updated: true };
+}
+
+function getPhotos_(p) {
+  var objId = String(p.objectId || p.object_id || '');
+  var sh = sheet_('photos');
+  if (!sh) return { success: true, photos: {} };
+  var vals = sh.getDataRange().getValues();
+  var hdr = vals.length ? vals[0] : [];
+  var tsCol = indexOf_(hdr, 'timestamp');
+  var idCol = indexOf_(hdr, 'object_id');
+  var catCol = indexOf_(hdr, 'category');
+  var seqCol = indexOf_(hdr, 'seq');
+  var fileIdCol = indexOf_(hdr, 'fileId');
+  var fileNameCol = indexOf_(hdr, 'fileName');
+  var urlCol = indexOf_(hdr, 'url');
+  var commentCol = indexOf_(hdr, 'comment');
+  var obsCol = indexOf_(hdr, 'obs');
+  var out = {};
+  for (var r = 1; r < vals.length; r++) {
+    var row = vals[r] || [];
+    var id = idCol >= 0 ? String(row[idCol] || '') : '';
+    if (id !== objId) continue;
+    var cat = catCol >= 0 ? String(row[catCol] || '') : 'general';
+    var seq = seqCol >= 0 ? String(row[seqCol] || '') : '';
+    var fileId = fileIdCol >= 0 ? String(row[fileIdCol] || '') : '';
+    var fileName = fileNameCol >= 0 ? String(row[fileNameCol] || '') : '';
+    var urlRaw = urlCol >= 0 ? String(row[urlCol] || '') : '';
+    var url = fileId ? ('https://drive.google.com/uc?export=view&id=' + fileId) : urlRaw;
+    var comment = commentCol >= 0 ? String(row[commentCol] || '') : '';
+    var obsRaw = obsCol >= 0 ? String(row[obsCol] || '') : '';
+    var obsList = obsRaw ? String(obsRaw).split(/[;,\s]+/).filter(function(x){return x;}) : [];
+    if (!out[cat]) out[cat] = [];
+    out[cat].push({ seq: seq, fileId: fileId, fileName: fileName, url: url, comment: comment, obs: obsList });
+  }
+  return { success: true, photos: out };
+}
+
+function getPhotosLatest_(p) {
+  var objId = String(p.objectId || p.object_id || '');
+  var sh = sheet_('photos');
+  if (!sh) return { success: true, photos: {} };
+  var vals = sh.getDataRange().getValues();
+  var hdr = vals.length ? vals[0] : [];
+  var tsCol = indexOf_(hdr, 'timestamp');
+  var idCol = indexOf_(hdr, 'object_id');
+  var catCol = indexOf_(hdr, 'category');
+  var seqCol = indexOf_(hdr, 'seq');
+  var fileIdCol = indexOf_(hdr, 'fileId');
+  var fileNameCol = indexOf_(hdr, 'fileName');
+  var urlCol = indexOf_(hdr, 'url');
+  var commentCol = indexOf_(hdr, 'comment');
+  var obsCol = indexOf_(hdr, 'obs');
+  var rows = [];
+  for (var r = 1; r < vals.length; r++) {
+    var row = vals[r] || [];
+    var id = idCol >= 0 ? String(row[idCol] || '') : '';
+    if (id !== objId) continue;
+    var tsVal = tsCol >= 0 ? row[tsCol] : '';
+    var ts = (tsVal && Object.prototype.toString.call(tsVal) === '[object Date]') ? tsVal : (tsVal ? new Date(tsVal) : null);
+    var cat = catCol >= 0 ? String(row[catCol] || '') : 'general';
+    var seq = seqCol >= 0 ? String(row[seqCol] || '') : '';
+    var fileId = fileIdCol >= 0 ? String(row[fileIdCol] || '') : '';
+    var fileName = fileNameCol >= 0 ? String(row[fileNameCol] || '') : '';
+    var urlRaw = urlCol >= 0 ? String(row[urlCol] || '') : '';
+    var url = fileId ? ('https://drive.google.com/uc?export=view&id=' + fileId) : urlRaw;
+    var comment = commentCol >= 0 ? String(row[commentCol] || '') : '';
+    var obsRaw = obsCol >= 0 ? String(row[obsCol] || '') : '';
+    var obsList = obsRaw ? String(obsRaw).split(/[;,\s]+/).filter(function(x){return x;}) : [];
+    rows.push({ ts: ts ? ts.getTime() : 0, day: ts ? formatDateRU_(ts) : '', cat: cat, seq: seq, fileId: fileId, fileName: fileName, url: url, comment: comment, obs: obsList });
+  }
+  var latestDay = '';
+  var maxTs = 0;
+  for (var i = 0; i < rows.length; i++) { if (rows[i].ts > maxTs) { maxTs = rows[i].ts; latestDay = rows[i].day; } }
+  var out = {};
+  rows
+    .filter(function(it){ return latestDay ? it.day === latestDay : true; })
+    .sort(function(a,b){ var ca = a.cat.localeCompare(b.cat); if (ca !== 0) return ca; var sa = parseInt(a.seq||'0',10); var sb = parseInt(b.seq||'0',10); return sa - sb; })
+    .forEach(function(it){
+      if (!out[it.cat]) out[it.cat] = [];
+      out[it.cat].push({ seq: it.seq, fileId: it.fileId, fileName: it.fileName, url: it.url, comment: it.comment, obs: it.obs, timestamp: it.ts });
+    });
+  return { success: true, photos: out };
+}
+
+function moveObjectToMap_(p) {
+  var id = String(p.objectId || '');
+  if (!id) return { success: false, message: 'no id' };
+  
+  var source = sheet_('add_object');
+  var dest = sheet_('map7') || sheet_('points');
+  if (!source || !dest) return { success: false, message: 'sheets not found' };
+  
+  // Read source data
+  var sData = source.getDataRange().getValues();
+  var sHdr = sData.length > 3 ? sData[3] : [];
+  var sIdCol = indexOfAny_(sHdr, ['id','№','№ точки','object_id','no','номер','number','код']);
+  if (sIdCol < 0) sIdCol = 0;
+  
+  // Find row in source
+  var sRowIdx = -1;
+  var rowToMove = null;
+  for (var i = 4; i < sData.length; i++) {
+    if (String(sData[i][sIdCol]) === id) {
+      sRowIdx = i + 1;
+      rowToMove = sData[i];
+      break;
+    }
+  }
+  
+  if (!rowToMove) return { success: false, message: 'object not found in add_object' };
+  
+  // Read dest headers
+  var dData = dest.getDataRange().getValues();
+  var dHdr = dData.length > 0 ? dData[0] : [];
+  
+  // Construct new row
+  // 🔥 FORCE MIN WIDTH 12 (A-L)
+  var targetWidth = Math.max(dHdr.length, 12);
+  var newRow = [];
+  var newInspector = String(p.inspector || '');
+  
+  for (var j = 0; j < targetWidth; j++) {
+      var colName = (j < dHdr.length) ? String(dHdr[j]).toLowerCase().trim() : '';
+      var val = '';
+      
+      // 🔥 HARDCODED MAPPING FOR FIRST 6 COLS (A-F) TO ENSURE STABILITY
+      // A: ID
+      if (j === 0) {
+          val = "'" + String(pickCell_(rowToMove, sIdCol, [0]));
+      }
+      // B: Address
+      else if (j === 1) {
+          var sAddr = indexOfAny_(sHdr, ['address','адрес']);
+          val = pickCell_(rowToMove, sAddr, [1]);
+      }
+      // C: Latitude
+      else if (j === 2) {
+          var sLat = indexOfAny_(sHdr, ['latitude','lat','широта']);
+          val = pickCell_(rowToMove, sLat, [2]);
+      }
+      // D: Longitude
+      else if (j === 3) {
+          var sLon = indexOfAny_(sHdr, ['longitude','lon','lng','долгота']);
+          val = pickCell_(rowToMove, sLon, [3]);
+      }
+      // E: Inspector
+      else if (j === 4) {
+          if (newInspector) {
+              val = newInspector;
+          } else {
+              var sInsp = indexOfAny_(sHdr, ['inspector','инспектор','ответственный']);
+              val = pickCell_(rowToMove, sInsp, [4]) || 'Admin';
+          }
+      }
+      // F: List
+      else if (j === 5) {
+          var sList = indexOfAny_(sHdr, ['list','список','лист']);
+          val = pickCell_(rowToMove, sList, [5]) || 'Без списка';
+      }
+      // Explicit Mapping for Construction Readiness (Col L usually)
+      else if (['readiness','construction_readiness','строительная готовность','готовность','строит. готовность'].indexOf(colName) >= 0) {
+          var sReady = indexOfAny_(sHdr, ['readiness','construction_readiness','строительная готовность','готовность','строит. готовность']);
+          val = pickCell_(rowToMove, sReady, [11]); // Fallback to index 11 (Col L)
+      }
+      // OTHERS: Try to map by header name if available
+      else if (colName) {
+          var sCol = indexOf_(sHdr, dHdr[j]);
+          if (sCol < 0) sCol = indexOfAny_(sHdr, [colName]);
+          if (sCol >= 0) val = rowToMove[sCol];
+      }
+      
+      newRow.push(val);
+  }
+  
+  dest.appendRow(newRow);
+  SpreadsheetApp.flush();
+  source.deleteRow(sRowIdx);
+  
+  return { success: true };
+}
+
+function getDatabaseHeaders_() {
+  var sh = sheet_('database');
+  if (!sh) return { success: false, message: 'no database sheet' };
+  var vals = sh.getDataRange().getValues();
+  var r1 = vals[0] || [];
+  var r2 = vals[1] || [];
+  var r3 = vals[2] || [];
+  return { success: true, row1: r1, row2: r2, row3: r3 };
+}
+
+// ==================================================================
+// 🔥 YANDEX DISK FOLDER CREATION
+// ==================================================================
+
+function ydMkdir_(path) {
+  if (!path) return { success: false, message: 'Empty path' };
+  var url = 'https://cloud-api.yandex.net/v1/disk/resources?path=' + encodeURIComponent(path);
+  var opts = {
+    method: 'put',
+    headers: { 'Authorization': 'OAuth ' + YANDEX_OAUTH_TOKEN },
+    muteHttpExceptions: true
+  };
+  try {
+    var resp = UrlFetchApp.fetch(url, opts);
+    var code = resp.getResponseCode();
+    if (code === 201 || code === 409) {
+      return { success: true, code: code, created: code === 201 };
+    }
+    return { success: false, code: code, message: resp.getContentText() };
+  } catch (e) {
+    return { success: false, message: String(e) };
+  }
+}
+
+function createMonitoringFolders_(p) {
+  var objectId = String(p.objectId || '').trim();
+  var inspector = String(p.inspector || '').trim();
+  if (!objectId) return { success: false, message: 'Не указан ID объекта' };
+  if (!inspector) return { success: false, message: 'Не указан инспектор' };
+  var now = new Date();
+  var dd = now.getDate();
+  var mm = now.getMonth() + 1;
+  var yyyy = now.getFullYear();
+  var dateStr = (dd < 10 ? '0' + dd : dd) + '.' + (mm < 10 ? '0' + mm : mm) + '.' + yyyy;
+  var mainFolderName = dateStr + ' ' + inspector;
+  var objectPath = YANDEX_ROOT_PATH + '/' + objectId;
+  var mainPath = objectPath + '/' + mainFolderName;
+  Logger.log('Creating main folder: ' + mainPath);
+  var mainResult = ydMkdir_(mainPath);
+  if (!mainResult.success) {
+    return { success: false, message: 'Ошибка создания основной папки: ' + (mainResult.message || mainResult.code) };
+  }
+  var subfolders = [
+    'Акт + селфи + СКУД + ОЖР',
+    'Общий фотоотчет',
+    'Периметральное ограждение + Подъездные пути',
+    'Бытовой городок',
+    'Замечания контроля качества',
+    'Замечания строительной площадки + Грунт'
+  ];
+  var created = 0;
+  var errors = [];
+  for (var i = 0; i < subfolders.length; i++) {
+    var subPath = mainPath + '/' + subfolders[i];
+    Logger.log('Creating subfolder: ' + subPath);
+    var result = ydMkdir_(subPath);
+    if (result.success && result.created) {
+      created++;
+    } else if (!result.success) {
+      errors.push(subfolders[i]);
+    }
+  }
+  return { 
+    success: true, 
+    folderPath: mainPath,
+    mainFolder: mainFolderName,
+    subfoldersCreated: created,
+    totalSubfolders: subfolders.length,
+    errors: errors.length > 0 ? errors : null
+  };
+}
+
+// ============================================================================
+// 🔥 ОБНОВЛЕННЫЙ КОД ДЛЯ WORKDAY (WorkDay1)
+// ============================================================================
+
+
+
+function getWorkDayData_(p) {
+  var sh = sheet_(WORKDAY_SHEET_NAME);
+  if (!sh) return { success: false, message: 'No WorkDay1 Sheet' };
+  var vals = sh.getDataRange().getValues();
+  // Remove header
+  if (vals.length > 0) vals.shift();
+  return { success: true, data: vals };
+}
+
+function getDistance_(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+  var R = 6371e3; // metres
+  var φ1 = lat1 * Math.PI/180;
+  var φ2 = lat2 * Math.PI/180;
+  var Δφ = (lat2-lat1) * Math.PI/180;
+  var Δλ = (lon2-lon1) * Math.PI/180;
+  var a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+          Math.cos(φ1) * Math.cos(φ2) *
+          Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// Helper: Get row index by Inspector + Date (String comparison)
+function getWorkDayRowIndex_(sh, inspector, dateObj) {
+  var data = sh.getDataRange().getValues();
+  if (data.length <= 1) return -1;
+  
+  var targetDate = formatDateRU_(dateObj); // "DD.MM.YYYY"
+  var insp = String(inspector).trim();
+  
+  for (var i = 1; i < data.length; i++) {
+    var rDate = data[i][0]; // A: date (String)
+    var rInsp = data[i][1]; // B: inspector
+    
+    // Normalize date from sheet if it's potentially a Date object
+    var rDateStr = (rDate instanceof Date) ? formatDateRU_(rDate) : String(rDate);
+    
+    if (String(rInsp).trim() === insp && rDateStr === targetDate) {
+      return i + 1; // 1-based index
+    }
+  }
+  return -1;
+}
+
+
+function calculateDailyScore_(inspector, date) {
+  var shWD = sheet_(WORKDAY_SHEET_NAME);
+  if (!shWD) return;
+  var rowIdx = getWorkDayRowIndex_(shWD, inspector, date);
+  if (rowIdx < 0) return;
+
+  var range = shWD.getRange(rowIdx, 1, 1, 18);
+  var row = range.getValues()[0];
+  
+  var basePoint = 0;
+  var timeOpenStr = row[2]; // C: time_open
+  var timeCloseStr = row[7]; // H: time_close
+  
+  if (timeOpenStr) {
+     var parts = String(timeOpenStr).split(':');
+     if (parts.length >= 2) {
+       var h = parseInt(parts[0], 10);
+       var m = parseInt(parts[1], 10);
+       if (h < 9 || (h === 9 && m <= 15)) basePoint += 5;
+     }
+  }
+  
+  if (timeCloseStr) {
+     var parts = String(timeCloseStr).split(':');
+     if (parts.length >= 2) {
+       var h = parseInt(parts[0], 10);
+       var m = -1; // End time doesn't check minutes for score usually, just >= 18:00
+       if (h >= 18) basePoint += 5;
+     }
+  }
+
+  // Map Data logic
+  var shMap = sheet_('map7');
+  var mapData = shMap.getDataRange().getValues();
+  var mapHdr = mapData[0];
+  var inspCol = indexOfAny_(mapHdr, ['inspector','инспектор','ответственный']);
+  var entryCol = indexOfAny_(mapHdr, ['Время/дата входа', 'entry_time', 'Вход']);
+  var seqCol = indexOfAny_(mapHdr, ['номер по счету', 'sequence', 'seq']);
+  var readyCol = indexOfAny_(mapHdr, ['Строительная готовность', 'readiness', 'construction_readiness']);
+  var latCol = indexOfAny_(mapHdr, ['latitude','lat','широта']);
+  var lonCol = indexOfAny_(mapHdr, ['longitude','lon','lng','долгота']);
+
+  var visited = [];
+  var todayStr = formatDateRU_(date);
+
+  for (var i = 1; i < mapData.length; i++) {
+    var rInsp = String(mapData[i][inspCol] || '');
+    var rEntry = mapData[i][entryCol];
+    var rEntryStr = (rEntry instanceof Date) ? formatDateRU_(rEntry) : String(rEntry);
+    
+    if (rInsp === inspector && rEntryStr === todayStr) {
+       var seq = parseInt(mapData[i][seqCol], 10) || 0;
+       var ready = parseFloat(mapData[i][readyCol]) || 0;
+       var lat = mapData[i][latCol];
+       var lon = mapData[i][lonCol];
+       visited.push({ seq: seq, ready: ready, lat: lat, lon: lon });
+    }
+  }
+
+  // Sort by sequence or time? Usually sequence.
+  visited.sort(function(a,b) { return a.seq - b.seq; });
+
+  var maxSeq = 0;
+  if (visited.length > 0) {
+    maxSeq = visited[visited.length - 1].seq; // Use max sequence number found
+    // Or should it be length? Usually max seq if they are numbered 1..N
+    if (!maxSeq) maxSeq = visited.length; 
+  }
+  var quality = maxSeq; // Column 13: quality (quantity)
+  var objectPoint = quality * 10; // Column 15
+
+  var totalDist = 0;
+  for (var i = 0; i < visited.length - 1; i++) {
+     var p1 = visited[i];
+     var p2 = visited[i+1];
+     totalDist += getDistance_(p1.lat, p1.lon, p2.lat, p2.lon);
+  }
+  var distKm = totalDist / 1000;
+  var distancePoint = distKm * 0.5; // Column 16
+
+  var avgReady = 0;
+  if (visited.length > 0) {
+    var sumReady = 0;
+    for (var i=0; i<visited.length; i++) sumReady += visited[i].ready;
+    avgReady = sumReady / visited.length;
+  }
+  
+  var coef = 1.0;
+  if (avgReady > 30 && avgReady <= 60) coef = 1.2;
+  if (avgReady > 60) coef = 1.5;
+  
+  var pointConstructionReadiness = coef; // Column 17
+
+  var sumPoint = (basePoint + objectPoint + distancePoint) * pointConstructionReadiness; // Column 18
+
+  // Writing Back to 18-col row
+  // Indices: 
+  // 12: quality
+  // 13: base_point
+  // 14: object_point
+  // 15: distance_point
+  // 16: point_construction_readiness
+  // 17: sum_point
+  
+  row[12] = quality;
+  row[13] = basePoint;
+  row[14] = objectPoint;
+  row[15] = distancePoint;
+  row[16] = pointConstructionReadiness;
+  row[17] = sumPoint;
+  
+  range.setValues([row]);
+}
+
+function updateWorkDayVisit_(p) {
+  var sh = sheet_(WORKDAY_SHEET_NAME);
+  if (!sh) return;
+  var inspector = String(p.inspector || '');
+  var now = new Date();
+  var rowIdx = getWorkDayRowIndex_(sh, inspector, now);
+  if (rowIdx < 0) return;
+
+  // READ 18 cols
+  var range = sh.getRange(rowIdx, 1, 1, 18);
+  var row = range.getValues()[0];
+  
+  var objId = p.objectId || p.object_id;
+  var mapSh = sheet_('map7');
+  var mapData = mapSh.getDataRange().getValues();
+  var mapHdr = mapData[0];
+  var idCol = indexOfAny_(mapHdr, ['id','№','№ точки','object_id','no', 'номер']);
+  var latCol = indexOfAny_(mapHdr, ['latitude','lat','широта']);
+  var lonCol = indexOfAny_(mapHdr, ['longitude','lon','lng','долгота']);
+  
+  if (idCol < 0) idCol = 0;
+  if (latCol < 0) latCol = 2;
+  if (lonCol < 0) lonCol = 3;
+  
+  var objLat = 0, objLon = 0;
+  for(var i=1; i<mapData.length; i++) {
+    if(String(mapData[i][idCol]) == String(objId)) {
+      objLat = mapData[i][latCol];
+      objLon = mapData[i][lonCol];
+      break;
+    }
+  }
+  
+  if (!objLat || !objLon) {
+    Logger.log('Object coords not found for: ' + objId + ' (idCol=' + idCol + ', latCol=' + latCol + ')');
+    return;
+  }
+  
+  var objCoords = parseFloat(objLat).toFixed(4) + ', ' + parseFloat(objLon).toFixed(4);
+  
+  // Update Last Object Coords (J / Col 10 / Idx 9)
+  row[9] = objCoords;
+  
+  // Update First Object Coords if empty (E / Col 5 / Idx 4)
+  if (!row[4]) {
+    row[4] = objCoords;
+    var openCoords = row[3]; // D: open_coordinats
+    if (openCoords) {
+       var parts1 = openCoords.split(',');
+       var parts2 = objCoords.split(',');
+       if (parts1.length == 2 && parts2.length == 2) {
+         var dist = getDistance_(parseFloat(parts1[0]), parseFloat(parts1[1]), parseFloat(parts2[0]), parseFloat(parts2[1]));
+         row[5] = dist <= 500 ? '✅' : '❌'; // F: coordinate_correspondence
+       }
+    }
+  }
+  
+  range.setValues([row]);
+}
+
+function checkWorkDay_(p) {
+  var sh = sheet_(WORKDAY_SHEET_NAME);
+  if (!sh) return { success: false, open: false };
+  var inspector = String(p.inspector || '');
+  var now = new Date();
+  var rowIdx = getWorkDayRowIndex_(sh, inspector, now);
+  
+  if (rowIdx < 0) return { success: true, open: false };
+  
+  // READ 18 cols
+  var row = sh.getRange(rowIdx, 1, 1, 18).getValues()[0];
+  
+  // H: time_close (Idx 7) -> if empty, day is open
+  var open = !String(row[7] || '').trim(); 
+  var openTime = null;
+  
+  // Parse string Date + Time
+  if (row[2] && row[0]) {
+      var dStr = (row[0] instanceof Date) ? formatDateRU_(row[0]) : String(row[0]);
+      var dParts = dStr.split('.');
+      var tParts = String(row[2]).split(':');
+      if (dParts.length===3 && tParts.length>=2) {
+         // Create local ISO approx
+         var iso = dParts[2] + '-' + dParts[1] + '-' + dParts[0] + 'T' + tParts[0] + ':' + tParts[1] + ':00';
+         openTime = iso;
+      }
+  }
+  
+  return { success: true, open: open, openTime: openTime, rowIdx: rowIdx };
+}
+
+
+// ============================================================================
+// 🔥 АРХИВАЦИЯ ВЫПОЛНЕННЫХ ОБЪЕКТОВ
+// ============================================================================
+
+function archiveCompletedObjects_(p) {
+  var mapSh = sheet_('map7') || sheet_('points');
+  var arcSh = sheet_('АРХИВ');
+  if (!mapSh) return { success: false, message: 'No map7 sheet' };
+  if (!arcSh) { arcSh = ss_().insertSheet('АРХИВ'); }
+
+  var data = mapSh.getDataRange().getValues();
+  if (data.length < 2) return { success: true, count: 0, message: 'No data to archive' };
+
+  var hdr = data[0];
+  var exitCol = indexOfAny_(hdr, ['exit', 'exit_time', 'выход', 'время_выхода', 'Время/дата выхода', 'exittime']);
+  if (exitCol < 0) exitCol = 7; 
+
+  var keep = [hdr];
+  var archive = [];
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var exitVal = row[exitCol];
+    if (exitVal && String(exitVal).trim() !== '') {
+       archive.push(row);
+    } else {
+       keep.push(row);
+    }
+  }
+
+  if (archive.length === 0) return { success: true, count: 0, message: 'Nothing to archive' };
+
+  arcSh.getRange(arcSh.getLastRow() + 1, 1, archive.length, archive[0].length).setValues(archive);
+
+  mapSh.clearContents();
+  mapSh.getRange(1, 1, keep.length, keep[0].length).setValues(keep);
+  
+  SpreadsheetApp.flush();
+
+  return { success: true, count: archive.length, message: 'Archived ' + archive.length + ' objects' };
+}
+

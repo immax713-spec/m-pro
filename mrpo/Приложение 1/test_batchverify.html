@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Test Batch Verify</title>
+</head>
+
+<body>
+    <h1>Test Batch Verify Direct</h1>
+    <button onclick="testBatchVerify()">Test POST Request</button>
+    <pre id="result"></pre>
+
+    <script>
+        async function testBatchVerify() {
+            const result = document.getElementById('result');
+            result.textContent = 'Sending request...';
+
+            try {
+                const response = await fetch('https://script.google.com/macros/s/AKfycbwXbugTkd7QnipCROZTzWX8KlwPUoZQehHdEs-0til1INXZ7o7jX9qr3fkpqpYCjsMBDg/exec', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'testYandex'
+                    })
+                });
+
+                const data = await response.json();
+                result.textContent = 'Response:\n' + JSON.stringify(data, null, 2);
+            } catch (error) {
+                result.textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+
+</html>

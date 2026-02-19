@@ -1,0 +1,194 @@
+﻿# bmw.html - структура файла (актуально)
+
+Обновлено по `bmw.html` (6269 строк).
+
+## 1) Верхнеуровневая структура
+
+- `1-22`: HEAD
+  - `DOCTYPE`, meta, title
+  - внешние скрипты: Yandex Maps API, Firebase compat SDK
+- `23-1427`: CSS
+  - базовый layout/sidebar/карта
+  - нижнее меню (glass-эффект), аккордеоны, списки объектов
+  - модалка карточки объекта, уведомления, auth-overlay
+- `1429-1677`: HTML BODY
+  - `#objectDetailsOverlay`, `#authOverlay`
+  - левая панель с вкладками `#nav-lists` / `#nav-objects`
+  - контейнеры фильтров `#lists-container`, `#inspectors-container`
+  - списки объектов: `#objectsActiveList`, `#objectsNewList`, `#objectsCompletedList`
+  - поиск `#objectsSearchWrapper`, меню `#modernMenu`, карта `#map`
+  - админ-панель `#inspectorManagementPanel`
+- `1678-6264`: JavaScript
+
+---
+
+## 2) Карта JS-модулей и диапазоны
+
+### `1697-1815` Конфигурация
+- `const CONFIG = Object.freeze({...})`
+- Firebase, GAS URL, Yandex (token/root/subfolders), map/status/source constants
+- storage keys: `SESSION_KEY`, `FILTERS_STORAGE_KEY`
+- UI/animation/progress/date/default/z-index параметры
+
+### `1816-2164` Runtime + State
+- `DEBUG_MODE`, `debugLog`
+- `AppState` (ui/filters/data/map/runtime)
+- state-обертки:
+  - `FiltersState`
+  - `UIState`
+  - `DataState`
+  - `RuntimeState`
+  - `MapState`
+
+### `2165-2543` Инициализация и делегированные события
+- `initDelegatedEvents_()`
+  - общий `click` по `data-action`
+  - `change` по `data-change-action`
+  - `input` по `data-input-action`
+- `syncMenuIndicator_`, `scheduleMenuIndicatorSync_`
+- `initGlassInteractions()` (drag/indicator)
+
+### `2544-2703` Авторизация
+- `doLogin`, `showAuthError`, `showSuccessAndContinue`, `hideAuthOverlay`, `updateUserCard`, `logout`
+
+### `2704-2788` Карта (база)
+- `initMap`, `showHomes`, `updateInspectorsHomesLayer`
+
+### `2789-2917` Данные
+- `loadData`, `autoRenderOpenPanels`
+
+### `2918-3984` UI, фильтры, таб объектов
+- `showNotification`
+- фильтры/аккордеоны:
+  - `toggleFilter`, `toggleAccordion`, `renderFilterLists`
+  - `loadStoredFilters_`, `saveFiltersToStorage_`, `applyStoredFiltersToUI_`
+  - `syncGroupCheckboxes_`, `ensureFilterCheckboxCache_`, `toggleDivisionFilters`
+  - `updateMapFilters`, `toggleOnlyActiveMode`, `toggleShowCompletedOnMap`
+- объекты:
+  - `getObjectsForObjectsTab_`
+  - `scheduleObjectsListRender_`, `scheduleObjectsListUpdate_`
+  - `updateObjectsList`, `populateObjectsList_`
+  - `switchNav`, `focusObjectFromObjectsTab_`, `refreshObjectsTabIfVisible_`
+
+### `3985-4721` Администрирование инспекторов
+- `showInspectorManagement`, `closeInspectorManagement`
+- `toggleInspectorCard`, `filterManagementInspectors`
+- `renderInspectorManagement`, `renderInspectorCard`, `getPickerData`
+- пикеры и сохранение:
+  - `togglePicker`, `selectColor`, `selectIcon`, `selectStatusOption`
+  - `applyInspectorChanges`
+- служебные:
+  - `normalizeInspectorName_`, `getInspectorConfigKeysByName_`
+  - `applyLiveInspectorColorToMap_`, `refreshOpenObjectDetailsForInspector_`
+  - `setButtonState`, `createJsonpRequest`
+
+### `4722-5114` Рендер точек на карте
+- `initObjectManagers_`, `clearMapLayers_`
+- `getMapRenderSignature_`, `applyMapRender_`, `updateMap`
+- `createPointFeature_`, `calculateOffset_`, `getHintContent_`, `getInspectorStyle`
+
+### `5115-5447` Модалка объекта (кастомный балун)
+- `openObjectDetails`, `closeObjectDetails`
+- статус/бейджи/кнопки:
+  - `getObjectStatus`, `getStatusBadge`, `renderActionButtons`
+  - `renderReassignSelect`, `renderYandexButton`
+- diff-render секций:
+  - `buildObjectCardSections_`
+  - `patchCardSectionHtml_`, `patchOpenObjectDetailsContent_`
+  - `renderOpenObjectDetailsContent_`
+- fallback full-render: `getBalloonContent`
+
+### `5448-5512` Действия по объекту
+- `markEntry`, `markExit`, `cancelEntry`, `markDenied`, `callLaboratory`, `reassignInspector`, `copyCoordinates`
+
+### `5513-5822` Интеграция Яндекс.Диска
+- `createYandexFolder`, `checkYandexFolder`, `savePhotosLinkToSheet_`
+- `handleYandexDiskButton`, `handleYandexDiskAction_`, `initYandexDiskButtons`
+
+### `5823-5969` Выполнение действий и optimistic UI
+- `executeObjectAction_`
+- `optimisticallyUpdateObject_`
+- `rollbackObjectUpdate_`
+- `reloadData_`
+
+### `5970-6012` Публичный API
+- `window.AppModules = { Filters, Map, Objects, Customization }`
+
+### `6013-6264` Smoke-тесты
+- `window.runBmwSmokeTests(options)`
+- авто-запуск при `?smoke=1`
+
+---
+
+## 3) Хранилища и интеграции
+
+- `sessionStorage`:
+  - `mpro_user` (`CONFIG.SESSION_KEY`)
+- `localStorage`:
+  - `mpro_filters` (`CONFIG.FILTERS_STORAGE_KEY`)
+- Google Apps Script endpoint:
+  - `CONFIG.SCRIPT_URL`
+- Yandex Disk REST:
+  - `https://cloud-api.yandex.net/v1/disk/resources`
+- Карта:
+  - Yandex Maps JS API 2.1
+
+---
+
+## 4) Делегированные триггеры
+
+### `data-action` (click)
+- auth/navigation/admin:
+  - `login`, `switch-nav`, `show-homes`, `show-inspector-management`, `close-inspector-management`
+- filters/ui:
+  - `toggle-filter`, `toggle-accordion`
+- management/pickers:
+  - `toggle-inspector-card`, `toggle-picker`, `select-color`, `select-icon`, `select-status-option`, `apply-inspector-changes`
+- object actions:
+  - `mark-entry`, `mark-exit`, `cancel-entry`, `mark-denied`, `call-laboratory`, `copy-coordinates`, `focus-object-from-list`
+- modal/yandex:
+  - `close-object-details`, `yandex-disk`
+
+### `data-change-action` (change)
+- `toggle-only-active-mode`
+- `toggle-show-completed-on-map`
+- `update-map-filters`
+- `toggle-division-filters`
+- `reassign-inspector`
+
+### `data-input-action` (input)
+- `objects-search`
+- `filter-management-inspectors`
+
+---
+
+## 5) Ключевые улучшения, уже в коде
+
+- Бэтчинг обновлений через кадр:
+  - `scheduleMapUpdate_`, `scheduleObjectsListRender_`
+- Сигнатуры рендера для избежания лишней перерисовки:
+  - `lastMapRenderSignature`, `objectsListRenderCache`
+- O(1) поиск объекта:
+  - `DataState.objectsById`
+- Кэш DOM и кэш чекбоксов фильтров:
+  - `UIState.getDomById`, `ensureFilterCheckboxCache_`
+- Безопасный рендер HTML/URL:
+  - `Utils.escapeHtml`, `Utils.escapeAttr`, `Utils.sanitizeUrl`
+- Diff-render карточки объекта в модалке:
+  - patch по секциям вместо полного `innerHTML` на каждом апдейте
+
+---
+
+## 6) Smoke-проверки (из файла)
+
+- `Public modules registry`
+- `Objects tab switch`
+- `Filters persistence in localStorage`
+- `"Только в работе" toggle`
+- `"Показать выполненные" toggle`
+- `Instant inspector color apply`
+- `Objects list avoids redundant section re-render`
+
+---
+
+Примечание: диапазоны строк могут немного смещаться при дальнейших изменениях `bmw.html`.
