@@ -2208,6 +2208,11 @@
                 messagingSenderId: "504908226667",
                 appId: "1:504908226667:web:ea5dcb9acfd7d6a460912e"
             },
+            SYNC: {
+                PATH: 'sync/lastUpdate',
+                RELOAD_DEBOUNCE_MS: 700,
+                IGNORE_OWN_EVENT_MS: 2000
+            },
             
             // Адрес Google Apps Script
             SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxbeWegtJ0gvseJyDBkOmNYKumw0LzAKeg5qN7A6U-ru9M6QvypL7qTI5HDu8uVvK_S/exec',
@@ -3230,9 +3235,109 @@
                 setMapInlineSearchOpen_(false);
             }
         }
+
+        const RealtimeSyncState = {
+            database: null,
+            path: '',
+            isListening: false,
+            lastSeenTs: 0,
+            lastOwnWriteTs: 0,
+            refreshTimer: null,
+            refreshInFlight: false,
+            refreshQueued: false
+        };
+
+        function initRealtimeSync_() {
+            if (RealtimeSyncState.isListening) return;
+            if (!window.firebase || typeof firebase.database !== 'function') return;
+
+            try {
+                RealtimeSyncState.database = firebase.database();
+            } catch (error) {
+                console.warn('Realtime sync init failed:', error);
+                return;
+            }
+
+            const syncPath = String(CONFIG.SYNC?.PATH || 'sync/lastUpdate').trim() || 'sync/lastUpdate';
+            RealtimeSyncState.path = syncPath;
+
+            RealtimeSyncState.database.ref(syncPath).on('value', (snapshot) => {
+                const raw = Number(snapshot?.val());
+                if (!Number.isFinite(raw) || raw <= 0) return;
+                if (raw <= RealtimeSyncState.lastSeenTs) return;
+                RealtimeSyncState.lastSeenTs = raw;
+
+                const ownTs = Number(RealtimeSyncState.lastOwnWriteTs || 0);
+                const ignoreOwnWindowMs = Number(CONFIG.SYNC?.IGNORE_OWN_EVENT_MS || 2000);
+                if (ownTs && Math.abs(raw - ownTs) <= ignoreOwnWindowMs) return;
+                if (!RuntimeState.hasCurrentUser()) return;
+
+                scheduleRealtimeRefresh_('firebase');
+            }, (error) => {
+                console.warn('Realtime sync listener error:', error);
+            });
+
+            RealtimeSyncState.isListening = true;
+        }
+
+        function scheduleRealtimeRefresh_(reason = 'firebase') {
+            if (!RuntimeState.hasCurrentUser()) return;
+
+            const delayMs = Number(CONFIG.SYNC?.RELOAD_DEBOUNCE_MS || 700);
+            if (RealtimeSyncState.refreshTimer) {
+                clearTimeout(RealtimeSyncState.refreshTimer);
+            }
+
+            RealtimeSyncState.refreshTimer = setTimeout(() => {
+                RealtimeSyncState.refreshTimer = null;
+                runRealtimeRefresh_(reason);
+            }, delayMs);
+        }
+
+        function runRealtimeRefresh_(reason = 'firebase') {
+            if (!RuntimeState.hasCurrentUser()) return;
+            if (RealtimeSyncState.refreshInFlight) {
+                RealtimeSyncState.refreshQueued = true;
+                return;
+            }
+
+            RealtimeSyncState.refreshInFlight = true;
+            RuntimeState.clearDataLoadPromise();
+
+            const tasks = [loadData()];
+            if (isInspectorRole_()) {
+                tasks.push(syncWorkDayStateFromServer_({ force: true, silent: true }).catch(() => null));
+            }
+
+            Promise.allSettled(tasks)
+                .finally(() => {
+                    RealtimeSyncState.refreshInFlight = false;
+                    if (RealtimeSyncState.refreshQueued) {
+                        RealtimeSyncState.refreshQueued = false;
+                        scheduleRealtimeRefresh_('queued');
+                    }
+                });
+        }
+
+        function notifyRealtimeSync_(reason = 'change') {
+            if (!RealtimeSyncState.database) return;
+
+            const syncPath = RealtimeSyncState.path || String(CONFIG.SYNC?.PATH || 'sync/lastUpdate');
+            const stamp = Date.now();
+            RealtimeSyncState.lastOwnWriteTs = stamp;
+            if (stamp > RealtimeSyncState.lastSeenTs) {
+                RealtimeSyncState.lastSeenTs = stamp;
+            }
+
+            RealtimeSyncState.database.ref(syncPath).set(stamp)
+                .catch((error) => {
+                    console.warn('Realtime sync notify failed:', reason, error);
+                });
+        }
         
         document.addEventListener('DOMContentLoaded', () => {
             firebase.initializeApp(CONFIG.FIREBASE);
+            initRealtimeSync_();
             initDelegatedEvents_();
             syncViewportHeight_();
             syncMobileLayoutState_();
@@ -3856,6 +3961,7 @@
                 WorkDayRuntimeState.setOpenTime(response.open ? (response.openTime || '') : '');
                 WorkDayRuntimeState.clearError();
                 WorkDayRuntimeState.markSynced(normalizeInspectorName_(RuntimeState.getCurrentUserName('')));
+                notifyRealtimeSync_('workday');
 
                 if (geoUnavailable) {
                     const statusLabel = response.open ? 'Рабочий день открыт' : 'Рабочий день закрыт';
@@ -5749,6 +5855,7 @@
             request
                 .then(data => {
                     if (data?.success) {
+                        notifyRealtimeSync_('inspector-config');
                         CardChanges.clear(cardId);
                         setButtonState(btn, 'saved', originalText);
                         
@@ -6820,6 +6927,7 @@
 
                 if (response?.success) {
                     object.photosLink = photosLink;
+                    notifyRealtimeSync_('photos-link');
                     return { success: true };
                 }
                 return { success: false, error: response?.error || 'save failed' };
@@ -7084,6 +7192,7 @@
             createJsonpRequest(requestParams, 15000)
                 .then(response => {
                     if (response.success) {
+                        notifyRealtimeSync_(`object:${action}`);
                         showNotification('✅ ' + (response.message || 'Действие выполнено'), 'success');
                         // Для переназначения оставляем локальный мгновенный UI и
                         // не перетираем его immediate-перезагрузкой данных.
