@@ -1822,7 +1822,10 @@
             }
 
             .map-container {
+                position: fixed;
+                inset: 0;
                 width: 100%;
+                min-height: 100dvh;
                 height: var(--app-height, 100dvh);
             }
 
@@ -3057,6 +3060,31 @@
             });
         }
 
+        function getMapControlsTopOffset_() {
+            const root = document.documentElement;
+            const cssSafeTop = root
+                ? Number.parseInt(getComputedStyle(root).getPropertyValue('--safe-top'), 10) || 0
+                : 0;
+            const vvTop = window.visualViewport ? Math.round(Number(window.visualViewport.offsetTop) || 0) : 0;
+            return Math.max(cssSafeTop, vvTop, 0);
+        }
+
+        function syncMapControlsInsets_() {
+            const mapInstance = MapState.getMapInstance();
+            if (!mapInstance || !mapInstance.controls) return;
+
+            const controlTop = getMapControlsTopOffset_() + 10;
+            const zoomControl = mapInstance.controls.get('zoomControl');
+            if (zoomControl && zoomControl.options && typeof zoomControl.options.set === 'function') {
+                zoomControl.options.set('position', { left: 10, top: controlTop });
+            }
+
+            const typeSelector = mapInstance.controls.get('typeSelector');
+            if (typeSelector && typeSelector.options && typeof typeSelector.options.set === 'function') {
+                typeSelector.options.set('position', { right: 10, top: controlTop });
+            }
+        }
+
         function syncViewportHeight_() {
             const root = document.documentElement;
             if (!root) return;
@@ -3071,6 +3099,7 @@
             lastSyncedViewportHeight_ = nextHeight;
             root.style.setProperty('--app-height', `${nextHeight}px`);
             scheduleMapFitToViewport_();
+            syncMapControlsInsets_();
         }
 
         function getMainSidebarElement_() {
@@ -3929,10 +3958,20 @@
                 MapState.setMapInstance(new ymaps.Map('map', {
                     center: [55.7558, 37.6176],
                     zoom: 10,
-                    controls: ['zoomControl', 'typeSelector']
+                    controls: []
                 }));
+                const mapInstance = MapState.getMapInstance();
+                mapInstance.controls.add('zoomControl', {
+                    size: 'small',
+                    position: { left: 10, top: getMapControlsTopOffset_() + 10 }
+                });
+                mapInstance.controls.add('typeSelector', {
+                    position: { right: 10, top: getMapControlsTopOffset_() + 10 }
+                });
                 scheduleMapFitToViewport_();
+                syncMapControlsInsets_();
                 setTimeout(scheduleMapFitToViewport_, 120);
+                setTimeout(syncMapControlsInsets_, 120);
                 
                 // Инициализируем менеджеры объектов (ObjectManager) для точек
                 initObjectManagers_();
