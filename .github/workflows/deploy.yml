@@ -26,24 +26,54 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
 
+      - name: Normalize deploy vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          host='${{ secrets.SERVER_HOST }}'
+          user='${{ secrets.SERVER_USER }}'
+          port='${{ secrets.SERVER_PORT }}'
+          path='${{ secrets.SERVER_PATH }}'
+
+          host="$(echo "$host" | tr -d '\r' | xargs)"
+          user="$(echo "$user" | tr -d '\r' | xargs)"
+          port="$(echo "$port" | tr -d '\r' | xargs)"
+          path="$(echo "$path" | tr -d '\r' | xargs)"
+
+          if [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]]; then
+            echo "SERVER_PORT is invalid, fallback to 22"
+            port="22"
+          fi
+
+          if [[ -z "$path" ]]; then
+            path="/var/www/mpro7.ru"
+          elif [[ "$path" != /* ]]; then
+            path="/var/www/$path"
+          fi
+
+          echo "DEPLOY_HOST=$host" >> "$GITHUB_ENV"
+          echo "DEPLOY_USER=$user" >> "$GITHUB_ENV"
+          echo "DEPLOY_PORT=$port" >> "$GITHUB_ENV"
+          echo "DEPLOY_PATH=$path" >> "$GITHUB_ENV"
+
       - name: Add server to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ secrets.SERVER_PORT }}" "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
       - name: Upload new file
         run: |
-          scp -P "${{ secrets.SERVER_PORT }}" \
+          scp -P "$DEPLOY_PORT" \
             ./bmw.html \
-            "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.SERVER_PATH }}/bmw.html.new"
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/bmw.html.new"
 
       - name: Atomic replace + backup
         run: |
-          ssh -p "${{ secrets.SERVER_PORT }}" "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" '
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
             set -e
-            if [ -f "${{ secrets.SERVER_PATH }}/bmw.html" ]; then
-              cp "${{ secrets.SERVER_PATH }}/bmw.html" "${{ secrets.SERVER_PATH }}/bmw.html.bak"
+            if [ -f "'"$DEPLOY_PATH"'/bmw.html" ]; then
+              cp "'"$DEPLOY_PATH"'/bmw.html" "'"$DEPLOY_PATH"'/bmw.html.bak"
             fi
-            mv "${{ secrets.SERVER_PATH }}/bmw.html.new" "${{ secrets.SERVER_PATH }}/bmw.html"
-            chmod 644 "${{ secrets.SERVER_PATH }}/bmw.html"
+            mv "'"$DEPLOY_PATH"'/bmw.html.new" "'"$DEPLOY_PATH"'/bmw.html"
+            chmod 644 "'"$DEPLOY_PATH"'/bmw.html"
           '
