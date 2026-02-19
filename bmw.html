@@ -38,6 +38,7 @@
             --safe-right: env(safe-area-inset-right, 0px);
             --safe-bottom: env(safe-area-inset-bottom, 0px);
             --safe-left: env(safe-area-inset-left, 0px);
+            --safe-top-live: var(--safe-top);
         }
 
         html, body {
@@ -1495,7 +1496,7 @@
            ============================================ */
         .glass-notification {
             position: fixed;
-            top: 20px;
+            top: calc(var(--safe-top-live, var(--safe-top)) + 12px);
             left: 50%;
             transform: translateX(-50%) translateY(-100px) scale(0.9);
             z-index: 999999;
@@ -1853,7 +1854,7 @@
             }
 
             .sidebar-content {
-                padding: 12px;
+                padding: calc(12px + var(--safe-top-live, var(--safe-top)) + 12px) 12px 12px;
             }
 
             .modern-menu-container {
@@ -3070,8 +3071,11 @@
         }
 
         function getMapControlsTopOffset_() {
-            const vvTop = window.visualViewport ? Math.round(Number(window.visualViewport.offsetTop) || 0) : 0;
-            if (isMobileViewport_()) return vvTop + 52;
+            const root = document.documentElement;
+            const safeTopLive = root
+                ? Number.parseInt(getComputedStyle(root).getPropertyValue('--safe-top-live'), 10) || 0
+                : 0;
+            if (isMobileViewport_()) return safeTopLive + 12;
             return 10;
         }
 
@@ -3150,6 +3154,17 @@
                 nextHeight = keyboardLikelyOpen ? rawHeight : Math.max(rawHeight, maxSyncedViewportHeight_);
             }
             if (!Number.isFinite(nextHeight) || nextHeight < 320) return;
+
+            const cssSafeTop = Number.parseInt(getComputedStyle(root).getPropertyValue('--safe-top'), 10) || 0;
+            const vvTop = window.visualViewport ? Math.round(Number(window.visualViewport.offsetTop) || 0) : 0;
+            let liveSafeTop = Math.max(cssSafeTop, vvTop, 0);
+            const ua = navigator.userAgent || '';
+            const isIos = /iPhone|iPad|iPod/i.test(ua);
+            const isStandalone = !!(window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true);
+            if (isIos && isMobileViewport_() && isStandalone && liveSafeTop < 24) {
+                liveSafeTop = 28;
+            }
+            root.style.setProperty('--safe-top-live', `${liveSafeTop}px`);
 
             if (nextHeight === lastSyncedViewportHeight_) return;
             lastSyncedViewportHeight_ = nextHeight;
