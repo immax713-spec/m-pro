@@ -2992,7 +2992,7 @@
 
                 switch (action) {
                     case 'objects-search':
-                        AppModules.Objects.scheduleObjectsListUpdate();
+                        handleObjectsSearchInput_(target);
                         break;
                     case 'map-inline-search-input':
                         handleMapInlineSearchInput_(target);
@@ -3154,8 +3154,9 @@
                 });
             } else if (input) {
                 input.blur();
-                if (input.value) input.value = '';
-                setMapSearchQuery_('');
+                if (input.value || RuntimeState.getMapSearchQuery()) {
+                    setMapSearchQuery_('');
+                }
             }
         }
 
@@ -3173,22 +3174,47 @@
                 .toLowerCase();
         }
 
-        function setMapSearchQuery_(rawValue) {
+        function syncSearchInputsValue_(rawValue, sourceId = '') {
+            const safeRaw = String(rawValue || '');
+            const objectsInput = document.getElementById('objectsSearchInput');
+            const mapInput = document.getElementById('mapInlineSearchInput');
+
+            if (objectsInput && sourceId !== 'objectsSearchInput' && objectsInput.value !== safeRaw) {
+                objectsInput.value = safeRaw;
+            }
+            if (mapInput && sourceId !== 'mapInlineSearchInput' && mapInput.value !== safeRaw) {
+                mapInput.value = safeRaw;
+            }
+        }
+
+        function setMapSearchQuery_(rawValue, options = {}) {
+            const sourceId = String(options.sourceId || '');
+            syncSearchInputsValue_(rawValue, sourceId);
+
             const nextQuery = normalizeMapSearchQuery_(rawValue);
-            if (RuntimeState.getMapSearchQuery() === nextQuery) return;
+            if (RuntimeState.getMapSearchQuery() === nextQuery) {
+                scheduleObjectsListUpdate_();
+                return;
+            }
             RuntimeState.setMapSearchQuery(nextQuery);
             scheduleMapUpdate_();
+            scheduleObjectsListUpdate_();
         }
 
         function handleMapInlineSearchInput_(target) {
             if (!(target instanceof HTMLInputElement)) return;
-            setMapSearchQuery_(target.value);
+            setMapSearchQuery_(target.value, { sourceId: target.id });
+        }
+
+        function handleObjectsSearchInput_(target) {
+            if (!(target instanceof HTMLInputElement)) return;
+            setMapSearchQuery_(target.value, { sourceId: target.id });
         }
 
         function submitMapInlineSearch_() {
             const input = document.getElementById('mapInlineSearchInput');
             if (!input) return;
-            setMapSearchQuery_(input.value);
+            setMapSearchQuery_(input.value, { sourceId: input.id });
             input.blur();
         }
 
@@ -3701,6 +3727,8 @@
             // Очистить сессию
             sessionStorage.removeItem(CONFIG.SESSION_KEY);
             RuntimeState.clearCurrentUser();
+            RuntimeState.clearMapSearchQuery();
+            syncSearchInputsValue_('');
             closeMobileSidebar_();
             setMapInlineSearchOpen_(false);
             resetWorkDayState_();
@@ -5130,8 +5158,7 @@
             const completedRoot = UIState.getDomById('objectsCompletedList');
             if (!activeRoot || !newRoot || !completedRoot) return;
 
-            const searchInput = UIState.getDomById('objectsSearchInput');
-            const searchText = (searchInput && searchInput.value ? searchInput.value : '').trim().toLowerCase();
+            const searchText = RuntimeState.getMapSearchQuery();
 
             const base = getObjectsForObjectsTab_();
             const matchesSearch = (obj) => {
