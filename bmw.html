@@ -1451,6 +1451,27 @@
             cursor: pointer;
             transition: background 0.15s ease;
             text-decoration: none;
+            font-family: inherit;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .object-card__button-emoji {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            flex: 0 0 20px;
+            font-size: 16px;
+            line-height: 1;
+            font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+        }
+
+        .object-card__button-text {
+            font-family: inherit;
+            font-size: inherit;
+            font-weight: inherit;
+            line-height: 1.25;
+            letter-spacing: 0;
         }
         
         .object-card__button:last-child {
@@ -1476,6 +1497,10 @@
             gap: 8px;
             margin-top: 20px;
         }
+
+        .object-card__section--reassign .object-card__label {
+            margin-bottom: 6px;
+        }
         
         .object-card__select {
             width: 100%;
@@ -1485,6 +1510,9 @@
             font-size: 0.9rem;
             background: #ffffff;
             color: #2c3e50;
+            font-family: inherit;
+            font-weight: 500;
+            -webkit-font-smoothing: antialiased;
         }
         
         .object-card__spacer { height: 20px; flex: 0 0 auto; }
@@ -6549,6 +6577,15 @@
             const isCompleted = !!obj.exitTime && !isDenied;
             return { isNew, isActive, isDenied, isCompleted };
         }
+
+        function renderActionLabel_(emoji, text) {
+            const safeEmoji = String(emoji || '').trim();
+            const safeText = Utils.escapeHtml(String(text || ''));
+            const emojiHtml = safeEmoji
+                ? `<span class="object-card__button-emoji" aria-hidden="true">${Utils.escapeHtml(safeEmoji)}</span>`
+                : '';
+            return `${emojiHtml}<span class="object-card__button-text">${safeText}</span>`;
+        }
         
         /**
          * Сформировать кнопки действий по текущему статусу объекта.
@@ -6560,16 +6597,16 @@
             const objectIdAttr = Utils.escapeAttr(obj.id);
             if (isNew) {
                 return `<div class="object-card__actions" style="margin-top: 12px;">
-                    <button class="object-card__button" data-action="mark-entry" data-object-id="${objectIdAttr}">➡️ Вход</button>
+                    <button class="object-card__button" data-action="mark-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('➡️', 'Вход')}</button>
                 </div>`;
             }
             if (isActive) {
                 const allowCancelEntry = !isInspectorRole_();
                 return `<div class="object-card__actions" style="margin-top: 12px;">
-                    <button class="object-card__button" data-action="mark-exit" data-object-id="${objectIdAttr}">🏁 Выход</button>
-                    ${allowCancelEntry ? `<button class="object-card__button" data-action="cancel-entry" data-object-id="${objectIdAttr}">↩️ Отменить вход</button>` : ''}
-                    <button class="object-card__button" data-action="mark-denied" data-object-id="${objectIdAttr}">🚫 Отказано</button>
-                    <button class="object-card__button" data-action="call-laboratory" data-object-id="${objectIdAttr}">🔬 Лаборатория</button>
+                    <button class="object-card__button" data-action="mark-exit" data-object-id="${objectIdAttr}">${renderActionLabel_('🏁', 'Выход')}</button>
+                    ${allowCancelEntry ? `<button class="object-card__button" data-action="cancel-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('↩️', 'Отменить вход')}</button>` : ''}
+                    <button class="object-card__button" data-action="mark-denied" data-object-id="${objectIdAttr}">${renderActionLabel_('🚫', 'Отказано')}</button>
+                    <button class="object-card__button" data-action="call-laboratory" data-object-id="${objectIdAttr}">${renderActionLabel_('🔬', 'Лаборатория')}</button>
                 </div>`;
             }
             return '';
@@ -6592,9 +6629,9 @@
             }).join('');
             const objectIdAttr = Utils.escapeAttr(obj.id);
             
-            return `<div style="margin-top: 16px;">
-                <div class="object-card__label" style="margin-bottom: 6px;">Переназначить инспектора</div>
-                <select class="object-card__select" data-change-action="reassign-inspector" data-object-id="${objectIdAttr}" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.85rem;">
+            return `<div class="object-card__section--reassign">
+                <div class="object-card__label">Переназначить инспектора</div>
+                <select class="object-card__select" data-change-action="reassign-inspector" data-object-id="${objectIdAttr}">
                     <option value="">-- Выберите инспектора --</option>
                     ${options}
                 </select>
@@ -6621,12 +6658,12 @@
             const objectIdAttr = Utils.escapeAttr(obj.id);
             if (isActive) {
                 if (!yandexWorkLink) return '';
-                return `<button class="object-card__button" data-action="yandex-disk" data-yandex-mode="create" data-yandex-object="${objectIdAttr}" data-yandex-link="${Utils.escapeAttr(yandexWorkLink)}" data-yandex-report-link="${Utils.escapeAttr(reportLink)}">✨ Создать папки</button>`;
+                return `<button class="object-card__button" data-action="yandex-disk" data-yandex-mode="create" data-yandex-object="${objectIdAttr}" data-yandex-link="${Utils.escapeAttr(yandexWorkLink)}" data-yandex-report-link="${Utils.escapeAttr(reportLink)}">${renderActionLabel_('✨', 'Создать папки')}</button>`;
             }
             if (!reportLink) return '';
             const safeUrl = Utils.sanitizeUrl(reportLink);
             if (!safeUrl) return '';
-            return `<a href="${Utils.escapeAttr(safeUrl)}" target="_blank" rel="noopener noreferrer" class="object-card__button">🖼️ Просмотр фотоотчета</a>`;
+            return `<a href="${Utils.escapeAttr(safeUrl)}" target="_blank" rel="noopener noreferrer" class="object-card__button">${renderActionLabel_('🖼️', 'Просмотр фотоотчета')}</a>`;
         }
 
         function getRenderSig_(value) {
@@ -6712,9 +6749,9 @@
 
         function renderObjectCardPrimaryActionsHtml_(obj, vm) {
             return `
-                ${vm.googleLink ? `<a href="${Utils.escapeAttr(vm.googleLink)}" target="_blank" rel="noopener noreferrer" class="object-card__button">📝 Чек-лист</a>` : ''}
+                ${vm.googleLink ? `<a href="${Utils.escapeAttr(vm.googleLink)}" target="_blank" rel="noopener noreferrer" class="object-card__button">${renderActionLabel_('📝', 'Чек-лист')}</a>` : ''}
                 ${renderYandexButton(obj, vm.status.isActive)}
-                <button class="object-card__button" data-action="copy-coordinates" data-coordinates="${vm.coordinates}">🧭 Координаты</button>
+                <button class="object-card__button" data-action="copy-coordinates" data-coordinates="${vm.coordinates}">${renderActionLabel_('🧭', 'Координаты')}</button>
             `;
         }
 
@@ -7073,7 +7110,7 @@
                 const directLink = `https://disk.yandex.ru/client/disk/${encodeURIComponent(mainPath)}`;
                 
                 // Обновляем кнопку
-                btn.innerHTML = '📂 Добавить фотоотчет';
+                btn.innerHTML = renderActionLabel_('📂', 'Добавить фотоотчет');
                 btn.disabled = false;
                 btn.style.opacity = '1';
                 btn.dataset.yandexMode = 'open';
@@ -7094,7 +7131,7 @@
                 
             } catch (error) {
                 console.error('❌ Ошибка создания папок:', error);
-                btn.innerHTML = '✨ Создать папки';
+                btn.innerHTML = renderActionLabel_('✨', 'Создать папки');
                 btn.disabled = false;
                 btn.style.opacity = '1';
                 btn.dataset.yandexMode = 'create';
@@ -7142,7 +7179,7 @@
                 
                 // Если вход не выполнен - просто открываем ссылку
                 if (!isActive) {
-                    btn.innerHTML = '🖼️ Просмотр фотоотчета Я.Диск';
+                    btn.innerHTML = renderActionLabel_('🖼️', 'Просмотр фотоотчета Я.Диск');
                     btn.dataset.yandexMode = 'open';
                     btn.dataset.yandexTarget = reportLink;
                     continue;
@@ -7170,12 +7207,12 @@
                 
                 if (folderExists) {
                     const directLink = `https://disk.yandex.ru/client/disk/${encodeURIComponent(folderPathToCheck)}`;
-                    btn.innerHTML = '📂 Добавить фотоотчет';
+                    btn.innerHTML = renderActionLabel_('📂', 'Добавить фотоотчет');
                     btn.dataset.yandexMode = 'open';
                     btn.dataset.yandexTarget = directLink;
                     btn.dataset.yandexReportLink = directLink;
                 } else {
-                    btn.innerHTML = '✨ Создать папки';
+                    btn.innerHTML = renderActionLabel_('✨', 'Создать папки');
                     btn.dataset.yandexMode = 'create';
                     delete btn.dataset.yandexTarget;
                 }
