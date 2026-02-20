@@ -986,6 +986,24 @@
             border-color: #0056b3;
             box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
         }
+
+        .picker-more-btn {
+            margin-top: 8px;
+            width: 100%;
+            padding: 9px 10px;
+            border: 1px solid #d6d9e0;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #475569;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .picker-more-btn:hover {
+            background: #f3f4f6;
+        }
         
         .status-select {
             width: 100%;
@@ -2933,6 +2951,11 @@
                             AppModules.Customization.togglePicker(actionNode.dataset.pickerType, actionNode.dataset.cardId);
                         }
                         break;
+                    case 'expand-picker-options':
+                        if (actionNode.dataset.pickerType && actionNode.dataset.cardId) {
+                            AppModules.Customization.expandPickerOptions(actionNode.dataset.pickerType, actionNode.dataset.cardId);
+                        }
+                        break;
                     case 'select-color':
                         if (actionNode.dataset.cardId && actionNode.dataset.color) {
                             AppModules.Customization.selectColor(actionNode.dataset.cardId, actionNode.dataset.color);
@@ -4282,7 +4305,9 @@
             // Панель управления инспекторами
             const inspectorPanel = document.getElementById('inspectorManagementPanel');
             if (inspectorPanel && !inspectorPanel.classList.contains('hidden')) {
-                renderInspectorManagement();
+                // В открытой панели не делаем авто-перерисовку на фоновых sync/loadData:
+                // на iPhone это вызывает тяжёлые перерисовки и может приводить к reload страницы.
+                return;
             }
         }
         
@@ -5428,7 +5453,11 @@
          * @param {HTMLElement} card - Элемент карточки инспектора
          */
         function toggleInspectorCard(card) {
+            const willOpen = !card.classList.contains('open');
             card.classList.toggle('open');
+            if (willOpen) {
+                warmupInspectorCardPickers_(card);
+            }
         }
         
         /**
@@ -5458,8 +5487,6 @@
                 return;
             }
             
-            const { colors, icons } = getPickerData();
-            
             // Разделить инспекторов на активных и недоступных
             const active = inspectors.filter(i => config[i].status === 'active');
             const inactive = inspectors.filter(i => config[i].status !== 'active');
@@ -5468,12 +5495,12 @@
             
             if (active.length > 0) {
                 html += '<div class="inspector-section-title">⚡ АКТИВНЫЕ</div>';
-                active.forEach(insp => html += renderInspectorCard(insp, config[insp], colors, icons));
+                active.forEach(insp => html += renderInspectorCard(insp, config[insp]));
             }
             
             if (inactive.length > 0) {
                 html += '<div class="inspector-section-title">🏖️ НЕДОСТУПНЫ</div>';
-                inactive.forEach(insp => html += renderInspectorCard(insp, config[insp], colors, icons));
+                inactive.forEach(insp => html += renderInspectorCard(insp, config[insp]));
             }
             
             html += '</div>';
@@ -5544,16 +5571,93 @@
             
             return { colors, icons };
         }
+
+        // Компактный рендер пикеров по умолчанию.
+        // Полные списки доступны через "Показать ещё" внутри каждой карточки.
+        const PICKER_PREVIEW_LIMITS = Object.freeze({
+            color: 24,
+            icon: 30
+        });
+
+        function buildCompactPickerItems_(allItems, selectedValue, limit) {
+            const safeLimit = Math.max(1, Number(limit) || allItems.length);
+            const compact = allItems.slice(0, safeLimit);
+            if (!selectedValue || compact.includes(selectedValue)) return compact;
+            if (!allItems.includes(selectedValue)) return compact;
+
+            const result = [selectedValue];
+            for (let i = 0; i < compact.length && result.length < safeLimit; i++) {
+                if (compact[i] !== selectedValue) result.push(compact[i]);
+            }
+            return result;
+        }
+
+        function renderLazyPickerOptions_(type, cardId, mode = 'compact') {
+            const isColor = type === 'color';
+            const isIcon = type === 'icon';
+            if (!isColor && !isIcon) return;
+
+            const card = document.getElementById('card_' + cardId);
+            if (!card) return;
+            const inspector = card.dataset.inspector || '';
+            const cfg = DataState.ensureInspectorConfig(inspector);
+            const selectedValue = String(isColor ? (cfg.color || '') : (cfg.icon || ''));
+
+            const pickerId = (isColor ? 'colors_' : 'icons_') + cardId;
+            const picker = document.getElementById(pickerId);
+            if (!picker) return;
+
+            const { colors, icons } = getPickerData();
+            const allItems = isColor ? colors : icons;
+            const limit = PICKER_PREVIEW_LIMITS[type] || allItems.length;
+            const isFullMode = mode === 'full';
+            const items = isFullMode
+                ? allItems.slice()
+                : buildCompactPickerItems_(allItems, selectedValue, limit);
+
+            const nextMode = isFullMode ? 'full' : 'compact';
+            if (picker.dataset.mode === nextMode && picker.dataset.selected === selectedValue) {
+                return;
+            }
+
+            if (isColor) {
+                picker.innerHTML = items
+                    .map(c => `<span class="color-dot ${selectedValue === c ? 'active' : ''}" style="background:${c}" data-action="select-color" data-card-id="${cardId}" data-color="${c}"></span>`)
+                    .join('');
+            } else {
+                picker.innerHTML = items
+                    .map(i => `<span class="icon-option ${selectedValue === i ? 'active' : ''}" data-action="select-icon" data-card-id="${cardId}" data-icon="${i}">${i}</span>`)
+                    .join('');
+            }
+
+            picker.dataset.mode = nextMode;
+            picker.dataset.selected = selectedValue;
+
+            const moreBtn = document.getElementById((isColor ? 'color_more_' : 'icon_more_') + cardId);
+            if (moreBtn) {
+                moreBtn.hidden = isFullMode || allItems.length <= limit;
+            }
+        }
+
+        function warmupInspectorCardPickers_(card) {
+            if (!(card instanceof HTMLElement)) return;
+            const cardId = String(card.id || '').replace(/^card_/, '');
+            if (!cardId) return;
+            renderLazyPickerOptions_('color', cardId, 'compact');
+            renderLazyPickerOptions_('icon', cardId, 'compact');
+        }
+
+        function expandPickerOptions(type, cardId) {
+            renderLazyPickerOptions_(type, cardId, 'full');
+        }
         
         /**
          * Сгенерировать HTML для карточки инспектора
          * @param {string} insp - Имя инспектора
          * @param {Object} cfg - Конфигурация инспектора {color, icon, status}
-         * @param {string[]} colors - Доступные цвета
-         * @param {string[]} icons - Доступные иконки
          * @returns {string} HTML-строка
          */
-        function renderInspectorCard(insp, cfg, colors, icons) {
+        function renderInspectorCard(insp, cfg) {
             const statusClass = cfg.status === 'vacation' ? 'vacation' : (cfg.status === 'sick' ? 'sick' : '');
             const cardId = insp.replace(/[^a-zA-Z0-9]/g, '_');
             const statusText = cfg.status === 'active' ? '🟢 Активен' : 
@@ -5577,9 +5681,8 @@
                                 <span class="picker-toggle-arrow">▼</span>
                             </div>
                             <div class="picker-dropdown" id="color_dropdown_${cardId}">
-                                <div class="color-picker" id="colors_${cardId}">
-                                    ${colors.map(c => `<span class="color-dot ${cfg.color === c ? 'active' : ''}" style="background:${c}" data-action="select-color" data-card-id="${cardId}" data-color="${c}"></span>`).join('')}
-                                </div>
+                                <div class="color-picker" id="colors_${cardId}" data-mode="none" data-selected=""></div>
+                                <button class="picker-more-btn" type="button" id="color_more_${cardId}" data-action="expand-picker-options" data-picker-type="color" data-card-id="${cardId}" hidden>Показать ещё</button>
                             </div>
                         </div>
                         <div class="control-group">
@@ -5592,9 +5695,8 @@
                                 <span class="picker-toggle-arrow">▼</span>
                             </div>
                             <div class="picker-dropdown" id="icon_dropdown_${cardId}">
-                                <div class="icon-picker" id="icons_${cardId}">
-                                    ${icons.map(i => `<span class="icon-option ${cfg.icon === i ? 'active' : ''}" data-action="select-icon" data-card-id="${cardId}" data-icon="${i}">${i}</span>`).join('')}
-                                </div>
+                                <div class="icon-picker" id="icons_${cardId}" data-mode="none" data-selected=""></div>
+                                <button class="picker-more-btn" type="button" id="icon_more_${cardId}" data-action="expand-picker-options" data-picker-type="icon" data-card-id="${cardId}" hidden>Показать ещё</button>
                             </div>
                         </div>
                         <div class="control-group">
@@ -5627,6 +5729,7 @@
         function togglePicker(type, cardId) {
             const toggle = document.getElementById(type + '_toggle_' + cardId);
             const dropdown = document.getElementById(type + '_dropdown_' + cardId);
+            if (!toggle || !dropdown) return;
             
             // Закрыть остальные пикеры
             ['color', 'icon', 'status'].forEach(t => {
@@ -5639,6 +5742,10 @@
                     }
                 }
             });
+
+            if (!dropdown.classList.contains('open') && (type === 'color' || type === 'icon')) {
+                renderLazyPickerOptions_(type, cardId, 'compact');
+            }
             
             // Переключить текущий пикер
             dropdown.classList.toggle('open');
@@ -7409,6 +7516,7 @@
                 filterManagementInspectors,
                 toggleInspectorCard,
                 togglePicker,
+                expandPickerOptions,
                 selectColor,
                 selectIcon,
                 selectStatusOption,
