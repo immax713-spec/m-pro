@@ -2330,7 +2330,7 @@
             },
             
             // Адрес Google Apps Script
-            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxbeWegtJ0gvseJyDBkOmNYKumw0LzAKeg5qN7A6U-ru9M6QvypL7qTI5HDu8uVvK_S/exec',
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbz3tJFxZEVE_xD2_ikCAmMwSq8NBS9umQqLAht-NTxTtoTEQAt31fTCgGqHYLHB4So/exec',
             
             // Конфигурация Яндекс.Диска
             YANDEX: {
@@ -7084,28 +7084,8 @@
          * Отметить вход на объект
          * @param {string|number} objectId - ID объекта
          */
-        async function markEntry(objectId) {
-            const params = {};
-            try {
-                const coords = await getCurrentGeoCoordsForWorkDay_();
-                const coordsValue = String(coords || '').trim();
-                if (coordsValue) {
-                    const parts = coordsValue.split(',');
-                    const lat = String(parts[0] || '').trim();
-                    const lon = String(parts[1] || '').trim();
-                    params.entry = coordsValue;
-                    params.coords = coordsValue;
-                    if (lat) params.lat = lat;
-                    if (lon) params.lon = lon;
-                } else {
-                    params.entry = CONFIG.WORKDAY_NO_GEO_MARKER;
-                    params.coords = CONFIG.WORKDAY_NO_GEO_MARKER;
-                }
-            } catch (_) {
-                params.entry = CONFIG.WORKDAY_NO_GEO_MARKER;
-                params.coords = CONFIG.WORKDAY_NO_GEO_MARKER;
-            }
-            executeObjectAction_(objectId, 'entry', params);
+        function markEntry(objectId) {
+            executeObjectAction_(objectId, 'entry', {});
         }
         
         /**
