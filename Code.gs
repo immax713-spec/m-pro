@@ -5,6 +5,7 @@
 
 const SPREADSHEET_ID = '1BEd6qWf8Y2wx1zKh_ysTLcpigPId5HWF52yINkHX_8E';
 const WORKDAY_SHEET_NAME = 'WorkDay';
+const INSPECTORS_MESSAGE_SHEET_NAME = 'InspectorsMessage';
 const WORKDAY_HEADERS = Object.freeze([
   'date',
   'inspector',
@@ -20,10 +21,12 @@ const WORKDAY_HEADERS = Object.freeze([
   'close_comment'
 ]);
 const WORKDAY_NO_GEO_MARKER = 'ГЕОЛОКАЦИЯ НЕДОСТУПНА: запросить селфи';
-const WORKDAY_COORD_MATCH_DISTANCE_M = 500;
+const WORKDAY_COORD_MATCH_DISTANCE_M = 1000;
 const WORKDAY_COORD_MATCH_YES = '✅';
 const WORKDAY_COORD_MATCH_NO = '❌';
-const WORKDAY_COORD_MATCH_NO_OPEN = 'нет GPS открытия дня';
+const SELFIE_REQUEST_MESSAGE = 'Требуется прислать селфи Администратору';
+const WORKDAY_COORD_MATCH_NO_OPEN = WORKDAY_COORD_MATCH_NO + ' ' + SELFIE_REQUEST_MESSAGE;
+const GLOBAL_MESSAGE_TARGET = 'all';
 
 // Заголовки для динамического поиска колонок
 const OBJECT_HEADERS = {
@@ -41,6 +44,8 @@ const OBJECT_HEADERS = {
   PHOTOS_LINK: 'Photos_link',
   READINESS: 'Readiness',
   NUMBER: 'Number',
+  ENTRY: 'Entry',
+  COORDINATE_CORRESPONDENCE: 'Coordinate_correspondence',
   LABORATORY: 'Laboratory',
   LABORATORY_COMMENT: 'Laboratory_Comment'
 };
@@ -268,6 +273,9 @@ function getData_(p) {
   // Загрузить список инспекторов с подразделениями
   let inspectorsList = getInspectorsList_(ss);
   let points = mapPoints.points || [];
+  const inspectorMessages = requestUser.isInspector
+    ? getInspectorMessagesForUser_(ss, requestUser)
+    : { individual: [], group: [] };
 
   if (requestUser.isInspector) {
     points = filterPointsByInspector_(points, requestUser.nameNorm);
@@ -282,6 +290,7 @@ function getData_(p) {
     inspectorsConfig: config,
     inspectorsList: inspectorsList,
     points: points,
+    inspectorMessages: inspectorMessages,
     timestamp: new Date().toISOString()
   };
 }
@@ -387,6 +396,77 @@ function getInspectorsConfig_(ss) {
   }
   
   return config;
+}
+
+function ensureInspectorsMessageSheet_(ss) {
+  let sheet = ss.getSheetByName(INSPECTORS_MESSAGE_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(INSPECTORS_MESSAGE_SHEET_NAME);
+    sheet.getRange(1, 1, 1, 2).setValues([['Inspector', 'Message']]);
+    return sheet;
+  }
+
+  const lastCol = Math.max(2, sheet.getLastColumn());
+  if (sheet.getLastColumn() < lastCol) {
+    sheet.insertColumnsAfter(sheet.getLastColumn(), lastCol - sheet.getLastColumn());
+  }
+
+  const headers = sheet.getRange(1, 1, 1, 2).getDisplayValues()[0];
+  const expected = ['Inspector', 'Message'];
+  const mustRewrite = expected.some((name, idx) => {
+    return normalizeText_(headers[idx]) !== normalizeText_(name);
+  });
+  if (mustRewrite) {
+    sheet.getRange(1, 1, 1, 2).setValues([expected]);
+  }
+
+  return sheet;
+}
+
+function getInspectorMessagesForUser_(ss, requestUser) {
+  const result = { individual: [], group: [] };
+  if (!requestUser || !requestUser.isInspector || !requestUser.nameNorm) return result;
+
+  const sheet = ss.getSheetByName(INSPECTORS_MESSAGE_SHEET_NAME);
+  if (!sheet) return result;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return result;
+
+  const rows = sheet.getRange(2, 1, lastRow - 1, 2).getDisplayValues();
+  for (let i = 0; i < rows.length; i += 1) {
+    const inspectorRaw = String(rows[i][0] || '').trim();
+    const messageRaw = String(rows[i][1] || '').trim();
+    if (!messageRaw) continue;
+
+    const inspectorNorm = normalizeText_(inspectorRaw);
+    const payload = {
+      inspector: inspectorRaw,
+      message: messageRaw,
+      rowIndex: i + 2
+    };
+
+    if (inspectorNorm === GLOBAL_MESSAGE_TARGET) {
+      result.group.push(payload);
+      continue;
+    }
+    if (inspectorNorm === requestUser.nameNorm) {
+      result.individual.push(payload);
+    }
+  }
+
+  return result;
+}
+
+function appendInspectorMessage_(inspectorName, messageText) {
+  const inspector = String(inspectorName || '').trim();
+  const message = String(messageText || '').trim();
+  if (!inspector || !message) return { saved: false, reason: 'empty_payload' };
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ensureInspectorsMessageSheet_(ss);
+  sheet.appendRow([inspector, message]);
+  return { saved: true, rowIndex: sheet.getLastRow() };
 }
 
 /**
@@ -521,6 +601,7 @@ function getMapPoints_(p) {
       continue;
     }
     
+    ensureObjectEntryColumns_(sheet, src.source);
     const indices = getColumnIndices_(sheet, getHeadersForSource_(src.source));
     const data = sheet.getDataRange().getValues();
     
@@ -549,6 +630,8 @@ function getMapPoints_(p) {
         entryTime: formatDateTime_(indices.ENTRY_TIME !== undefined ? row[indices.ENTRY_TIME] : ''),
         exitTime: formatDateTime_(indices.EXIT_TIME !== undefined ? row[indices.EXIT_TIME] : ''),
         timeSpent: indices.TIME_SPENT !== undefined ? row[indices.TIME_SPENT] : '',
+        entry: indices.ENTRY !== undefined ? row[indices.ENTRY] : '',
+        coordinateCorrespondence: indices.COORDINATE_CORRESPONDENCE !== undefined ? row[indices.COORDINATE_CORRESPONDENCE] : '',
         googleLink: indices.GOOGLE_LINK !== undefined ? row[indices.GOOGLE_LINK] : '',
         yandexDiskLink: indices.YANDEX_LINK !== undefined ? row[indices.YANDEX_LINK] : '',
         photosLink: indices.PHOTOS_LINK !== undefined ? row[indices.PHOTOS_LINK] : '',
@@ -688,6 +771,90 @@ function getObjectActionContext_(p) {
   };
 }
 
+function getHeaderIndex_(headers, headerName) {
+  const target = normalizeText_(headerName);
+  for (let i = 0; i < headers.length; i += 1) {
+    if (normalizeText_(headers[i]) === target) return i;
+  }
+  return -1;
+}
+
+function ensureObjectEntryColumns_(sheet, source) {
+  if (!sheet) return {};
+  let lastCol = Math.max(1, sheet.getLastColumn());
+  let headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+
+  const requiredHeaders = [OBJECT_HEADERS.ENTRY, OBJECT_HEADERS.COORDINATE_CORRESPONDENCE];
+  requiredHeaders.forEach((headerName) => {
+    if (getHeaderIndex_(headers, headerName) !== -1) return;
+    lastCol += 1;
+    sheet.getRange(1, lastCol).setValue(headerName);
+    headers.push(headerName);
+  });
+
+  return getColumnIndices_(sheet, getHeadersForSource_(source));
+}
+
+function getCoordMismatchValue_() {
+  return WORKDAY_COORD_MATCH_NO + ' ' + SELFIE_REQUEST_MESSAGE;
+}
+
+function syncObjectEntryMetrics_(ctx, params) {
+  if (!ctx || !ctx.sheet) {
+    return { updated: false, reason: 'no_sheet' };
+  }
+
+  const indices = ensureObjectEntryColumns_(ctx.sheet, ctx.source);
+  if (indices.ENTRY === undefined || indices.COORDINATE_CORRESPONDENCE === undefined) {
+    return { updated: false, reason: 'missing_columns' };
+  }
+
+  const rowValues = ctx.sheet.getRange(ctx.rowNumber, 1, 1, ctx.sheet.getLastColumn()).getValues()[0];
+  const entryCoordsRaw = resolveWorkDayCoords_(params, 'entry');
+  const entryCoords = parseCoordsPair_(entryCoordsRaw);
+  const objectCoords = indices.LATLON !== undefined
+    ? parseLatLon_(rowValues[indices.LATLON])
+    : null;
+
+  const entryValue = entryCoords
+    ? formatCoordsFixed4_(entryCoords.lat, entryCoords.lon)
+    : WORKDAY_NO_GEO_MARKER;
+
+  let correspondence = getCoordMismatchValue_();
+  let distanceM = null;
+
+  if (entryCoords && objectCoords) {
+    distanceM = distanceMeters_(entryCoords.lat, entryCoords.lon, objectCoords.lat, objectCoords.lon);
+    correspondence = distanceM <= WORKDAY_COORD_MATCH_DISTANCE_M
+      ? WORKDAY_COORD_MATCH_YES
+      : getCoordMismatchValue_();
+  }
+
+  if (indices.ENTRY !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, indices.ENTRY + 1).setValue(entryValue);
+  }
+  if (indices.COORDINATE_CORRESPONDENCE !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, indices.COORDINATE_CORRESPONDENCE + 1).setValue(correspondence);
+  }
+
+  const isMismatch = correspondence !== WORKDAY_COORD_MATCH_YES;
+  if (isMismatch && ctx.requestUser && ctx.requestUser.isInspector) {
+    const inspectorName = indices.INSPECTOR !== undefined
+      ? String(rowValues[indices.INSPECTOR] || '').trim()
+      : '';
+    const messageTarget = inspectorName || (ctx.requestUser && ctx.requestUser.name) || '';
+    appendInspectorMessage_(messageTarget, SELFIE_REQUEST_MESSAGE);
+  }
+
+  return {
+    updated: true,
+    entryValue: entryValue,
+    correspondence: correspondence,
+    distanceM: distanceM,
+    mismatch: isMismatch
+  };
+}
+
 // =============================================================================
 // ENTRY / EXIT / DENY / LABORATORY
 // =============================================================================
@@ -703,29 +870,33 @@ function entry_(p) {
     ctx.sheet.getRange(ctx.rowNumber, ctx.indices.ENTRY_TIME + 1).setValue(new Date());
   }
 
+  let objectEntrySync = { updated: false };
+  try {
+    objectEntrySync = syncObjectEntryMetrics_(ctx, p);
+  } catch (error) {
+    Logger.log('Object entry sync failed: ' + error);
+  }
+
   let workDaySync = { updated: false };
   try {
-    workDaySync = syncWorkDayOnEntry_(ctx);
+    workDaySync = syncWorkDayOnEntry_(ctx, p, objectEntrySync);
   } catch (error) {
     Logger.log('WorkDay sync on entry failed: ' + error);
   }
 
   SpreadsheetApp.flush();
-  return { success: true, updated: true, row: ctx.rowNumber, workDaySync: workDaySync };
+  return {
+    success: true,
+    updated: true,
+    row: ctx.rowNumber,
+    objectEntrySync: objectEntrySync,
+    workDaySync: workDaySync
+  };
 }
 
-function syncWorkDayOnEntry_(ctx) {
+function syncWorkDayOnEntry_(ctx, params, objectEntrySync) {
   if (!ctx || !ctx.requestUser || !ctx.requestUser.isInspector) {
     return { updated: false, reason: 'not_inspector' };
-  }
-  if (ctx.indices.LATLON === undefined) {
-    return { updated: false, reason: 'no_latlon_column' };
-  }
-
-  const objectCoordsRaw = ctx.rowData[ctx.indices.LATLON];
-  const objectCoords = parseLatLon_(objectCoordsRaw);
-  if (!objectCoords) {
-    return { updated: false, reason: 'object_coords_missing' };
   }
 
   const workDaySheet = ensureWorkDaySheet_();
@@ -735,7 +906,17 @@ function syncWorkDayOnEntry_(ctx) {
   }
 
   const rowValues = workDaySheet.getRange(rowIndex, 1, 1, WORKDAY_HEADERS.length).getValues()[0];
-  const objectCoordsText = formatCoordsFixed4_(objectCoords.lat, objectCoords.lon);
+  const entryCoordsRaw = resolveWorkDayCoords_(params, 'entry');
+  const entryCoords = parseCoordsPair_(entryCoordsRaw);
+  const entryCoordsText = entryCoords
+    ? formatCoordsFixed4_(entryCoords.lat, entryCoords.lon)
+    : WORKDAY_NO_GEO_MARKER;
+
+  const objectCoordsRaw = ctx.indices.LATLON !== undefined ? ctx.rowData[ctx.indices.LATLON] : '';
+  const objectCoords = parseLatLon_(objectCoordsRaw);
+  const objectCoordsText = objectCoords
+    ? formatCoordsFixed4_(objectCoords.lat, objectCoords.lon)
+    : entryCoordsText;
 
   // Last visited object coordinates (always refresh on entry).
   rowValues[9] = objectCoordsText;
@@ -746,15 +927,15 @@ function syncWorkDayOnEntry_(ctx) {
 
   // First object of the day: store once and compare with opening coordinates.
   if (!hasFirstCoords) {
-    rowValues[4] = objectCoordsText;
+    rowValues[4] = entryCoordsText;
 
     const openCoords = parseCoordsPair_(rowValues[3]);
-    if (openCoords) {
+    if (openCoords && entryCoords) {
       compared = true;
-      distanceM = distanceMeters_(openCoords.lat, openCoords.lon, objectCoords.lat, objectCoords.lon);
+      distanceM = distanceMeters_(openCoords.lat, openCoords.lon, entryCoords.lat, entryCoords.lon);
       rowValues[5] = distanceM <= WORKDAY_COORD_MATCH_DISTANCE_M
         ? WORKDAY_COORD_MATCH_YES
-        : WORKDAY_COORD_MATCH_NO;
+        : getCoordMismatchValue_();
     } else {
       rowValues[5] = WORKDAY_COORD_MATCH_NO_OPEN;
     }
@@ -767,7 +948,8 @@ function syncWorkDayOnEntry_(ctx) {
     rowIndex: rowIndex,
     firstObjectCaptured: !hasFirstCoords,
     compared: compared,
-    distanceM: distanceM
+    distanceM: distanceM,
+    objectEntrySync: objectEntrySync || null
   };
 }
 

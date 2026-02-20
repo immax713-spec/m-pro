@@ -224,6 +224,53 @@
             opacity: 0.55;
             cursor: default;
         }
+
+        .inspector-messages-group {
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .inspector-message-block {
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 8px 10px;
+        }
+
+        .inspector-message-block-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            color: #6b7280;
+            margin-bottom: 6px;
+        }
+
+        .inspector-message-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .inspector-message-item {
+            font-size: 13px;
+            line-height: 1.35;
+            color: #1f2937;
+            background: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            padding: 7px 8px;
+            word-break: break-word;
+        }
+
+        .inspector-message-item--empty {
+            color: #9ca3af;
+            font-style: italic;
+            text-align: center;
+            border-style: dashed;
+        }
         
         /* Секции в стиле iOS */
         .ios-section { margin-bottom: 16px; }
@@ -2009,6 +2056,20 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="ios-section inspector-messages-section" id="inspectorMessagesSection">
+                        <div class="ios-section-title">🔔 Уведомления</div>
+                        <div class="ios-group inspector-messages-group">
+                            <div class="inspector-message-block">
+                                <div class="inspector-message-block-title">Индивидуальные</div>
+                                <div class="inspector-message-list" id="inspectorMessagesIndividual"></div>
+                            </div>
+                            <div class="inspector-message-block">
+                                <div class="inspector-message-block-title">Групповые</div>
+                                <div class="inspector-message-list" id="inspectorMessagesGroup"></div>
+                            </div>
+                        </div>
+                    </div>
                     
                     <!-- Admin Functions -->
                     <div class="ios-section" id="adminFunctionsSection">
@@ -2422,7 +2483,11 @@
                 inspectorsConfig: {},
                 objectsData: [],
                 objectsById: new Map(),
-                inspectorsList: []
+                inspectorsList: [],
+                inspectorMessages: {
+                    individual: [],
+                    group: []
+                }
             },
             map: {
                 mapInstance: null,
@@ -2643,6 +2708,23 @@
             },
             restoreObjectsData(snapshot) {
                 this.setObjectsData(snapshot);
+            },
+            getInspectorMessages() {
+                const payload = AppState.data.inspectorMessages;
+                return {
+                    individual: Array.isArray(payload?.individual) ? payload.individual : [],
+                    group: Array.isArray(payload?.group) ? payload.group : []
+                };
+            },
+            setInspectorMessages(messages) {
+                const incoming = messages && typeof messages === 'object' ? messages : {};
+                AppState.data.inspectorMessages = {
+                    individual: Array.isArray(incoming.individual) ? incoming.individual : [],
+                    group: Array.isArray(incoming.group) ? incoming.group : []
+                };
+            },
+            clearInspectorMessages() {
+                AppState.data.inspectorMessages = { individual: [], group: [] };
             }
         });
 
@@ -2851,9 +2933,12 @@
             const adminSection = UIState.getDomById('adminFunctionsSection');
             const managementPanel = UIState.getDomById('inspectorManagementPanel');
             const workDaySection = UIState.getDomById('workDaySection');
+            const inspectorMessagesSection = UIState.getDomById('inspectorMessagesSection');
             if (adminSection) adminSection.style.display = hideAdmin ? 'none' : '';
             if (managementPanel && hideAdmin) managementPanel.classList.add('hidden');
             if (workDaySection) workDaySection.style.display = hideAdmin ? '' : 'none';
+            if (inspectorMessagesSection) inspectorMessagesSection.style.display = hideAdmin ? '' : 'none';
+            renderInspectorMessages_();
         }
 
         function getRoleScopedObjects_(objectsData) {
@@ -3800,6 +3885,7 @@
             MapState.setHomesLayer(null);
             DataState.clearInspectorsHomesData();
             DataState.setInspectorsConfig({});
+            DataState.clearInspectorMessages();
             
             // Очистить поле пароля
             const passwordInput = document.getElementById('authPassword');
@@ -4234,6 +4320,7 @@
                         if (data.inspectorsConfig) {
                             DataState.setInspectorsConfig(data.inspectorsConfig);
                         }
+                        DataState.setInspectorMessages(data.inspectorMessages);
                         
                         // Заполняем список инспекторов для рендера фильтров
                         // Приоритет: data.inspectorsList (содержит поле division) > data.inspectorsConfig (содержит цвет/иконку)
@@ -4272,6 +4359,7 @@
                         autoRenderOpenPanels();
                         
                         // Рендер списков в боковой панели
+                        renderInspectorMessages_();
                         renderFilterLists();
                         
                         resolve(data);
@@ -4617,6 +4705,45 @@
             if (arrow) {
                 arrow.style.transform = content.classList.contains('active') ? 'rotate(180deg)' : 'rotate(0deg)';
             }
+        }
+
+        /**
+         * Рендер списков фильтрации (Объекты и Инспекторы)
+         */
+        function renderInspectorMessageList_(root, messages) {
+            if (!root) return;
+            root.innerHTML = '';
+            const source = Array.isArray(messages) ? messages : [];
+            if (!source.length) {
+                const empty = document.createElement('div');
+                empty.className = 'inspector-message-item inspector-message-item--empty';
+                empty.textContent = 'Нет сообщений';
+                root.appendChild(empty);
+                return;
+            }
+            source.forEach(item => {
+                const node = document.createElement('div');
+                node.className = 'inspector-message-item';
+                node.textContent = String(item?.message || '').trim();
+                root.appendChild(node);
+            });
+        }
+
+        function renderInspectorMessages_() {
+            const section = document.getElementById('inspectorMessagesSection');
+            const personalRoot = document.getElementById('inspectorMessagesIndividual');
+            const groupRoot = document.getElementById('inspectorMessagesGroup');
+            if (!section || !personalRoot || !groupRoot) return;
+
+            if (!isInspectorRole_()) {
+                section.style.display = 'none';
+                return;
+            }
+
+            section.style.display = '';
+            const payload = DataState.getInspectorMessages();
+            renderInspectorMessageList_(personalRoot, payload.individual);
+            renderInspectorMessageList_(groupRoot, payload.group);
         }
 
         /**
@@ -6957,8 +7084,28 @@
          * Отметить вход на объект
          * @param {string|number} objectId - ID объекта
          */
-        function markEntry(objectId) {
-            executeObjectAction_(objectId, 'entry', {});
+        async function markEntry(objectId) {
+            const params = {};
+            try {
+                const coords = await getCurrentGeoCoordsForWorkDay_();
+                const coordsValue = String(coords || '').trim();
+                if (coordsValue) {
+                    const parts = coordsValue.split(',');
+                    const lat = String(parts[0] || '').trim();
+                    const lon = String(parts[1] || '').trim();
+                    params.entry = coordsValue;
+                    params.coords = coordsValue;
+                    if (lat) params.lat = lat;
+                    if (lon) params.lon = lon;
+                } else {
+                    params.entry = CONFIG.WORKDAY_NO_GEO_MARKER;
+                    params.coords = CONFIG.WORKDAY_NO_GEO_MARKER;
+                }
+            } catch (_) {
+                params.entry = CONFIG.WORKDAY_NO_GEO_MARKER;
+                params.coords = CONFIG.WORKDAY_NO_GEO_MARKER;
+            }
+            executeObjectAction_(objectId, 'entry', params);
         }
         
         /**
