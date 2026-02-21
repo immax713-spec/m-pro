@@ -1849,6 +1849,22 @@
             border-color: #ff3b30;
             animation: authShake 0.5s ease;
         }
+
+        .auth-remember {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            color: #5f6368;
+            user-select: none;
+            cursor: pointer;
+        }
+
+        .auth-remember input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
         
         @keyframes authShake {
             0%, 100% { transform: translateX(0); }
@@ -2040,6 +2056,10 @@
                     <span class="auth-input-icon">🔑</span>
                     <input type="password" id="authPassword" class="auth-input" placeholder="Пароль" maxlength="20">
                 </div>
+                <label class="auth-remember" for="authRemember">
+                    <input type="checkbox" id="authRemember" checked>
+                    <span>Запомнить вход</span>
+                </label>
                 <button class="auth-btn" data-action="login">
                     <span class="auth-btn-text">Войти</span>
                     <span class="auth-btn-loader"></span>
@@ -2414,8 +2434,11 @@
                 DMS: 'ДМС'
             }),
             
-            // Ключ в sessionStorage
+            // Ключ временной сессии (до закрытия вкладки)
             SESSION_KEY: 'mpro_user',
+
+            // Ключ постоянной сессии (режим "Запомнить вход")
+            SESSION_PERSIST_KEY: 'mpro_user_persist',
 
             // Ключ в localStorage для выбранных фильтров
             FILTERS_STORAGE_KEY: 'mpro_filters',
@@ -2959,8 +2982,7 @@
         // ============================================
         
         // Проверка авторизации до DOMContentLoaded, чтобы избежать мерцания
-        function readStoredSession_() {
-            const raw = sessionStorage.getItem(CONFIG.SESSION_KEY);
+        function parseSessionPayload_(raw) {
             if (!raw) return null;
             try {
                 const parsed = JSON.parse(raw);
@@ -2980,17 +3002,39 @@
             }
         }
 
-        function persistSession_(sessionPayload) {
+        function readStoredSession_() {
+            const tempRaw = sessionStorage.getItem(CONFIG.SESSION_KEY);
+            const tempSession = parseSessionPayload_(tempRaw);
+            if (tempSession) return tempSession;
+
+            const persistedRaw = localStorage.getItem(CONFIG.SESSION_PERSIST_KEY);
+            const persistedSession = parseSessionPayload_(persistedRaw);
+            if (persistedSession) return persistedSession;
+
+            if (persistedRaw) localStorage.removeItem(CONFIG.SESSION_PERSIST_KEY);
+            return null;
+        }
+
+        function persistSession_(sessionPayload, options = {}) {
             if (!sessionPayload || !sessionPayload.user || !sessionPayload.sessionToken) return;
-            sessionStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify({
+            const remember = !!options.remember;
+            const payload = JSON.stringify({
                 user: sessionPayload.user,
                 sessionToken: String(sessionPayload.sessionToken || ''),
                 expiresAt: String(sessionPayload.expiresAt || '')
-            }));
+            });
+            if (remember) {
+                localStorage.setItem(CONFIG.SESSION_PERSIST_KEY, payload);
+                sessionStorage.removeItem(CONFIG.SESSION_KEY);
+            } else {
+                sessionStorage.setItem(CONFIG.SESSION_KEY, payload);
+                localStorage.removeItem(CONFIG.SESSION_PERSIST_KEY);
+            }
         }
 
         function clearStoredSession_() {
             sessionStorage.removeItem(CONFIG.SESSION_KEY);
+            localStorage.removeItem(CONFIG.SESSION_PERSIST_KEY);
         }
 
         const bootSession = readStoredSession_();
@@ -3864,9 +3908,11 @@
 
         async function doLogin() {
             const passwordInput = document.getElementById('authPassword');
+            const rememberInput = document.getElementById('authRemember');
             const errorDiv = document.getElementById('authError');
             const btn = document.querySelector('.auth-btn');
             const password = passwordInput.value.trim();
+            const remember = !!(rememberInput && rememberInput.checked);
             
             if (!password) {
                 showAuthError('Введите пароль');
@@ -3890,7 +3936,8 @@
                 const authResponse = await createJsonpRequest({
                     action: 'auth',
                     nonceId: nonceResponse.nonceId,
-                    proof: proof
+                    proof: proof,
+                    remember: remember ? '1' : '0'
                 }, 15000);
 
                 if (authResponse?.success && authResponse?.user && authResponse?.sessionToken) {
@@ -3900,7 +3947,7 @@
                         user: authResponse.user,
                         sessionToken: authResponse.sessionToken,
                         expiresAt: authResponse.expiresAt || ''
-                    });
+                    }, { remember });
                     showSuccessAndContinue();
                     return;
                 }

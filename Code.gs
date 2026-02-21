@@ -30,6 +30,7 @@ const GLOBAL_MESSAGE_TARGET = 'all';
 const AUTH_NONCE_CACHE_PREFIX = 'auth_nonce:';
 const AUTH_NONCE_TTL_SEC = 120;
 const SESSION_TOKEN_TTL_SEC = 12 * 60 * 60;
+const SESSION_TOKEN_TTL_REMEMBER_SEC = 30 * 24 * 60 * 60;
 const SESSION_SECRET_PROP = 'SESSION_HMAC_SECRET';
 const YANDEX_TOKEN_PROP = 'YANDEX_OAUTH_TOKEN';
 const ACTIONS_WITHOUT_SESSION = Object.freeze({
@@ -210,9 +211,11 @@ function consumeAuthNonce_(nonceIdRaw) {
   return nonce;
 }
 
-function issueSessionToken_(user) {
+function issueSessionToken_(user, ttlSecOverride) {
   const nowSec = Math.floor(Date.now() / 1000);
-  const expSec = nowSec + SESSION_TOKEN_TTL_SEC;
+  const ttlSec = Number(ttlSecOverride);
+  const effectiveTtlSec = Number.isFinite(ttlSec) && ttlSec > 0 ? ttlSec : SESSION_TOKEN_TTL_SEC;
+  const expSec = nowSec + effectiveTtlSec;
   const payload = {
     v: 1,
     iat: nowSec,
@@ -773,6 +776,7 @@ function authenticateUser_(p) {
 
   const nonceId = String(p.nonceId || '').trim();
   const proof = String(p.proof || '').trim().toLowerCase();
+  const rememberRequested = /^(1|true|yes|on)$/i.test(String(p.remember || '').trim());
   const isProofFlow = !!(nonceId || proof);
   let password = '';
   let nonce = '';
@@ -815,13 +819,17 @@ function authenticateUser_(p) {
         division: division,
         loginTime: new Date().toISOString()
       };
-      const tokenPayload = issueSessionToken_(user);
+      const tokenPayload = issueSessionToken_(
+        user,
+        rememberRequested ? SESSION_TOKEN_TTL_REMEMBER_SEC : SESSION_TOKEN_TTL_SEC
+      );
 
       return {
         success: true,
         user: user,
         sessionToken: tokenPayload.token,
-        expiresAt: tokenPayload.expiresAt
+        expiresAt: tokenPayload.expiresAt,
+        remember: rememberRequested
       };
     }
   }
