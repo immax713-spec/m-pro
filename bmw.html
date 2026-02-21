@@ -2362,11 +2362,10 @@
             },
             
             // Адрес Google Apps Script
-            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbz3tJFxZEVE_xD2_ikCAmMwSq8NBS9umQqLAht-NTxTtoTEQAt31fTCgGqHYLHB4So/exec',
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwQ8sUJhMLwryK6dv_cIDvKu-L6LsBPtxnrPVQj32ZMfn-lJZMC6m-ggxfsXQJso3NK/exec',
             
             // Конфигурация Яндекс.Диска
             YANDEX: {
-                OAUTH_TOKEN: 'y0__xCtoIulqveAAhjinD0gyIzumRaVmdCKk27u3ItXUoc6rNG4XSwS7w',
                 ROOT_PATH: 'Осмотры объектов АНО СМГ',
                 SUBFOLDERS: Object.freeze([
                     'Акт + селфи + СКУД + ОЖР',
@@ -2531,6 +2530,7 @@
             },
             runtime: {
                 currentUser: null,
+                sessionToken: '',
                 dataLoadPromise: null,
                 mapSearchQuery: '',
                 workDay: {
@@ -2777,6 +2777,15 @@
                 const name = AppState.runtime.currentUser?.name;
                 return name ? String(name) : fallback;
             },
+            getSessionToken() {
+                return String(AppState.runtime.sessionToken || '');
+            },
+            setSessionToken(token) {
+                AppState.runtime.sessionToken = String(token || '').trim();
+            },
+            clearSessionToken() {
+                AppState.runtime.sessionToken = '';
+            },
             getDataLoadPromise() {
                 return AppState.runtime.dataLoadPromise;
             },
@@ -2920,8 +2929,42 @@
         // ============================================
         
         // Проверка авторизации до DOMContentLoaded, чтобы избежать мерцания
-        const savedUser = sessionStorage.getItem(CONFIG.SESSION_KEY);
-        const isLoggedIn = !!savedUser;
+        function readStoredSession_() {
+            const raw = sessionStorage.getItem(CONFIG.SESSION_KEY);
+            if (!raw) return null;
+            try {
+                const parsed = JSON.parse(raw);
+                if (!parsed || typeof parsed !== 'object') return null;
+                if (!parsed.user || !parsed.sessionToken) return null;
+                if (parsed.expiresAt) {
+                    const expiresAtMs = Date.parse(parsed.expiresAt);
+                    if (Number.isFinite(expiresAtMs) && Date.now() >= expiresAtMs) return null;
+                }
+                return {
+                    user: parsed.user,
+                    sessionToken: String(parsed.sessionToken || ''),
+                    expiresAt: String(parsed.expiresAt || '')
+                };
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function persistSession_(sessionPayload) {
+            if (!sessionPayload || !sessionPayload.user || !sessionPayload.sessionToken) return;
+            sessionStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify({
+                user: sessionPayload.user,
+                sessionToken: String(sessionPayload.sessionToken || ''),
+                expiresAt: String(sessionPayload.expiresAt || '')
+            }));
+        }
+
+        function clearStoredSession_() {
+            sessionStorage.removeItem(CONFIG.SESSION_KEY);
+        }
+
+        const bootSession = readStoredSession_();
+        const isLoggedIn = !!bootSession;
         const INSPECTOR_BLOCKED_CLICK_ACTIONS = new Set([
             'show-homes',
             'show-inspector-management',
@@ -3577,7 +3620,8 @@
             
             if (isLoggedIn) {
                 // Пользователь авторизован: показываем приложение сразу
-                RuntimeState.setCurrentUser(JSON.parse(savedUser));
+                RuntimeState.setCurrentUser(bootSession.user);
+                RuntimeState.setSessionToken(bootSession.sessionToken);
                 updateUserCard();
                 initWorkDayStateForCurrentUser_({ force: true, silent: true });
                 initMap();
@@ -3781,7 +3825,14 @@
          * Выполнить вход через JSONP-запрос к GAS
          * Проверяет пароль и инициализирует сессию
          */
-        function doLogin() {
+        async function sha256HexClient_(text) {
+            const data = new TextEncoder().encode(String(text || ''));
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function doLogin() {
             const passwordInput = document.getElementById('authPassword');
             const errorDiv = document.getElementById('authError');
             const btn = document.querySelector('.auth-btn');
@@ -3798,55 +3849,43 @@
             btn.classList.add('loading');
             btn.disabled = true;
             errorDiv.classList.remove('show');
-            
-            // Создать JSONP-запрос
-            const callbackName = 'auth_cb_' + Date.now();
-            const script = document.createElement('script');
-            
-            // Зарегистрировать колбэк
-            window[callbackName] = function(response) {
-                // Очистка временных ресурсов
-                if (script.parentNode) {
-                    document.head.removeChild(script);
+
+            try {
+                const nonceResponse = await createJsonpRequest({ action: 'authNonce' }, 10000);
+                if (!nonceResponse?.success || !nonceResponse?.nonceId || !nonceResponse?.nonce) {
+                    throw new Error(nonceResponse?.error || 'Не удалось получить nonce');
                 }
-                delete window[callbackName];
-                
-                // Сбросить состояние кнопки
-                btn.classList.remove('loading');
-                btn.disabled = false;
-                
-                // Обработать ответ
-                if (response.success && response.user) {
-                    // Успешный ответ
-                    RuntimeState.setCurrentUser(response.user);
-                    sessionStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(RuntimeState.getCurrentUser()));
+
+                const proof = await sha256HexClient_(`${password}|${nonceResponse.nonce}`);
+                const authResponse = await createJsonpRequest({
+                    action: 'auth',
+                    nonceId: nonceResponse.nonceId,
+                    proof: proof
+                }, 15000);
+
+                if (authResponse?.success && authResponse?.user && authResponse?.sessionToken) {
+                    RuntimeState.setCurrentUser(authResponse.user);
+                    RuntimeState.setSessionToken(authResponse.sessionToken);
+                    persistSession_({
+                        user: authResponse.user,
+                        sessionToken: authResponse.sessionToken,
+                        expiresAt: authResponse.expiresAt || ''
+                    });
                     showSuccessAndContinue();
-                } else {
-                    // Ошибка ответа
-                    showAuthError(response.error || 'Неверный пароль');
-                    passwordInput.classList.add('error');
-                    setTimeout(() => passwordInput.classList.remove('error'), 500);
-                    passwordInput.value = '';
-                    passwordInput.focus();
+                    return;
                 }
-            };
-            
-            // Сформировать адрес JSONP-запроса с колбэком
-            const url = CONFIG.SCRIPT_URL + '?action=auth&password=' + encodeURIComponent(password) + '&callback=' + callbackName;
-            
-            // Обработать ошибку загрузки скрипта
-            script.onerror = function() {
+
+                showAuthError(authResponse?.error || 'Неверный пароль');
+                passwordInput.classList.add('error');
+                setTimeout(() => passwordInput.classList.remove('error'), 500);
+                passwordInput.value = '';
+                passwordInput.focus();
+            } catch (error) {
+                showAuthError(error?.message || 'Ошибка соединения с сервером');
+            } finally {
                 btn.classList.remove('loading');
                 btn.disabled = false;
-                showAuthError('Ошибка соединения с сервером');
-                if (script.parentNode) {
-                    document.head.removeChild(script);
-                }
-                delete window[callbackName];
-            };
-            
-            script.src = url;
-            document.head.appendChild(script);
+            }
         }
         
         /**
@@ -3910,8 +3949,9 @@
             if (!confirm('Выйти из системы?')) return;
             
             // Очистить сессию
-            sessionStorage.removeItem(CONFIG.SESSION_KEY);
+            clearStoredSession_();
             RuntimeState.clearCurrentUser();
+            RuntimeState.clearSessionToken();
             RuntimeState.clearMapSearchQuery();
             syncSearchInputsValue_('');
             closeMobileSidebar_();
@@ -4403,6 +4443,13 @@
                         
                         resolve(data);
                     } else {
+                        if (data?.code === 'UNAUTHORIZED') {
+                            clearStoredSession_();
+                            RuntimeState.clearCurrentUser();
+                            RuntimeState.clearSessionToken();
+                            const overlay = document.getElementById('authOverlay');
+                            if (overlay) overlay.classList.remove('hidden');
+                        }
                         RuntimeState.clearDataLoadPromise();
                         reject(new Error(data?.error || 'Ошибка загрузки'));
                     }
@@ -4414,10 +4461,9 @@
                     reject(new Error('Ошибка соединения'));
                 };
                 
-                const currentUser = RuntimeState.getCurrentUser();
-                const userNameQuery = currentUser?.name ? '&userName=' + encodeURIComponent(currentUser.name) : '';
-                const userRoleQuery = currentUser?.role ? '&userRole=' + encodeURIComponent(currentUser.role) : '';
-                script.src = CONFIG.SCRIPT_URL + '?action=getData&callback=' + callbackName + userNameQuery + userRoleQuery;
+                const sessionToken = RuntimeState.getSessionToken();
+                const tokenQuery = sessionToken ? '&sessionToken=' + encodeURIComponent(sessionToken) : '';
+                script.src = CONFIG.SCRIPT_URL + '?action=getData&callback=' + callbackName + tokenQuery;
                 document.head.appendChild(script);
             }));
             
@@ -6444,6 +6490,14 @@
                         reject(new Error('Invalid response format'));
                         return;
                     }
+
+                    if (data.code === 'UNAUTHORIZED') {
+                        clearStoredSession_();
+                        RuntimeState.clearCurrentUser();
+                        RuntimeState.clearSessionToken();
+                        const overlay = document.getElementById('authOverlay');
+                        if (overlay) overlay.classList.remove('hidden');
+                    }
                     
                     resolve(data);
                 };
@@ -6458,14 +6512,10 @@
                 
                 // Сформировать адрес запроса
                 const requestParams = { ...params };
-                const currentUser = RuntimeState.getCurrentUser();
-                if (currentUser && requestParams.action !== 'auth') {
-                    if (requestParams.userName === undefined && currentUser.name) {
-                        requestParams.userName = currentUser.name;
-                    }
-                    if (requestParams.userRole === undefined && currentUser.role) {
-                        requestParams.userRole = currentUser.role;
-                    }
+                const action = String(requestParams.action || '').trim();
+                const sessionToken = RuntimeState.getSessionToken();
+                if (action !== 'auth' && action !== 'authNonce' && requestParams.sessionToken === undefined && sessionToken) {
+                    requestParams.sessionToken = sessionToken;
                 }
                 const queryParams = Object.entries(requestParams)
                     .map(([key, val]) => `${key}=${encodeURIComponent(val || '')}`)
@@ -7288,26 +7338,20 @@
          * @returns {Promise<{success: boolean, created: boolean, code: number, message?: string}>}
          */
         async function createYandexFolder(path) {
-            const url = `https://cloud-api.yandex.net/v1/disk/resources?path=${encodeURIComponent(path)}`;
-            
             try {
-                const response = await fetch(url, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `OAuth ${CONFIG.YANDEX.OAUTH_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                const code = response.status;
-                
-                // 201 = папка создана, 409 = папка уже существует
-                if (code === 201 || code === 409) {
-                    return { success: true, code: code, created: code === 201 };
+                const response = await createJsonpRequest({
+                    action: 'yandexCreateFolder',
+                    path: String(path || '')
+                }, 30000);
+                const code = Number(response?.code || 0);
+                if (response?.success && (code === 201 || code === 409)) {
+                    return { success: true, code: code, created: !!response.created };
                 }
-                
-                const errorText = await response.text();
-                return { success: false, code: code, message: errorText };
+                return {
+                    success: false,
+                    code: code,
+                    message: response?.message || response?.error || 'Yandex API error'
+                };
             } catch (error) {
                 return { success: false, code: 0, message: error.message };
             }
@@ -7319,17 +7363,12 @@
          * @returns {Promise<boolean>}
          */
         async function checkYandexFolder(path) {
-            const url = `https://cloud-api.yandex.net/v1/disk/resources?path=${encodeURIComponent(path)}`;
-            
             try {
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `OAuth ${CONFIG.YANDEX.OAUTH_TOKEN}`
-                    }
-                });
-                
-                return response.status === 200;
+                const response = await createJsonpRequest({
+                    action: 'yandexCheckFolder',
+                    path: String(path || '')
+                }, 30000);
+                return !!(response?.success && response?.exists);
             } catch (error) {
                 console.warn('Ошибка проверки папки:', error);
                 return false;
