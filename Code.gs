@@ -487,7 +487,8 @@ function getData_(p) {
   // Загрузить список инспекторов с подразделениями
   let inspectorsList = getInspectorsList_(ss);
   let points = mapPoints.points || [];
-  let inspectorsWorkDay = getInspectorsWorkDayStatusByInspectorForDate_(ss, new Date());
+  const requestedDateToken = String((p && (p.dateToken || p.clientDate || p.today)) || '').trim();
+  let inspectorsWorkDay = getInspectorsWorkDayStatusByInspectorForDate_(ss, requestedDateToken || new Date());
   const inspectorMessages = requestUser.isInspector
     ? getInspectorMessagesForUser_(ss, requestUser)
     : { individual: [], group: [] };
@@ -624,8 +625,7 @@ function getInspectorsWorkDayStatusByInspectorForDate_(ss, dateValue) {
   if (lastRow < 2) return result;
 
   const timeZone = Session.getScriptTimeZone() || 'Etc/GMT';
-  const safeDate = dateValue instanceof Date ? dateValue : new Date(dateValue);
-  const targetDateToken = Utilities.formatDate(safeDate, timeZone, 'dd.MM.yyyy');
+  const targetDateToken = formatDateToken_(dateValue, timeZone) || Utilities.formatDate(new Date(), timeZone, 'dd.MM.yyyy');
   const rows = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
 
   for (let i = 0; i < rows.length; i += 1) {

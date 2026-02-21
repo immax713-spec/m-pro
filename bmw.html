@@ -861,13 +861,6 @@
             align-items: center;
             gap: 8px;
         }
-        .inspector-status-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #34c759;
-        }
-        .inspector-status-dot.absent { background: #ff3b30; }
         .inspector-workday-dot {
             width: 12px;
             height: 12px;
@@ -4504,7 +4497,12 @@
                 
                 const sessionToken = RuntimeState.getSessionToken();
                 const tokenQuery = sessionToken ? '&sessionToken=' + encodeURIComponent(sessionToken) : '';
-                script.src = CONFIG.SCRIPT_URL + '?action=getData&callback=' + callbackName + tokenQuery;
+                const nowLocal = new Date();
+                const dd = String(nowLocal.getDate()).padStart(2, '0');
+                const mm = String(nowLocal.getMonth() + 1).padStart(2, '0');
+                const yyyy = String(nowLocal.getFullYear());
+                const dateTokenQuery = '&dateToken=' + encodeURIComponent(`${dd}.${mm}.${yyyy}`);
+                script.src = CONFIG.SCRIPT_URL + '?action=getData&callback=' + callbackName + tokenQuery + dateTokenQuery;
                 document.head.appendChild(script);
             }));
             
@@ -5910,10 +5908,46 @@
             return !!inspectorNorm && selectedSet.has(inspectorNorm);
         }
 
-        function getInspectorWorkDayStateForManagement_(inspectorName) {
+        function findInspectorWorkDayPayloadByName_(map, inspectorName) {
+            if (!map || typeof map !== 'object') return null;
             const key = normalizeInspectorName_(inspectorName);
+            if (!key) return null;
+            if (Object.prototype.hasOwnProperty.call(map, key)) return map[key];
+
+            const keyTokens = key.split(' ').filter(Boolean);
+            let bestMatchKey = '';
+            let bestScore = -1;
+
+            Object.keys(map).forEach(candidateRaw => {
+                const candidate = normalizeInspectorName_(candidateRaw);
+                if (!candidate) return;
+
+                let score = -1;
+                if (candidate === key) {
+                    score = 1000;
+                } else if (candidate.startsWith(key) || key.startsWith(candidate)) {
+                    score = 500 + Math.min(candidate.length, key.length);
+                } else if (keyTokens.length >= 2) {
+                    const candidateTokens = candidate.split(' ').filter(Boolean);
+                    if (candidateTokens.length >= 2 &&
+                        candidateTokens[0] === keyTokens[0] &&
+                        candidateTokens[1] === keyTokens[1]) {
+                        score = 300 + Math.min(candidateTokens.length, keyTokens.length);
+                    }
+                }
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMatchKey = candidateRaw;
+                }
+            });
+
+            return bestMatchKey ? map[bestMatchKey] : null;
+        }
+
+        function getInspectorWorkDayStateForManagement_(inspectorName) {
             const map = DataState.getInspectorsWorkDay();
-            const payload = key ? map[key] : null;
+            const payload = findInspectorWorkDayPayloadByName_(map, inspectorName);
             const isOpen = !!payload?.open;
             const openTime = String(payload?.openTime || '').trim();
             return {
@@ -6324,13 +6358,6 @@
                     dataAttr: null,
                     previewType: 'text',
                     previewProp: 'textContent',
-                    extraUpdate: (cardId, value) => {
-                        const dot = document.getElementById('status_' + cardId);
-                        if (dot) {
-                            dot.className = 'inspector-status-dot ' + 
-                                (normalizeInspectorManagementStatus_(value) === INSPECTOR_STATUS.ABSENT ? 'absent' : '');
-                        }
-                    },
                     useEventTarget: true
                 }
             },
