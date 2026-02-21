@@ -639,18 +639,54 @@ function getInspectorsWorkDayStatusByInspectorForDate_(ss, dateValue) {
 
     const openTime = String(row[2] || '').trim();
     const closeTime = String(row[7] || '').trim();
+    const rowOpen = !!openTime && !closeTime;
 
-    result[inspectorNorm] = {
-      inspector: inspectorRaw,
-      open: !!openTime && !closeTime,
-      openTime: openTime || '',
-      closeTime: closeTime || '',
-      date: targetDateToken
-    };
+    const prev = result[inspectorNorm];
+    if (!prev) {
+      result[inspectorNorm] = {
+        inspector: inspectorRaw,
+        open: rowOpen,
+        openTime: openTime || '',
+        closeTime: closeTime || '',
+        date: targetDateToken,
+        rowIndex: i + 2
+      };
+      continue;
+    }
+
+    // Если есть хотя бы одна открытая запись за день — считаем день открытым.
+    if (rowOpen && !prev.open) {
+      result[inspectorNorm] = {
+        inspector: inspectorRaw,
+        open: true,
+        openTime: openTime || prev.openTime || '',
+        closeTime: '',
+        date: targetDateToken,
+        rowIndex: i + 2
+      };
+      continue;
+    }
+
+    // Если обе записи одного типа, берём более позднюю строку как актуальную.
+    if (rowOpen === !!prev.open && (i + 2) > Number(prev.rowIndex || 0)) {
+      result[inspectorNorm] = {
+        inspector: inspectorRaw,
+        open: rowOpen,
+        openTime: openTime || prev.openTime || '',
+        closeTime: closeTime || prev.closeTime || '',
+        date: targetDateToken,
+        rowIndex: i + 2
+      };
+    }
   }
+
+  Object.keys(result).forEach(key => {
+    delete result[key].rowIndex;
+  });
 
   return result;
 }
+
 function ensureInspectorsMessageSheet_(ss) {
   let sheet = ss.getSheetByName(INSPECTORS_MESSAGE_SHEET_NAME);
   if (!sheet) {
