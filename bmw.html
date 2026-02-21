@@ -352,8 +352,12 @@
             overflow: hidden;
             transition: max-height 0.3s ease;
         }
-        
-        .filter-content.open { max-height: 300px; overflow-y: auto; }
+
+        .filter-content.open {
+            max-height: var(--filter-open-max-height, 62vh);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
         
         .filter-list { padding: 4px 0; }
         
@@ -1145,11 +1149,13 @@
             transition: max-height 0.3s ease-out;
             background: white;
         }
-        
+
         .accordion-content.active {
-            max-height: 2000px; /* Large enough to fit content */
+            max-height: min(58vh, 520px);
             border-bottom: 1px solid #e5e5ea;
             transition: max-height 0.5s ease-in;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
         
         /* Элементы списка с чекбоксами */
@@ -3226,6 +3232,8 @@
             lastSyncedViewportHeight_ = nextHeight;
             root.style.setProperty('--app-height', `${nextHeight}px`);
             scheduleMapFitToViewport_();
+            syncFilterPanelHeight_(document.getElementById('filter-lists'));
+            syncFilterPanelHeight_(document.getElementById('filter-inspectors'));
         }
 
         function getMainSidebarElement_() {
@@ -4685,8 +4693,27 @@
          * Переключить видимость секции фильтра
          * @param {string} id - ID секции фильтра ('lists' | 'inspectors')
          */
+        function syncFilterPanelHeight_(panel) {
+            if (!panel || !panel.classList.contains('open')) return;
+
+            const vv = window.visualViewport;
+            const viewportHeight = Math.round((vv && Number(vv.height)) || window.innerHeight || 0);
+            const sidebarContent = document.querySelector('.sidebar-content');
+            const sidebarHeight = sidebarContent ? sidebarContent.clientHeight : 0;
+
+            // Ограничиваем высоту панели, чтобы она оставалась прокручиваемой и не "зажималась".
+            const byViewport = viewportHeight > 0 ? Math.floor(viewportHeight * 0.62) : 420;
+            const bySidebar = sidebarHeight > 0 ? Math.floor(sidebarHeight * 0.64) : byViewport;
+            const nextHeight = Math.max(220, Math.min(byViewport, bySidebar));
+
+            panel.style.setProperty('--filter-open-max-height', `${nextHeight}px`);
+        }
+
         function toggleFilter(id) {
-            document.getElementById('filter-' + id).classList.toggle('open');
+            const panel = document.getElementById('filter-' + id);
+            if (!panel) return;
+            panel.classList.toggle('open');
+            syncFilterPanelHeight_(panel);
         }
 
         /**
@@ -4704,6 +4731,12 @@
             const arrow = header.querySelector('.accordion-meta > .accordion-arrow, .accordion-meta > span:last-child');
             if (arrow) {
                 arrow.style.transform = content.classList.contains('active') ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+
+            // При раскрытии внутренних блоков пересчитываем доступную высоту внешней панели.
+            const parentFilterPanel = header.closest('.filter-content');
+            if (parentFilterPanel) {
+                requestAnimationFrame(() => syncFilterPanelHeight_(parentFilterPanel));
             }
         }
 
@@ -4895,6 +4928,8 @@
                 Array.from(listsContainer.querySelectorAll('input[type="checkbox"][data-division][data-change-action="update-map-filters"]'))
             );
             applyStoredFiltersToUI_();
+            syncFilterPanelHeight_(document.getElementById('filter-lists'));
+            syncFilterPanelHeight_(document.getElementById('filter-inspectors'));
         }
         
         /**
