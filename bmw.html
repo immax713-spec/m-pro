@@ -978,14 +978,7 @@
         }
         
         .color-picker {
-            display: grid;
-            grid-template-columns: repeat(8, 1fr);
-            gap: 6px;
-            max-height: 180px;
-            overflow-y: auto;
-            padding: 8px;
-            background: #f8f9fa;
-            border-radius: 10px;
+            display: none;
         }
 
         .color-custom-row {
@@ -6040,34 +6033,15 @@
          * @returns {{colors: string[], icons: string[]}} Объект с массивами цветов и иконок
          */
         function getPickerData() {
-            // Палитра: много разных оттенков, по 2 тона на цветовую группу (яркий + глубокий)
-            const colors = [
-                '#ff5252', '#d32f2f', // red
-                '#ff7043', '#e64a19', // deep orange
-                '#ffa726', '#f57c00', // orange
-                '#ffd54f', '#fbc02d', // amber
-                '#d4e157', '#afb42b', // lime
-                '#9ccc65', '#689f38', // light green
-                '#66bb6a', '#388e3c', // green
-                '#26a69a', '#00796b', // teal
-                '#4dd0e1', '#0097a7', // cyan
-                '#4fc3f7', '#0288d1', // light blue
-                '#42a5f5', '#1976d2', // blue
-                '#5c6bc0', '#303f9f', // indigo
-                '#7e57c2', '#512da8', // deep purple
-                '#ab47bc', '#7b1fa2', // purple
-                '#ec407a', '#c2185b', // pink
-                '#8d6e63', '#5d4037', // brown
-                '#90a4ae', '#546e7a', // blue grey
-                '#b0bec5', '#78909c'  // steel
-            ];
+            // Для цвета используем только динамическую палитру input[type=color].
+            const colors = [];
 
             // Старые иконки убраны. Оставляем корону + список пользователя.
             const icons = [
                 '👑',
                 '👷‍♂️',
                 '😁', '🤪', '😇',
-                '🐯', '🦁', '🐸',
+                '🐯', '🦁', '🐸', '🐠', '🌈', '🐴', '🦅', '⭐',
                 '🥋', '🏹', '🥊', '🤼‍♂️', '🤽‍♂️', '🏊‍♂️',
                 '🏆', '🥇', '🤹‍♀️',
                 '🏎️', '🏍️', '🛩️',
@@ -6080,7 +6054,6 @@
         // Компактный рендер пикеров по умолчанию.
         // Полные списки доступны через "Показать ещё" внутри каждой карточки.
         const PICKER_PREVIEW_LIMITS = Object.freeze({
-            color: 24,
             icon: 30
         });
 
@@ -6111,8 +6084,25 @@
             const picker = document.getElementById(pickerId);
             if (!picker) return;
 
-            const { colors, icons } = getPickerData();
-            const allItems = isColor ? colors : icons;
+            // Цвет выбирается только через динамическую палитру (input[type=color]).
+            if (isColor) {
+                if (picker.dataset.mode === 'dynamic' && picker.dataset.selected === selectedValue) {
+                    return;
+                }
+                picker.innerHTML = '';
+                picker.dataset.mode = 'dynamic';
+                picker.dataset.selected = selectedValue;
+
+                const colorInput = document.querySelector(`.color-custom-input[data-card-id="${cardId}"]`);
+                if (colorInput instanceof HTMLInputElement && /^#[0-9a-f]{6}$/i.test(selectedValue)) {
+                    colorInput.value = selectedValue.toLowerCase();
+                }
+
+                return;
+            }
+
+            const { icons } = getPickerData();
+            const allItems = icons;
             const limit = PICKER_PREVIEW_LIMITS[type] || allItems.length;
             const isFullMode = mode === 'full';
             const items = isFullMode
@@ -6124,24 +6114,14 @@
                 return;
             }
 
-            if (isColor) {
-                picker.innerHTML = items
-                    .map(c => `<span class="color-dot ${selectedValue === c ? 'active' : ''}" style="background:${c}" data-action="select-color" data-card-id="${cardId}" data-color="${c}"></span>`)
-                    .join('');
-                const colorInput = document.querySelector(`.color-custom-input[data-card-id="${cardId}"]`);
-                if (colorInput instanceof HTMLInputElement && /^#[0-9a-f]{6}$/i.test(selectedValue)) {
-                    colorInput.value = selectedValue.toLowerCase();
-                }
-            } else {
-                picker.innerHTML = items
-                    .map(i => `<span class="icon-option ${selectedValue === i ? 'active' : ''}" data-action="select-icon" data-card-id="${cardId}" data-icon="${i}">${i}</span>`)
-                    .join('');
-            }
+            picker.innerHTML = items
+                .map(i => `<span class="icon-option ${selectedValue === i ? 'active' : ''}" data-action="select-icon" data-card-id="${cardId}" data-icon="${i}">${i}</span>`)
+                .join('');
 
             picker.dataset.mode = nextMode;
             picker.dataset.selected = selectedValue;
 
-            const moreBtn = document.getElementById((isColor ? 'color_more_' : 'icon_more_') + cardId);
+            const moreBtn = document.getElementById('icon_more_' + cardId);
             if (moreBtn) {
                 moreBtn.hidden = isFullMode || allItems.length <= limit;
             }
@@ -6210,7 +6190,6 @@
                                     >
                                 </div>
                                 <div class="color-picker" id="colors_${cardId}" data-mode="none" data-selected=""></div>
-                                <button class="picker-more-btn" type="button" id="color_more_${cardId}" data-action="expand-picker-options" data-picker-type="color" data-card-id="${cardId}" hidden>Показать ещё</button>
                             </div>
                         </div>
                         <div class="control-group">
