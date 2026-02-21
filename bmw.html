@@ -981,6 +981,32 @@
             background: #f8f9fa;
             border-radius: 10px;
         }
+
+        .color-custom-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+            padding: 2px 2px 8px;
+            border-bottom: 1px solid #eef2f7;
+        }
+
+        .color-custom-label {
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 600;
+        }
+
+        .color-custom-input {
+            width: 40px;
+            height: 28px;
+            border: 1px solid #dbe2ea;
+            border-radius: 8px;
+            padding: 0;
+            background: #fff;
+            cursor: pointer;
+        }
         
         .color-dot {
             width: 28px;
@@ -3128,6 +3154,11 @@
                     case 'reassign-inspector':
                         if (target.dataset.objectId) {
                             reassignInspector(target.dataset.objectId, target.value);
+                        }
+                        break;
+                    case 'custom-inspector-color':
+                        if (target.dataset.cardId && target.value) {
+                            selectColor(target.dataset.cardId, target.value);
                         }
                         break;
                     default:
@@ -5756,6 +5787,7 @@
             // Старые иконки убраны. Оставляем корону + список пользователя.
             const icons = [
                 '👑',
+                '👷‍♂️',
                 '😁', '🤪', '😇',
                 '🐯', '🦁', '🐸',
                 '🥋', '🏹', '🥊', '🤼‍♂️', '🤽‍♂️', '🏊‍♂️',
@@ -5778,7 +5810,6 @@
             const safeLimit = Math.max(1, Number(limit) || allItems.length);
             const compact = allItems.slice(0, safeLimit);
             if (!selectedValue || compact.includes(selectedValue)) return compact;
-            if (!allItems.includes(selectedValue)) return compact;
 
             const result = [selectedValue];
             for (let i = 0; i < compact.length && result.length < safeLimit; i++) {
@@ -5819,6 +5850,10 @@
                 picker.innerHTML = items
                     .map(c => `<span class="color-dot ${selectedValue === c ? 'active' : ''}" style="background:${c}" data-action="select-color" data-card-id="${cardId}" data-color="${c}"></span>`)
                     .join('');
+                const colorInput = document.querySelector(`.color-custom-input[data-card-id="${cardId}"]`);
+                if (colorInput instanceof HTMLInputElement && /^#[0-9a-f]{6}$/i.test(selectedValue)) {
+                    colorInput.value = selectedValue.toLowerCase();
+                }
             } else {
                 picker.innerHTML = items
                     .map(i => `<span class="icon-option ${selectedValue === i ? 'active' : ''}" data-action="select-icon" data-card-id="${cardId}" data-icon="${i}">${i}</span>`)
@@ -5878,6 +5913,16 @@
                                 <span class="picker-toggle-arrow">▼</span>
                             </div>
                             <div class="picker-dropdown" id="color_dropdown_${cardId}">
+                                <div class="color-custom-row">
+                                    <span class="color-custom-label">Свободный цвет</span>
+                                    <input
+                                        type="color"
+                                        class="color-custom-input"
+                                        value="${cfg.color || '#1f6fb2'}"
+                                        data-change-action="custom-inspector-color"
+                                        data-card-id="${cardId}"
+                                    >
+                                </div>
                                 <div class="color-picker" id="colors_${cardId}" data-mode="none" data-selected=""></div>
                                 <button class="picker-more-btn" type="button" id="color_more_${cardId}" data-action="expand-picker-options" data-picker-type="color" data-card-id="${cardId}" hidden>Показать ещё</button>
                             </div>
@@ -6044,7 +6089,15 @@
                     dataAttr: 'data-color',
                     previewType: 'style',
                     previewProp: 'background',
-                    extraUpdate: null,
+                    extraUpdate: (cardId, value) => {
+                        const colorInput = document.querySelector(`.color-custom-input[data-card-id="${cardId}"]`);
+                        if (colorInput instanceof HTMLInputElement && /^#[0-9a-f]{6}$/i.test(value)) {
+                            colorInput.value = String(value).toLowerCase();
+                        }
+                        const picker = document.getElementById('colors_' + cardId);
+                        const mode = picker?.dataset?.mode === 'full' ? 'full' : 'compact';
+                        renderLazyPickerOptions_(PICKER_TYPE_COLOR, cardId, mode);
+                    },
                     useEventTarget: false
                 },
                 /** @type {PickerConfig} */
