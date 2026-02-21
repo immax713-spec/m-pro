@@ -3664,9 +3664,9 @@
             }
 
             RealtimeSyncState.refreshInFlight = true;
-            RuntimeState.clearDataLoadPromise();
-
-            const tasks = [loadData()];
+            // Не сбрасываем in-flight загрузку, чтобы не запускать гонки двух параллельных loadData.
+            const activeLoad = RuntimeState.getDataLoadPromise();
+            const tasks = [activeLoad || loadData()];
             if (isInspectorRole_()) {
                 tasks.push(syncWorkDayStateFromServer_({ force: true, silent: true }).catch(() => null));
             }
@@ -4505,7 +4505,7 @@
             if (RuntimeState.getDataLoadPromise()) return RuntimeState.getDataLoadPromise();
             
             RuntimeState.setDataLoadPromise(new Promise((resolve, reject) => {
-                const callbackName = 'cb_' + Date.now();
+                const callbackName = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
                 const script = document.createElement('script');
                 let timeoutId;
                 
@@ -4573,6 +4573,8 @@
                         // Важно: карту рендерим после загрузки конфигурации инспекторов,
                         // чтобы маркеры сразу получили цвет/иконку своего инспектора.
                         scheduleMapUpdate_();
+                        // Страховочный второй проход рендера (устраняет редкие стартовые гонки стилей/слоев).
+                        setTimeout(scheduleMapUpdate_, 180);
                         updateUserCard();
                         
                         // ⭐ Авто-рендер открытых панелей
