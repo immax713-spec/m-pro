@@ -2386,7 +2386,7 @@
             },
             
             // Адрес Google Apps Script
-            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbw1lfuL6owwsTJqvfCfDB9_xvttj2s_tKLB31MK3erW72-gHlcmDw3oyJBc9dKv9-fe/exec',
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwAcOa2iiEOzd9MsUfvVI564qh9idm49JOw2i9pEw6wT3cr_QHAGCcWFX_LXubtPpqN/exec',
             
             // Конфигурация Яндекс.Диска
             YANDEX: {
@@ -8071,9 +8071,28 @@
                 source: object?.source || 'Map',
                 ...params
             };
+
+            const requestPayloadPromise = action === 'entry'
+                ? getCurrentGeoCoordsForWorkDay_()
+                    .then((coords) => {
+                        const coordsValue = String(coords || '').trim();
+                        if (coordsValue) {
+                            const parts = coordsValue.split(',');
+                            const lat = String(parts[0] || '').trim();
+                            const lon = String(parts[1] || '').trim();
+                            requestParams.coords = coordsValue;
+                            requestParams.entry = coordsValue;
+                            if (lat) requestParams.lat = lat;
+                            if (lon) requestParams.lon = lon;
+                        }
+                        return requestParams;
+                    })
+                    .catch(() => requestParams)
+                : Promise.resolve(requestParams);
             
             // Отправляем запрос
-            createJsonpRequest(requestParams, 15000)
+            requestPayloadPromise
+                .then((payload) => createJsonpRequest(payload, 15000))
                 .then(response => {
                     if (response.success) {
                         notifyRealtimeSync_(`object:${action}`);

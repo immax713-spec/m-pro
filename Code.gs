@@ -761,8 +761,22 @@ function appendInspectorMessage_(inspectorName, messageText) {
 
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ensureInspectorsMessageSheet_(ss);
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    const rows = sheet.getRange(2, 1, lastRow - 1, 2).getDisplayValues();
+    const inspectorNorm = normalizeText_(inspector);
+    for (let i = 0; i < rows.length; i += 1) {
+      const rowInspectorNorm = normalizeText_(rows[i][0]);
+      if (rowInspectorNorm === inspectorNorm) {
+        const rowIndex = i + 2;
+        sheet.getRange(rowIndex, 2).setValue(message);
+        return { saved: true, rowIndex: rowIndex, mode: 'update' };
+      }
+    }
+  }
+
   sheet.appendRow([inspector, message]);
-  return { saved: true, rowIndex: sheet.getLastRow() };
+  return { saved: true, rowIndex: sheet.getLastRow(), mode: 'append' };
 }
 
 /**
@@ -1097,13 +1111,32 @@ function getCoordMismatchValue_() {
   return WORKDAY_COORD_MATCH_NO + ' ' + SELFIE_REQUEST_MESSAGE;
 }
 
+function resolveCoordinateCorrespondenceColumnIndex_(sheet, indices) {
+  if (indices && indices.COORDINATE_CORRESPONDENCE !== undefined) {
+    return indices.COORDINATE_CORRESPONDENCE;
+  }
+  if (!sheet) return undefined;
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+  const fallbackIndex = findColumnIndexByHeaderCandidates_(headers, [
+    OBJECT_HEADERS.COORDINATE_CORRESPONDENCE,
+    'Coordinate correspondence',
+    'Coordinate-correspondence',
+    'coordinatecorrespondence',
+  ]);
+  return fallbackIndex >= 0 ? fallbackIndex : undefined;
+}
+
 function syncObjectEntryMetrics_(ctx, params) {
   if (!ctx || !ctx.sheet) {
     return { updated: false, reason: 'no_sheet' };
   }
 
   const indices = getColumnIndices_(ctx.sheet, getHeadersForSource_(ctx.source));
-  if (indices.ENTRY === undefined || indices.COORDINATE_CORRESPONDENCE === undefined) {
+  const entryColumnIndex = indices.ENTRY;
+  const correspondenceColumnIndex = resolveCoordinateCorrespondenceColumnIndex_(ctx.sheet, indices);
+  if (entryColumnIndex === undefined && correspondenceColumnIndex === undefined) {
+    Logger.log('syncObjectEntryMetrics_: missing Entry and Coordinate_correspondence columns for source ' + String(ctx.source || ''));
     return { updated: false, reason: 'missing_columns' };
   }
 
@@ -1128,20 +1161,22 @@ function syncObjectEntryMetrics_(ctx, params) {
       : getCoordMismatchValue_();
   }
 
-  if (indices.ENTRY !== undefined) {
-    ctx.sheet.getRange(ctx.rowNumber, indices.ENTRY + 1).setValue(entryValue);
+  if (entryColumnIndex !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, entryColumnIndex + 1).setValue(entryValue);
   }
-  if (indices.COORDINATE_CORRESPONDENCE !== undefined) {
-    ctx.sheet.getRange(ctx.rowNumber, indices.COORDINATE_CORRESPONDENCE + 1).setValue(correspondence);
+  if (correspondenceColumnIndex !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, correspondenceColumnIndex + 1).setValue(correspondence);
   }
 
   const isMismatch = correspondence !== WORKDAY_COORD_MATCH_YES;
-  if (isMismatch && ctx.requestUser && ctx.requestUser.isInspector) {
+  if (isMismatch) {
     const inspectorName = indices.INSPECTOR !== undefined
       ? String(rowValues[indices.INSPECTOR] || '').trim()
       : '';
     const messageTarget = inspectorName || (ctx.requestUser && ctx.requestUser.name) || '';
-    appendInspectorMessage_(messageTarget, SELFIE_REQUEST_MESSAGE);
+    if (messageTarget) {
+      appendInspectorMessage_(messageTarget, SELFIE_REQUEST_MESSAGE);
+    }
   }
 
   return {
@@ -1149,7 +1184,9 @@ function syncObjectEntryMetrics_(ctx, params) {
     entryValue: entryValue,
     correspondence: correspondence,
     distanceM: distanceM,
-    mismatch: isMismatch
+    mismatch: isMismatch,
+    entryColumnIndex: entryColumnIndex,
+    correspondenceColumnIndex: correspondenceColumnIndex
   };
 }
 
@@ -1236,6 +1273,10 @@ function syncWorkDayOnEntry_(ctx, params, objectEntrySync) {
         : getCoordMismatchValue_();
     } else {
       rowValues[5] = WORKDAY_COORD_MATCH_NO_OPEN;
+    }
+
+    if (rowValues[5] !== WORKDAY_COORD_MATCH_YES && ctx.requestUser && ctx.requestUser.name) {
+      appendInspectorMessage_(ctx.requestUser.name, SELFIE_REQUEST_MESSAGE);
     }
   }
 
