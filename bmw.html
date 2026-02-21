@@ -265,6 +265,15 @@
             word-break: break-word;
         }
 
+        .inspector-message-item--urgent {
+            color: #7f1d1d;
+            background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%);
+            border: 1px solid #ef4444;
+            border-left: 5px solid #dc2626;
+            font-weight: 700;
+            box-shadow: 0 1px 4px rgba(239, 68, 68, 0.2);
+        }
+
         .inspector-message-item--empty {
             color: #9ca3af;
             font-style: italic;
@@ -5021,11 +5030,23 @@
                 return;
             }
             source.forEach(item => {
+                const messageText = String(item?.message || '').trim();
                 const node = document.createElement('div');
                 node.className = 'inspector-message-item';
-                node.textContent = String(item?.message || '').trim();
+                node.textContent = messageText;
+                if (isSelfieRequestMessage_(messageText)) {
+                    node.classList.add('inspector-message-item--urgent');
+                }
                 root.appendChild(node);
             });
+        }
+
+        function isSelfieRequestMessage_(messageRaw) {
+            const normalized = String(messageRaw || '')
+                .toLowerCase()
+                .replace(/\s+/g, ' ')
+                .trim();
+            return normalized.indexOf('требуется прислать селфи администратору') !== -1;
         }
 
         function renderInspectorMessages_() {
