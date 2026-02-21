@@ -856,14 +856,27 @@
         
         .inspector-emoji { font-size: 24px; width: 32px; text-align: center; }
         .inspector-name { flex: 1; font-weight: 600; font-size: 15px; }
+        .inspector-badges {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
         .inspector-status-dot {
             width: 12px;
             height: 12px;
             border-radius: 50%;
             background: #34c759;
         }
-        .inspector-status-dot.vacation { background: #ff9500; }
-        .inspector-status-dot.sick { background: #ff3b30; }
+        .inspector-status-dot.absent { background: #ff3b30; }
+        .inspector-workday-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff3b30;
+            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+        }
+        .inspector-workday-dot.open { background: #34c759; }
+        .inspector-workday-dot.closed { background: #ff3b30; }
         
         .inspector-card-content {
             max-height: 0;
@@ -2515,6 +2528,7 @@
                 objectsData: [],
                 objectsById: new Map(),
                 inspectorsList: [],
+                inspectorsWorkDay: {},
                 inspectorMessages: {
                     individual: [],
                     group: []
@@ -2695,7 +2709,19 @@
                 return AppState.data.inspectorsConfig;
             },
             setInspectorsConfig(config) {
-                AppState.data.inspectorsConfig = (config && typeof config === 'object') ? config : {};
+                if (!config || typeof config !== 'object') {
+                    AppState.data.inspectorsConfig = {};
+                    return;
+                }
+                const next = {};
+                Object.keys(config).forEach(name => {
+                    const raw = (config[name] && typeof config[name] === 'object') ? config[name] : {};
+                    next[name] = {
+                        ...raw,
+                        status: normalizeInspectorManagementStatus_(raw.status)
+                    };
+                });
+                AppState.data.inspectorsConfig = next;
             },
             ensureInspectorConfig(inspectorName) {
                 const config = this.getInspectorsConfig();
@@ -2707,6 +2733,17 @@
             },
             setInspectorsList(inspectorsList) {
                 AppState.data.inspectorsList = Array.isArray(inspectorsList) ? inspectorsList : [];
+            },
+            getInspectorsWorkDay() {
+                return (AppState.data.inspectorsWorkDay && typeof AppState.data.inspectorsWorkDay === 'object')
+                    ? AppState.data.inspectorsWorkDay
+                    : {};
+            },
+            setInspectorsWorkDay(payload) {
+                AppState.data.inspectorsWorkDay = (payload && typeof payload === 'object') ? payload : {};
+            },
+            clearInspectorsWorkDay() {
+                AppState.data.inspectorsWorkDay = {};
             },
             getObjectsData() {
                 return AppState.data.objectsData;
@@ -3964,6 +4001,7 @@
             MapState.setHomesLayer(null);
             DataState.clearInspectorsHomesData();
             DataState.setInspectorsConfig({});
+            DataState.clearInspectorsWorkDay();
             DataState.clearInspectorMessages();
             
             // Очистить поле пароля
@@ -4399,6 +4437,7 @@
                         if (data.inspectorsConfig) {
                             DataState.setInspectorsConfig(data.inspectorsConfig);
                         }
+                        DataState.setInspectorsWorkDay(data.inspectorsWorkDay);
                         DataState.setInspectorMessages(data.inspectorMessages);
                         
                         // Заполняем список инспекторов для рендера фильтров
@@ -4440,6 +4479,8 @@
                         // Рендер списков в боковой панели
                         renderInspectorMessages_();
                         renderFilterLists();
+                        refreshInspectorManagementWorkDayIndicators_();
+                        filterManagementInspectors();
                         
                         resolve(data);
                     } else {
@@ -5241,6 +5282,10 @@
             saveFiltersToStorage_(FiltersState.getCurrent());
             
             debugLog('Filters updated:', FiltersState.getCurrent());
+            const managementPanel = UIState.getDomById('inspectorManagementPanel');
+            if (managementPanel && !managementPanel.classList.contains('hidden') && !isInspectorRole_()) {
+                renderInspectorManagement();
+            }
             scheduleMapUpdate_();
         }
 
@@ -5742,12 +5787,26 @@
          * Использует значение из поля #searchManagement
          */
         function filterManagementInspectors() {
-            const filter = document.getElementById('searchManagement').value.toUpperCase();
-            const cards = document.querySelectorAll('.inspector-card');
+            const input = document.getElementById('searchManagement');
+            const filter = String(input?.value || '').toUpperCase();
+            const selectedSet = getSelectedInspectorFilterSetForManagement_();
+            const cards = document.querySelectorAll('#inspectorManagementBody .inspector-card');
+            let visibleCount = 0;
+
             cards.forEach(card => {
-                const name = card.querySelector('.inspector-name').textContent.toUpperCase();
-                card.style.display = name.includes(filter) ? '' : 'none';
+                const name = String(card.querySelector('.inspector-name')?.textContent || '').toUpperCase();
+                const inspectorRaw = String(card.dataset.inspector || '');
+                const bySearch = !filter || name.includes(filter);
+                const byInspectorFilter = isInspectorAllowedInManagementByFilters_(inspectorRaw, selectedSet);
+                const isVisible = bySearch && byInspectorFilter;
+                card.style.display = isVisible ? '' : 'none';
+                if (isVisible) visibleCount += 1;
             });
+
+            const emptyHint = document.getElementById('managementFilterEmpty');
+            if (emptyHint) {
+                emptyHint.style.display = visibleCount > 0 ? 'none' : '';
+            }
         }
         
         /**
@@ -5757,16 +5816,25 @@
         function renderInspectorManagement() {
             const body = document.getElementById('inspectorManagementBody');
             const config = DataState.getInspectorsConfig() || {};
-            const inspectors = Object.keys(config).sort();
+            const selectedSet = getSelectedInspectorFilterSetForManagement_();
+
+            if (selectedSet.size === 0) {
+                body.innerHTML = '<div class="empty">Выберите инспекторов в блоке «Списки инспекторов»</div>';
+                return;
+            }
+
+            const inspectors = Object.keys(config)
+                .filter(name => isInspectorAllowedInManagementByFilters_(name, selectedSet))
+                .sort();
             
             if (inspectors.length === 0) {
                 body.innerHTML = '<div class="empty">Нет данных об инспекторах</div>';
                 return;
             }
             
-            // Разделить инспекторов на активных и недоступных
-            const active = inspectors.filter(i => config[i].status === 'active');
-            const inactive = inspectors.filter(i => config[i].status !== 'active');
+            // Разделить инспекторов на активных и отсутствующих
+            const active = inspectors.filter(i => normalizeInspectorManagementStatus_(config[i]?.status) === INSPECTOR_STATUS.ACTIVE);
+            const inactive = inspectors.filter(i => normalizeInspectorManagementStatus_(config[i]?.status) !== INSPECTOR_STATUS.ACTIVE);
             
             let html = '<div class="inspector-list">';
             
@@ -5776,12 +5844,15 @@
             }
             
             if (inactive.length > 0) {
-                html += '<div class="inspector-section-title">🏖️ НЕДОСТУПНЫ</div>';
+                html += '<div class="inspector-section-title">⛔ ОТСУТСТВУЮТ</div>';
                 inactive.forEach((insp, idx) => html += renderInspectorCard(insp, config[insp], `i_${idx}`));
             }
             
+            html += '<div class="empty" id="managementFilterEmpty" style="display:none;">Нет инспекторов по текущему фильтру</div>';
             html += '</div>';
             body.innerHTML = html;
+            filterManagementInspectors();
+            refreshInspectorManagementWorkDayIndicators_();
         }
 
         /**
@@ -5801,6 +5872,86 @@
                 hash >>>= 0;
             }
             return `insp_${hash.toString(16)}`;
+        }
+
+        const INSPECTOR_STATUS = Object.freeze({
+            ACTIVE: 'active',
+            ABSENT: 'absent'
+        });
+
+        function normalizeInspectorManagementStatus_(statusRaw) {
+            const statusNorm = String(statusRaw || '').trim().toLowerCase();
+            return statusNorm === INSPECTOR_STATUS.ACTIVE ? INSPECTOR_STATUS.ACTIVE : INSPECTOR_STATUS.ABSENT;
+        }
+
+        function getInspectorStatusDisplay_(statusRaw) {
+            const normalized = normalizeInspectorManagementStatus_(statusRaw);
+            if (normalized === INSPECTOR_STATUS.ACTIVE) {
+                return { value: normalized, cssClass: '', text: '🟢 Активен' };
+            }
+            return { value: INSPECTOR_STATUS.ABSENT, cssClass: 'absent', text: '🔴 Отсутствует' };
+        }
+
+        function getSelectedInspectorFilterSetForManagement_() {
+            const selected = FiltersState.getCurrent()?.inspectors;
+            if (!Array.isArray(selected) || selected.length === 0) return new Set();
+            const set = new Set();
+            selected.forEach(name => {
+                const norm = normalizeInspectorName_(name);
+                if (norm) set.add(norm);
+            });
+            return set;
+        }
+
+        function isInspectorAllowedInManagementByFilters_(inspectorName, selectedSet) {
+            if (!(selectedSet instanceof Set)) return false;
+            if (selectedSet.size === 0) return false;
+            const inspectorNorm = normalizeInspectorName_(inspectorName);
+            return !!inspectorNorm && selectedSet.has(inspectorNorm);
+        }
+
+        function getInspectorWorkDayStateForManagement_(inspectorName) {
+            const key = normalizeInspectorName_(inspectorName);
+            const map = DataState.getInspectorsWorkDay();
+            const payload = key ? map[key] : null;
+            const isOpen = !!payload?.open;
+            const openTime = String(payload?.openTime || '').trim();
+            return {
+                open: isOpen,
+                openTime: openTime
+            };
+        }
+
+        function getInspectorWorkDayBadge_(inspectorName) {
+            const state = getInspectorWorkDayStateForManagement_(inspectorName);
+            if (state.open) {
+                const suffix = state.openTime ? ` (с ${state.openTime})` : '';
+                return {
+                    cssClass: 'open',
+                    title: `Рабочий день открыт${suffix}`
+                };
+            }
+            return {
+                cssClass: 'closed',
+                title: 'Рабочий день не открыт'
+            };
+        }
+
+        function refreshInspectorManagementWorkDayIndicators_() {
+            const panel = UIState.getDomById('inspectorManagementPanel');
+            if (!panel || panel.classList.contains('hidden')) return;
+
+            const cards = panel.querySelectorAll('.inspector-card');
+            cards.forEach(card => {
+                if (!(card instanceof HTMLElement)) return;
+                const inspectorName = String(card.dataset.inspector || '');
+                const badge = getInspectorWorkDayBadge_(inspectorName);
+                const dot = card.querySelector('.inspector-workday-dot');
+                if (!dot) return;
+                dot.className = `inspector-workday-dot ${badge.cssClass}`;
+                dot.setAttribute('title', badge.title);
+                dot.setAttribute('aria-label', badge.title);
+            });
         }
         
         /**
@@ -5934,19 +6085,28 @@
          * @returns {string} HTML-строка
          */
         function renderInspectorCard(insp, cfg, cardIdSeed = '') {
-            const statusClass = cfg.status === 'vacation' ? 'vacation' : (cfg.status === 'sick' ? 'sick' : '');
             const cardId = buildInspectorCardId_(insp, cardIdSeed);
-            const statusText = cfg.status === 'active' ? '🟢 Активен' : 
-                              cfg.status === 'vacation' ? '🏖️ Отпуск' : '🤒 Больничный';
+            const statusUi = getInspectorStatusDisplay_(cfg.status);
+            const workDayBadge = getInspectorWorkDayBadge_(insp);
             const safeInspectorText = Utils.escapeHtml(String(insp || ''));
             const safeInspectorAttr = Utils.escapeAttr(String(insp || ''));
+            const safeInspectorNormAttr = Utils.escapeAttr(normalizeInspectorName_(insp));
+            const safeWorkDayTitle = Utils.escapeAttr(workDayBadge.title);
             
             return `
-                <div class="inspector-card" data-inspector="${safeInspectorAttr}" id="card_${cardId}">
+                <div class="inspector-card" data-inspector="${safeInspectorAttr}" data-inspector-norm="${safeInspectorNormAttr}" id="card_${cardId}">
                     <div class="inspector-card-header" data-action="toggle-inspector-card">
                         <span class="inspector-emoji" id="icon_${cardId}">${cfg.icon}</span>
                         <span class="inspector-name">${safeInspectorText}</span>
-                        <span class="inspector-status-dot ${statusClass}" id="status_${cardId}"></span>
+                        <span class="inspector-badges">
+                            <span
+                                class="inspector-workday-dot ${workDayBadge.cssClass}"
+                                id="workday_${cardId}"
+                                title="${safeWorkDayTitle}"
+                                aria-label="${safeWorkDayTitle}"
+                            ></span>
+                            <span class="inspector-status-dot ${statusUi.cssClass}" id="status_${cardId}"></span>
+                        </span>
                     </div>
                     <div class="inspector-card-content">
                         <div class="control-group">
@@ -5991,15 +6151,14 @@
                             <label>Статус</label>
                             <div class="picker-toggle" id="status_toggle_${cardId}" data-action="toggle-picker" data-picker-type="status" data-card-id="${cardId}">
                                 <div class="picker-toggle-content">
-                                    <span id="status_preview_${cardId}">${statusText}</span>
+                                    <span id="status_preview_${cardId}">${statusUi.text}</span>
                                 </div>
                                 <span class="picker-toggle-arrow">▼</span>
                             </div>
                             <div class="picker-dropdown" id="status_dropdown_${cardId}">
                                 <div class="status-options" id="status_options_${cardId}">
-                                    <div class="status-option ${cfg.status === 'active' ? 'active' : ''}" data-action="select-status-option" data-card-id="${cardId}" data-status="active" data-display-text="🟢 Активен">🟢 Активен</div>
-                                    <div class="status-option ${cfg.status === 'vacation' ? 'active' : ''}" data-action="select-status-option" data-card-id="${cardId}" data-status="vacation" data-display-text="🏖️ Отпуск">🏖️ Отпуск</div>
-                                    <div class="status-option ${cfg.status === 'sick' ? 'active' : ''}" data-action="select-status-option" data-card-id="${cardId}" data-status="sick" data-display-text="🤒 Больничный">🤒 Больничный</div>
+                                    <div class="status-option ${statusUi.value === INSPECTOR_STATUS.ACTIVE ? 'active' : ''}" data-action="select-status-option" data-card-id="${cardId}" data-status="${INSPECTOR_STATUS.ACTIVE}" data-display-text="🟢 Активен">🟢 Активен</div>
+                                    <div class="status-option ${statusUi.value === INSPECTOR_STATUS.ABSENT ? 'active' : ''}" data-action="select-status-option" data-card-id="${cardId}" data-status="${INSPECTOR_STATUS.ABSENT}" data-display-text="🔴 Отсутствует">🔴 Отсутствует</div>
                                 </div>
                             </div>
                         </div>
@@ -6170,7 +6329,7 @@
                         const dot = document.getElementById('status_' + cardId);
                         if (dot) {
                             dot.className = 'inspector-status-dot ' + 
-                                (value === 'vacation' ? 'vacation' : (value === 'sick' ? 'sick' : ''));
+                                (normalizeInspectorManagementStatus_(value) === INSPECTOR_STATUS.ABSENT ? 'absent' : '');
                         }
                     },
                     useEventTarget: true
@@ -6258,12 +6417,17 @@
         /**
          * Обертка для выбора статуса (обратная совместимость с inline-обработчиками)
          * @param {string} cardId - ID карточки инспектора
-         * @param {string} status - Значение статуса ('active' | 'vacation' | 'sick')
+         * @param {string} status - Значение статуса ('active' | 'absent')
          * @param {string} displayText - Текст для отображения
          * @param {Event} event - Событие клика
          */
         function selectStatusOption(cardId, status, displayText, event) {
-            Picker.select(cardId, PICKER_TYPE_STATUS, status, { displayValue: displayText, event });
+            const normalizedStatus = normalizeInspectorManagementStatus_(status);
+            const normalizedDisplay = normalizedStatus === INSPECTOR_STATUS.ACTIVE ? '🟢 Активен' : '🔴 Отсутствует';
+            Picker.select(cardId, PICKER_TYPE_STATUS, normalizedStatus, {
+                displayValue: displayText || normalizedDisplay,
+                event
+            });
         }
         
         // ============================================
@@ -6927,9 +7091,11 @@
             if (keys.length === 0) return defaultStyle;
             
             const resolved = DataState.getInspectorsConfig()[keys[0]] || {};
+            const resolvedStatus = normalizeInspectorManagementStatus_(resolved.status);
             return {
                 ...defaultStyle,
-                ...resolved
+                ...resolved,
+                status: resolvedStatus
             };
         }
         

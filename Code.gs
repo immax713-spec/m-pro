@@ -27,6 +27,15 @@ const WORKDAY_COORD_MATCH_NO = '❌';
 const SELFIE_REQUEST_MESSAGE = 'Требуется прислать селфи Администратору';
 const WORKDAY_COORD_MATCH_NO_OPEN = WORKDAY_COORD_MATCH_NO + ' ' + SELFIE_REQUEST_MESSAGE;
 const GLOBAL_MESSAGE_TARGET = 'all';
+const AUTH_NONCE_CACHE_PREFIX = 'auth_nonce:';
+const AUTH_NONCE_TTL_SEC = 120;
+const SESSION_TOKEN_TTL_SEC = 12 * 60 * 60;
+const SESSION_SECRET_PROP = 'SESSION_HMAC_SECRET';
+const YANDEX_TOKEN_PROP = 'YANDEX_OAUTH_TOKEN';
+const ACTIONS_WITHOUT_SESSION = Object.freeze({
+  auth: true,
+  authNonce: true
+});
 
 // Заголовки для динамического поиска колонок
 const OBJECT_HEADERS = {
@@ -127,6 +136,12 @@ function normalizeText_(value) {
     .trim();
 }
 
+function normalizeInspectorCustomStatus_(statusRaw) {
+  const statusNorm = normalizeText_(statusRaw);
+  if (!statusNorm) return 'active';
+  if (statusNorm === 'active' || statusNorm.indexOf('\u0430\u043a\u0442\u0438\u0432') !== -1) return 'active';
+  return 'absent';
+}
 function normalizeRole_(roleRaw) {
   const role = normalizeText_(roleRaw);
   if (!role) return '';
@@ -135,8 +150,180 @@ function normalizeRole_(roleRaw) {
   return role;
 }
 
+function bytesToHex_(bytes) {
+  return (bytes || []).map(b => {
+    const value = (b + 256) % 256;
+    return ('0' + value.toString(16)).slice(-2);
+  }).join('');
+}
+
+function sha256Hex_(text) {
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(text || ''),
+    Utilities.Charset.UTF_8
+  );
+  return bytesToHex_(digest);
+}
+
+function base64WebSafeNoPad_(bytesOrText) {
+  const encoded = (bytesOrText instanceof Array)
+    ? Utilities.base64EncodeWebSafe(bytesOrText)
+    : Utilities.base64EncodeWebSafe(String(bytesOrText || ''), Utilities.Charset.UTF_8);
+  return String(encoded || '').replace(/=+$/g, '');
+}
+
+function base64WebSafeDecodeNoPadToText_(value) {
+  const raw = String(value || '');
+  if (!raw) return '';
+  const padding = (4 - (raw.length % 4)) % 4;
+  const padded = raw + '='.repeat(padding);
+  const bytes = Utilities.base64DecodeWebSafe(padded);
+  return Utilities.newBlob(bytes).getDataAsString('UTF-8');
+}
+
+function getSessionSecret_() {
+  const props = PropertiesService.getScriptProperties();
+  let secret = String(props.getProperty(SESSION_SECRET_PROP) || '').trim();
+  if (!secret) {
+    secret = Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty(SESSION_SECRET_PROP, secret);
+  }
+  return secret;
+}
+
+function createAuthNonce_() {
+  const nonceId = Utilities.getUuid().replace(/-/g, '');
+  const nonce = Utilities.getUuid().replace(/-/g, '') + String(Date.now());
+  CacheService.getScriptCache().put(AUTH_NONCE_CACHE_PREFIX + nonceId, nonce, AUTH_NONCE_TTL_SEC);
+  return { nonceId: nonceId, nonce: nonce, ttlSec: AUTH_NONCE_TTL_SEC };
+}
+
+function consumeAuthNonce_(nonceIdRaw) {
+  const nonceId = String(nonceIdRaw || '').trim();
+  if (!nonceId) return '';
+  const cache = CacheService.getScriptCache();
+  const key = AUTH_NONCE_CACHE_PREFIX + nonceId;
+  const nonce = String(cache.get(key) || '');
+  if (!nonce) return '';
+  cache.remove(key);
+  return nonce;
+}
+
+function issueSessionToken_(user) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const expSec = nowSec + SESSION_TOKEN_TTL_SEC;
+  const payload = {
+    v: 1,
+    iat: nowSec,
+    exp: expSec,
+    user: {
+      name: String(user && user.name || '').trim(),
+      role: String(user && user.role || '').trim(),
+      division: String(user && user.division || '').trim()
+    }
+  };
+  const payloadPart = base64WebSafeNoPad_(JSON.stringify(payload));
+  const signatureBytes = Utilities.computeHmacSha256Signature(
+    payloadPart,
+    getSessionSecret_(),
+    Utilities.Charset.UTF_8
+  );
+  const signaturePart = base64WebSafeNoPad_(signatureBytes);
+  return {
+    token: `${payloadPart}.${signaturePart}`,
+    expiresAt: new Date(expSec * 1000).toISOString()
+  };
+}
+
+function verifySessionToken_(tokenRaw) {
+  const token = String(tokenRaw || '').trim();
+  if (!token) return { success: false, error: 'missing_token' };
+
+  const parts = token.split('.');
+  if (parts.length !== 2) return { success: false, error: 'invalid_token_format' };
+  const payloadPart = parts[0];
+  const signaturePart = parts[1];
+  if (!payloadPart || !signaturePart) return { success: false, error: 'invalid_token_parts' };
+
+  const expectedSignature = base64WebSafeNoPad_(
+    Utilities.computeHmacSha256Signature(
+      payloadPart,
+      getSessionSecret_(),
+      Utilities.Charset.UTF_8
+    )
+  );
+  if (expectedSignature !== signaturePart) {
+    return { success: false, error: 'invalid_token_signature' };
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(base64WebSafeDecodeNoPadToText_(payloadPart));
+  } catch (error) {
+    return { success: false, error: 'invalid_token_payload' };
+  }
+
+  const exp = Number(payload && payload.exp || 0);
+  if (!exp || Math.floor(Date.now() / 1000) >= exp) {
+    return { success: false, error: 'token_expired' };
+  }
+
+  const user = payload && payload.user;
+  if (!user || !user.name || !user.role) {
+    return { success: false, error: 'invalid_token_user' };
+  }
+
+  return {
+    success: true,
+    user: {
+      name: String(user.name || '').trim(),
+      role: String(user.role || '').trim(),
+      division: String(user.division || '').trim()
+    },
+    expiresAt: new Date(exp * 1000).toISOString()
+  };
+}
+
 function getRequestUserContext_(p) {
   const params = p || {};
+  const sessionUser = (params.__sessionUser && typeof params.__sessionUser === 'object')
+    ? params.__sessionUser
+    : null;
+  if (sessionUser) {
+    const name = String(sessionUser.name || '').trim();
+    const role = normalizeRole_(sessionUser.role || '');
+    const nameNorm = normalizeText_(name);
+    return {
+      name: name,
+      nameNorm: nameNorm,
+      role: role,
+      isInspector: role === 'inspector',
+      isAdmin: role === 'admin',
+      division: String(sessionUser.division || '').trim(),
+      fromToken: true
+    };
+  }
+
+  const tokenCandidate = String(params.sessionToken || params.token || '').trim();
+  if (tokenCandidate) {
+    const verified = verifySessionToken_(tokenCandidate);
+    if (verified.success && verified.user) {
+      const name = String(verified.user.name || '').trim();
+      const role = normalizeRole_(verified.user.role || '');
+      const nameNorm = normalizeText_(name);
+      return {
+        name: name,
+        nameNorm: nameNorm,
+        role: role,
+        isInspector: role === 'inspector',
+        isAdmin: role === 'admin',
+        division: String(verified.user.division || '').trim(),
+        fromToken: true
+      };
+    }
+  }
+
   const name = String(params.userName || params.inspectorName || params.user || '').trim();
   const role = normalizeRole_(params.userRole || params.role || '');
   const nameNorm = normalizeText_(name);
@@ -145,7 +332,9 @@ function getRequestUserContext_(p) {
     nameNorm: nameNorm,
     role: role,
     isInspector: role === 'inspector',
-    isAdmin: role === 'admin'
+    isAdmin: role === 'admin',
+    division: String(params.division || '').trim(),
+    fromToken: false
   };
 }
 
@@ -183,15 +372,34 @@ function filterInspectorsConfigByInspector_(config, inspectorNameNorm) {
   return result;
 }
 
+function filterInspectorsWorkDayByInspector_(statusMap, inspectorNameNorm) {
+  if (!inspectorNameNorm || !statusMap || typeof statusMap !== 'object') return {};
+  const result = {};
+  if (Object.prototype.hasOwnProperty.call(statusMap, inspectorNameNorm)) {
+    result[inspectorNameNorm] = statusMap[inspectorNameNorm];
+  }
+  return result;
+}
 function doGet(e) {
-  const p = e.parameter;
+  const p = (e && e.parameter) ? e.parameter : {};
   const action = String(p.action || '');
   const callback = p.callback;
   
   try {
+    if (!ACTIONS_WITHOUT_SESSION[action]) {
+      const tokenCheck = verifySessionToken_(p.sessionToken || p.token);
+      if (!tokenCheck.success) {
+        return jsonp_(callback, { success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' });
+      }
+      p.__sessionUser = tokenCheck.user;
+    }
+
     let result;
     
     switch(action) {
+      case 'authNonce':
+        result = { success: true, ...createAuthNonce_() };
+        break;
       case 'getData':
         result = getData_(p);
         break;
@@ -230,6 +438,12 @@ function doGet(e) {
         break;
       case 'savePhotosLink':
         result = savePhotosLink_(p);
+        break;
+      case 'yandexCreateFolder':
+        result = yandexCreateFolder_(p);
+        break;
+      case 'yandexCheckFolder':
+        result = yandexCheckFolder_(p);
         break;
       case 'auth':
         result = authenticateUser_(p);
@@ -273,6 +487,7 @@ function getData_(p) {
   // Загрузить список инспекторов с подразделениями
   let inspectorsList = getInspectorsList_(ss);
   let points = mapPoints.points || [];
+  let inspectorsWorkDay = getInspectorsWorkDayStatusByInspectorForDate_(ss, new Date());
   const inspectorMessages = requestUser.isInspector
     ? getInspectorMessagesForUser_(ss, requestUser)
     : { individual: [], group: [] };
@@ -282,6 +497,7 @@ function getData_(p) {
     inspectorsList = filterInspectorsListByInspector_(inspectorsList, requestUser.nameNorm);
     homes = filterHomesByInspector_(homes, requestUser.nameNorm);
     config = filterInspectorsConfigByInspector_(config, requestUser.nameNorm);
+    inspectorsWorkDay = filterInspectorsWorkDayByInspector_(inspectorsWorkDay, requestUser.nameNorm);
   }
   
   return {
@@ -290,6 +506,7 @@ function getData_(p) {
     inspectorsConfig: config,
     inspectorsList: inspectorsList,
     points: points,
+    inspectorsWorkDay: inspectorsWorkDay,
     inspectorMessages: inspectorMessages,
     timestamp: new Date().toISOString()
   };
@@ -390,7 +607,7 @@ function getInspectorsConfig_(ss) {
         inspector: inspector,
         color: indices.COLOR !== undefined ? row[indices.COLOR] : '#808080',
         icon: indices.ICON !== undefined ? row[indices.ICON] : '👤',
-        status: indices.STATUS !== undefined ? row[indices.STATUS] : 'active'
+        status: normalizeInspectorCustomStatus_(indices.STATUS !== undefined ? row[indices.STATUS] : 'active')
       };
     }
   }
@@ -398,6 +615,42 @@ function getInspectorsConfig_(ss) {
   return config;
 }
 
+function getInspectorsWorkDayStatusByInspectorForDate_(ss, dateValue) {
+  const result = {};
+  const sheet = ss.getSheetByName(WORKDAY_SHEET_NAME);
+  if (!sheet) return result;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return result;
+
+  const timeZone = Session.getScriptTimeZone() || 'Etc/GMT';
+  const safeDate = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  const targetDateToken = Utilities.formatDate(safeDate, timeZone, 'dd.MM.yyyy');
+  const rows = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    const rowDateToken = formatDateToken_(row[0], timeZone);
+    if (rowDateToken !== targetDateToken) continue;
+
+    const inspectorRaw = String(row[1] || '').trim();
+    const inspectorNorm = normalizeText_(inspectorRaw);
+    if (!inspectorNorm) continue;
+
+    const openTime = String(row[2] || '').trim();
+    const closeTime = String(row[7] || '').trim();
+
+    result[inspectorNorm] = {
+      inspector: inspectorRaw,
+      open: !!openTime && !closeTime,
+      openTime: openTime || '',
+      closeTime: closeTime || '',
+      date: targetDateToken
+    };
+  }
+
+  return result;
+}
 function ensureInspectorsMessageSheet_(ss) {
   let sheet = ss.getSheetByName(INSPECTORS_MESSAGE_SHEET_NAME);
   if (!sheet) {
@@ -474,48 +727,70 @@ function appendInspectorMessage_(inspectorName, messageText) {
  */
 function authenticateUser_(p) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const password = String(p.password || '').trim();
-  
-  if (!password) {
-    return { success: false, error: 'Password required' };
-  }
-  
   const sheet = ss.getSheetByName('AuthorizationPage');
   if (!sheet) {
     return { success: false, error: 'Authorization sheet not found' };
   }
-  
+
   const indices = getColumnIndices_(sheet, HEADERS.AUTHORIZATION);
   const data = sheet.getDataRange().getValues();
-  
-  // Найти пользователя по паролю
+
+  const nonceId = String(p.nonceId || '').trim();
+  const proof = String(p.proof || '').trim().toLowerCase();
+  const isProofFlow = !!(nonceId || proof);
+  let password = '';
+  let nonce = '';
+
+  if (isProofFlow) {
+    if (!nonceId || !proof) {
+      return { success: false, error: 'Nonce/proof required' };
+    }
+    nonce = consumeAuthNonce_(nonceId);
+    if (!nonce) {
+      return { success: false, error: 'Nonce expired' };
+    }
+  } else {
+    password = String(p.password || '').trim();
+    if (!password) {
+      return { success: false, error: 'Password required' };
+    }
+  }
+
+  // ����� ������������ �� ������ (legacy) ��� proof (secure flow)
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     const inspectorName = indices.NAME !== undefined ? row[indices.NAME] : '';
     const storedPassword = indices.PASSWORD !== undefined ? String(row[indices.PASSWORD] || '').trim() : '';
-    
-    if (storedPassword && storedPassword === password) {
-      // Роль из колонки Role или автоопределение по имени
+    if (!storedPassword) continue;
+
+    const isMatch = isProofFlow
+      ? (sha256Hex_(storedPassword + '|' + nonce) === proof)
+      : (storedPassword === password);
+
+    if (isMatch) {
       let role = indices.ROLE !== undefined ? row[indices.ROLE] : '';
       if (!role) {
-        role = inspectorName.toLowerCase().includes('admin') ? 'Администратор' : 'Инспектор';
+        role = String(inspectorName || '').toLowerCase().includes('admin') ? '�������������' : '���������';
       }
-      
       const division = indices.DIVISION !== undefined ? row[indices.DIVISION] : '';
+      const user = {
+        name: inspectorName,
+        role: role,
+        division: division,
+        loginTime: new Date().toISOString()
+      };
+      const tokenPayload = issueSessionToken_(user);
 
       return {
         success: true,
-        user: {
-          name: inspectorName,
-          role: role,
-          division: division,
-          loginTime: new Date().toISOString()
-        }
+        user: user,
+        sessionToken: tokenPayload.token,
+        expiresAt: tokenPayload.expiresAt
       };
     }
   }
-  
-  return { success: false, error: 'Неверный пароль' };
+
+  return { success: false, error: '�������� ������' };
 }
 
 /**
@@ -539,7 +814,7 @@ function saveInspectorConfig_(p) {
   const inspector = String(p.inspector || '').trim();
   const color = p.color || '';
   const icon = p.icon || '';
-  const status = p.status || 'active';
+  const status = normalizeInspectorCustomStatus_(p.status || 'active');
   
   if (!inspector) {
     return { success: false, error: 'Inspector name required' };
@@ -1368,3 +1643,68 @@ function savePhotosLink_(p) {
   return { success: true, updated: true, row: ctx.rowNumber, message: 'Photos_link saved' };
 }
 
+function getYandexOauthToken_() {
+  const token = String(
+    PropertiesService.getScriptProperties().getProperty(YANDEX_TOKEN_PROP) || ''
+  ).trim();
+  if (!token) {
+    throw new Error('YANDEX_OAUTH_TOKEN is not configured in Script Properties');
+  }
+  return token;
+}
+
+function yandexApiRequest_(method, path) {
+  const normalizedMethod = String(method || 'get').trim().toLowerCase();
+  const normalizedPath = String(path || '').trim();
+  if (!normalizedPath) throw new Error('Path required');
+
+  const url = 'https://cloud-api.yandex.net/v1/disk/resources?path=' + encodeURIComponent(normalizedPath);
+  const response = UrlFetchApp.fetch(url, {
+    method: normalizedMethod,
+    muteHttpExceptions: true,
+    headers: {
+      Authorization: 'OAuth ' + getYandexOauthToken_()
+    }
+  });
+
+  return {
+    code: Number(response.getResponseCode() || 0),
+    body: String(response.getContentText() || '')
+  };
+}
+
+function yandexCreateFolder_(p) {
+  const path = String(p.path || '').trim();
+  if (!path) return { success: false, error: 'Path required' };
+
+  try {
+    const apiResult = yandexApiRequest_('put', path);
+    const code = apiResult.code;
+    if (code === 201 || code === 409) {
+      return { success: true, created: code === 201, code: code };
+    }
+    return {
+      success: false,
+      code: code,
+      message: apiResult.body || 'Yandex API error'
+    };
+  } catch (error) {
+    return { success: false, code: 0, message: String(error) };
+  }
+}
+
+function yandexCheckFolder_(p) {
+  const path = String(p.path || '').trim();
+  if (!path) return { success: false, error: 'Path required', exists: false };
+
+  try {
+    const apiResult = yandexApiRequest_('get', path);
+    return {
+      success: true,
+      exists: apiResult.code === 200,
+      code: apiResult.code
+    };
+  } catch (error) {
+    return { success: false, exists: false, code: 0, message: String(error) };
+  }
+}
