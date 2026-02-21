@@ -2434,6 +2434,12 @@
             // Ключ постоянной сессии (режим "Запомнить вход")
             SESSION_PERSIST_KEY: 'mpro_user_persist',
 
+            // Сохраненный пароль для поля авторизации (когда включен "Запомнить вход")
+            AUTH_PASSWORD_KEY: 'mpro_auth_password',
+
+            // Сохраненное состояние чекбокса "Запомнить вход"
+            AUTH_REMEMBER_KEY: 'mpro_auth_remember',
+
             // Ключ в localStorage для выбранных фильтров
             FILTERS_STORAGE_KEY: 'mpro_filters',
 
@@ -3029,6 +3035,43 @@
         function clearStoredSession_() {
             sessionStorage.removeItem(CONFIG.SESSION_KEY);
             localStorage.removeItem(CONFIG.SESSION_PERSIST_KEY);
+        }
+
+        function readRememberedAuth_() {
+            try {
+                const rememberRaw = localStorage.getItem(CONFIG.AUTH_REMEMBER_KEY);
+                const remember = rememberRaw === null ? true : rememberRaw === '1';
+                const password = remember
+                    ? String(localStorage.getItem(CONFIG.AUTH_PASSWORD_KEY) || '')
+                    : '';
+                return { remember, password };
+            } catch (error) {
+                return { remember: true, password: '' };
+            }
+        }
+
+        function persistRememberedAuth_(password, remember) {
+            const rememberFlag = !!remember;
+            try {
+                localStorage.setItem(CONFIG.AUTH_REMEMBER_KEY, rememberFlag ? '1' : '0');
+                if (!rememberFlag) {
+                    localStorage.removeItem(CONFIG.AUTH_PASSWORD_KEY);
+                    return;
+                }
+                localStorage.setItem(CONFIG.AUTH_PASSWORD_KEY, String(password || ''));
+            } catch (error) {
+                // no-op
+            }
+        }
+
+        function applyRememberedAuthToForm_() {
+            const passwordInput = document.getElementById('authPassword');
+            const rememberInput = document.getElementById('authRemember');
+            if (!passwordInput || !rememberInput) return;
+
+            const remembered = readRememberedAuth_();
+            rememberInput.checked = !!remembered.remember;
+            passwordInput.value = remembered.password || '';
         }
 
         const bootSession = readStoredSession_();
@@ -3702,10 +3745,22 @@
                 
                 // Подключаем обработчики событий
                 const passwordInput = document.getElementById('authPassword');
+                const rememberInput = document.getElementById('authRemember');
+                applyRememberedAuthToForm_();
                 passwordInput.focus();
                 passwordInput.addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') doLogin();
                 });
+                passwordInput.addEventListener('input', () => {
+                    if (rememberInput && rememberInput.checked) {
+                        persistRememberedAuth_(passwordInput.value, true);
+                    }
+                });
+                if (rememberInput) {
+                    rememberInput.addEventListener('change', () => {
+                        persistRememberedAuth_(passwordInput.value, rememberInput.checked);
+                    });
+                }
             }
         });
         
@@ -3942,6 +3997,7 @@
                         sessionToken: authResponse.sessionToken,
                         expiresAt: authResponse.expiresAt || ''
                     }, { remember });
+                    persistRememberedAuth_(password, remember);
                     showSuccessAndContinue();
                     return;
                 }
@@ -3949,7 +4005,6 @@
                 showAuthError(authResponse?.error || 'Неверный пароль');
                 passwordInput.classList.add('error');
                 setTimeout(() => passwordInput.classList.remove('error'), 500);
-                passwordInput.value = '';
                 passwordInput.focus();
             } catch (error) {
                 showAuthError(error?.message || 'Ошибка соединения с сервером');
@@ -4038,9 +4093,9 @@
             DataState.clearInspectorsWorkDay();
             DataState.clearInspectorMessages();
             
-            // Очистить поле пароля
+            // Восстановить поле пароля/чекбокс из сохраненного состояния
+            applyRememberedAuthToForm_();
             const passwordInput = document.getElementById('authPassword');
-            if (passwordInput) passwordInput.value = '';
             
             // Скрыть ошибку
             const errorDiv = document.getElementById('authError');
