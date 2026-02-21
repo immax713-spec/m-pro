@@ -3736,7 +3736,11 @@
                 updateUserCard();
                 initWorkDayStateForCurrentUser_({ force: true, silent: true });
                 initMap();
-                loadData();
+                loadDataWithRetry_({ attempts: 3, retryDelayMs: 800, reason: 'boot' })
+                    .catch((error) => {
+                        console.error('Initial data load failed:', error);
+                        showNotification('Ошибка загрузки данных. Проверьте сеть или обновите страницу', 'error');
+                    });
                 scheduleMenuIndicatorSync_();
             } else {
                 // Пользователь не авторизован: показываем оверлей входа
@@ -4032,7 +4036,12 @@
             updateUserCard();
             initWorkDayStateForCurrentUser_({ force: true, silent: true });
             initMap();
-            loadData();
+            RuntimeState.clearDataLoadPromise();
+            loadDataWithRetry_({ attempts: 3, retryDelayMs: 800, reason: 'post-login' })
+                .catch((error) => {
+                    console.error('Post-login data load failed:', error);
+                    showNotification('Ошибка загрузки данных. Попробуйте ещё раз', 'error');
+                });
             scheduleMenuIndicatorSync_();
             syncMobileLayoutState_();
         }
@@ -4076,6 +4085,7 @@
             
             // Очистить сессию
             clearStoredSession_();
+            RuntimeState.clearDataLoadPromise();
             RuntimeState.clearCurrentUser();
             RuntimeState.clearSessionToken();
             RuntimeState.clearMapSearchQuery();
@@ -4415,6 +4425,9 @@
                 // Слой для домашних адресов инспекторов
                 MapState.setHomesLayer(new ymaps.GeoObjectCollection());
                 MapState.getMapInstance().geoObjects.add(MapState.getHomesLayer());
+
+                // Догоняющий рендер: если данные пришли раньше готовности слоев карты.
+                scheduleMapUpdate_();
             });
         }
         
@@ -4571,6 +4584,9 @@
                         refreshInspectorManagementWorkDayIndicators_();
                         filterManagementInspectors();
                         
+                        // Промис нужен только для дедупликации текущей загрузки.
+                        // После успеха очищаем, чтобы будущие вызовы могли сделать fresh-load.
+                        RuntimeState.clearDataLoadPromise();
                         resolve(data);
                     } else {
                         if (data?.code === 'UNAUTHORIZED') {
@@ -4603,6 +4619,34 @@
             }));
             
             return RuntimeState.getDataLoadPromise();
+        }
+
+        /**
+         * Загрузить данные с ограниченными повторными попытками.
+         * Используется на старте/после логина для сглаживания редких сбоев JSONP.
+         * @param {{attempts?:number,retryDelayMs?:number,reason?:string}} options
+         * @returns {Promise<any>}
+         */
+        function loadDataWithRetry_(options = {}) {
+            const attempts = Math.max(1, Number(options.attempts) || 3);
+            const retryDelayMs = Math.max(200, Number(options.retryDelayMs) || 800);
+            const reason = String(options.reason || 'generic');
+            let attempt = 0;
+
+            const run = () => {
+                attempt += 1;
+                if (attempt > 1) {
+                    RuntimeState.clearDataLoadPromise();
+                }
+                return loadData().catch((error) => {
+                    if (attempt >= attempts) throw error;
+                    const waitMs = retryDelayMs * attempt;
+                    console.warn(`loadData retry ${attempt}/${attempts} failed (${reason}):`, error);
+                    return new Promise((resolve) => setTimeout(resolve, waitMs)).then(run);
+                });
+            };
+
+            return run();
         }
         
         /**
@@ -6956,8 +7000,24 @@
 
         function updateMap() {
             if (!MapState.areObjectLayersReady()) {
-                console.warn('⚠️ ObjectManager не инициализирован');
+                const retries = Number(updateMap._layerWaitRetries || 0);
+                if (retries >= 30) {
+                    console.warn('⚠️ ObjectManager не инициализирован (превышен лимит ожидания)');
+                    return;
+                }
+                if (!updateMap._layerWaitTimer) {
+                    updateMap._layerWaitTimer = setTimeout(() => {
+                        updateMap._layerWaitTimer = null;
+                        updateMap._layerWaitRetries = retries + 1;
+                        scheduleMapUpdate_();
+                    }, 250);
+                }
                 return;
+            }
+            updateMap._layerWaitRetries = 0;
+            if (updateMap._layerWaitTimer) {
+                clearTimeout(updateMap._layerWaitTimer);
+                updateMap._layerWaitTimer = null;
             }
 
             const objectsData = getRoleScopedObjects_(DataState.getObjectsData());
