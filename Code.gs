@@ -33,6 +33,7 @@ const SESSION_TOKEN_TTL_SEC = 12 * 60 * 60;
 const SESSION_TOKEN_TTL_REMEMBER_SEC = 30 * 24 * 60 * 60;
 const SESSION_SECRET_PROP = 'SESSION_HMAC_SECRET';
 const YANDEX_TOKEN_PROP = 'YANDEX_OAUTH_TOKEN';
+const YANDEX_TOKEN_PROP_LEGACY = 'YANDEX_TOKEN';
 const ACTIONS_WITHOUT_SESSION = Object.freeze({
   auth: true,
   authNonce: true
@@ -447,6 +448,9 @@ function doGet(e) {
         break;
       case 'yandexCheckFolder':
         result = yandexCheckFolder_(p);
+        break;
+      case 'archiveCompleted':
+        result = archiveCompletedObjects_(p);
         break;
       case 'auth':
         result = authenticateUser_(p);
@@ -920,7 +924,6 @@ function getMapPoints_(p) {
       continue;
     }
     
-    ensureObjectEntryColumns_(sheet, src.source);
     const indices = getColumnIndices_(sheet, getHeadersForSource_(src.source));
     const data = sheet.getDataRange().getValues();
     
@@ -1090,30 +1093,6 @@ function getObjectActionContext_(p) {
   };
 }
 
-function getHeaderIndex_(headers, headerName) {
-  const target = normalizeText_(headerName);
-  for (let i = 0; i < headers.length; i += 1) {
-    if (normalizeText_(headers[i]) === target) return i;
-  }
-  return -1;
-}
-
-function ensureObjectEntryColumns_(sheet, source) {
-  if (!sheet) return {};
-  let lastCol = Math.max(1, sheet.getLastColumn());
-  let headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
-
-  const requiredHeaders = [OBJECT_HEADERS.ENTRY, OBJECT_HEADERS.COORDINATE_CORRESPONDENCE];
-  requiredHeaders.forEach((headerName) => {
-    if (getHeaderIndex_(headers, headerName) !== -1) return;
-    lastCol += 1;
-    sheet.getRange(1, lastCol).setValue(headerName);
-    headers.push(headerName);
-  });
-
-  return getColumnIndices_(sheet, getHeadersForSource_(source));
-}
-
 function getCoordMismatchValue_() {
   return WORKDAY_COORD_MATCH_NO + ' ' + SELFIE_REQUEST_MESSAGE;
 }
@@ -1123,7 +1102,7 @@ function syncObjectEntryMetrics_(ctx, params) {
     return { updated: false, reason: 'no_sheet' };
   }
 
-  const indices = ensureObjectEntryColumns_(ctx.sheet, ctx.source);
+  const indices = getColumnIndices_(ctx.sheet, getHeadersForSource_(ctx.source));
   if (indices.ENTRY === undefined || indices.COORDINATE_CORRESPONDENCE === undefined) {
     return { updated: false, reason: 'missing_columns' };
   }
@@ -1687,14 +1666,115 @@ function savePhotosLink_(p) {
   return { success: true, updated: true, row: ctx.rowNumber, message: 'Photos_link saved' };
 }
 
-function getYandexOauthToken_() {
-  const token = String(
-    PropertiesService.getScriptProperties().getProperty(YANDEX_TOKEN_PROP) || ''
-  ).trim();
-  if (!token) {
-    throw new Error('YANDEX_OAUTH_TOKEN is not configured in Script Properties');
+function findColumnIndexByHeaderCandidates_(headers, candidates) {
+  const headerRow = Array.isArray(headers) ? headers : [];
+  const wanted = (Array.isArray(candidates) ? candidates : []).map(name => normalizeText_(name));
+  for (let i = 0; i < headerRow.length; i += 1) {
+    const normalized = normalizeText_(headerRow[i]);
+    if (wanted.indexOf(normalized) !== -1) return i;
   }
-  return token;
+  return -1;
+}
+
+function ensureArchiveSheet_(ss) {
+  let sheet = ss.getSheetByName('Archive');
+  if (!sheet) {
+    sheet = ss.insertSheet('Archive');
+  }
+  return sheet;
+}
+
+function archiveCompletedObjects_(p) {
+  const requestUser = getRequestUserContext_(p);
+  if (requestUser && requestUser.isInspector) {
+    return { success: false, error: 'Forbidden for inspector role', code: 'FORBIDDEN' };
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const archiveSheet = ensureArchiveSheet_(ss);
+  const sourceSheets = ['Map', 'Laboratory', 'ConstructionControl', 'DMS'];
+  const bySource = {};
+  let totalArchived = 0;
+
+  sourceSheets.forEach(sourceName => {
+    bySource[sourceName] = 0;
+
+    const sheet = ss.getSheetByName(sourceName);
+    if (!sheet) return;
+
+    const lastRow = Number(sheet.getLastRow() || 0);
+    const lastCol = Number(sheet.getLastColumn() || 0);
+    if (lastRow < 2 || lastCol < 1) return;
+
+    const data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+    const headers = data[0] || [];
+
+    let exitCol = findColumnIndexByHeaderCandidates_(headers, [
+      OBJECT_HEADERS.EXIT_TIME,
+      'Exit_time',
+      'Exit',
+      'Exit time',
+      'exittime',
+      '\u0412\u0440\u0435\u043c\u044f \u0432\u044b\u0445\u043e\u0434\u0430',
+      '\u0412\u044b\u0445\u043e\u0434'
+    ]);
+    if (exitCol < 0 && lastCol > 7) exitCol = 7;
+    if (exitCol < 0) return;
+
+    const keepRows = [headers];
+    const archiveRows = [];
+
+    for (let i = 1; i < data.length; i += 1) {
+      const row = data[i];
+      const exitValue = row[exitCol];
+      const hasExit = !(exitValue === null || exitValue === undefined || String(exitValue).trim() === '');
+      if (hasExit) {
+        archiveRows.push(row);
+      } else {
+        keepRows.push(row);
+      }
+    }
+
+    if (archiveRows.length === 0) return;
+
+    const archiveLastCol = Number(archiveSheet.getLastColumn() || 0);
+    if (archiveLastCol < lastCol) {
+      const addCols = lastCol - archiveLastCol;
+      if (archiveLastCol > 0) {
+        archiveSheet.insertColumnsAfter(archiveLastCol, addCols);
+      }
+    }
+
+    const writeRow = archiveSheet.getLastRow() + 1;
+    archiveSheet.getRange(writeRow, 1, archiveRows.length, lastCol).setValues(archiveRows);
+
+    sheet.getRange(1, 1, lastRow, lastCol).clearContent();
+    sheet.getRange(1, 1, keepRows.length, lastCol).setValues(keepRows);
+
+    bySource[sourceName] = archiveRows.length;
+    totalArchived += archiveRows.length;
+  });
+
+  SpreadsheetApp.flush();
+
+  return {
+    success: true,
+    count: totalArchived,
+    bySource: bySource,
+    message: totalArchived > 0
+      ? ('Archived ' + totalArchived + ' objects')
+      : 'Nothing to archive'
+  };
+}
+function getYandexOauthToken_() {
+  const props = PropertiesService.getScriptProperties();
+  const primary = String(props.getProperty(YANDEX_TOKEN_PROP) || '').trim();
+  if (primary) return primary;
+
+  const legacy = String(props.getProperty(YANDEX_TOKEN_PROP_LEGACY) || '').trim();
+  if (legacy) return legacy;
+
+  throw new Error('Yandex OAuth token is missing. Set Script Property "YANDEX_OAUTH_TOKEN" (or legacy "YANDEX_TOKEN").');
 }
 
 function yandexApiRequest_(method, path) {

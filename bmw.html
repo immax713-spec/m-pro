@@ -2135,6 +2135,10 @@
                                 <span class="ios-btn-emoji">🧭</span>
                                 <span>Кастомизация и управление инспекторами</span>
                             </button>
+                            <button class="ios-btn" data-action="archive-completed">
+                                <span class="ios-btn-emoji">🗄️</span>
+                                <span>Архивировать выполненные</span>
+                            </button>
                         </div>
                     </div>
                     
@@ -2382,7 +2386,7 @@
             },
             
             // Адрес Google Apps Script
-            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbyVFm9ANw5II2_ERo0ZlW6CHowIRj41vu4Tq-VD0S4byaIFk6j6LdX4j9cOhxBVLCNx/exec',
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbyAroqG8zPf64EEoteWrNkh7y8QjdOXvYBzWfLcMsuH4btjCIPMAl_dNXHNBsSzSkdc/exec',
             
             // Конфигурация Яндекс.Диска
             YANDEX: {
@@ -3079,6 +3083,7 @@
         const INSPECTOR_BLOCKED_CLICK_ACTIONS = new Set([
             'show-homes',
             'show-inspector-management',
+            'archive-completed',
             'close-inspector-management',
             'toggle-inspector-card',
             'toggle-picker',
@@ -3179,6 +3184,9 @@
                         break;
                     case 'show-inspector-management':
                         AppModules.Customization.showInspectorManagement();
+                        break;
+                    case 'archive-completed':
+                        archiveCompletedObjects();
                         break;
                     case 'toggle-filter':
                         if (actionNode.dataset.filterId) {
@@ -7662,6 +7670,43 @@
         async function copyCoordinates(coordinates) {
             const success = await Utils.copyToClipboard(coordinates);
             showNotification(success ? '🧭 Координаты скопированы' : 'Не удалось скопировать координаты', success ? 'success' : 'error');
+        }
+
+        async function archiveCompletedObjects() {
+            const confirmed = confirm('Архивировать выполненные объекты? Они будут перенесены в лист Archive и удалены из рабочих листов.');
+            if (!confirmed) return;
+
+            showNotification('⏳ Начинаю архивацию...', 'info');
+
+            try {
+                const response = await createJsonpRequest({ action: 'archiveCompleted' }, 60000);
+                if (!response?.success) {
+                    showNotification('❌ ' + (response?.message || response?.error || 'Ошибка архивации'), 'error');
+                    return;
+                }
+
+                const count = Number(response?.count || 0);
+                if (count <= 0) {
+                    showNotification('ℹ️ Нет выполненных объектов для архивации', 'info');
+                    return;
+                }
+
+                const details = response?.bySource && typeof response.bySource === 'object'
+                    ? Object.entries(response.bySource)
+                        .map(([name, value]) => `${name}: ${Number(value || 0)}`)
+                        .join(', ')
+                    : '';
+
+                showNotification(
+                    `✅ Архивация завершена. Перенесено: ${count}${details ? ` (${details})` : ''}`,
+                    'success'
+                );
+
+                notifyRealtimeSync_('archive-completed');
+                await loadDataWithRetry_({ attempts: 2, retryDelayMs: 600, reason: 'archive-completed' });
+            } catch (error) {
+                showNotification('❌ ' + (error?.message || 'Ошибка архивации'), 'error');
+            }
         }
         
         // ==================================================================
