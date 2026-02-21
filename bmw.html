@@ -4817,6 +4817,7 @@
             debugLog('Rendering inspectors, total:', visibleInspectors.length);
             
             visibleInspectors.forEach(insp => {
+                if (!insp || typeof insp !== 'object') return;
                 let rawDiv = insp.division;
                 if (!rawDiv) rawDiv = 'Прочие';
                 
@@ -4866,6 +4867,13 @@
                 
                 inspectorsContainer.appendChild(accordion);
             });
+            if (!inspectorsContainer.children.length) {
+                const emptyInspectors = document.createElement('div');
+                emptyInspectors.className = 'filter-item';
+                emptyInspectors.style.cursor = 'default';
+                emptyInspectors.textContent = 'Нет доступных инспекторов';
+                inspectorsContainer.appendChild(emptyInspectors);
+            }
             
             // 2. Группировка списков объектов по полю list внутри источников
             const listsBySource = {
@@ -4877,10 +4885,11 @@
             };
             
             visibleObjects.forEach(obj => {
+                if (!obj || typeof obj !== 'object') return;
                 const sourceName = CONFIG.SOURCES[obj.source] || obj.source;
                 let div = divisionMap[sourceName] || 'Прочие';
-                if (obj.list && listsBySource[div]) {
-                    listsBySource[div].add(obj.list);
+                if (listsBySource[div]) {
+                    listsBySource[div].add(getObjectListName_(obj));
                 }
             });
             
@@ -4918,6 +4927,13 @@
                 
                 listsContainer.appendChild(accordion);
             });
+            if (!listsContainer.children.length) {
+                const emptyLists = document.createElement('div');
+                emptyLists.className = 'filter-item';
+                emptyLists.style.cursor = 'default';
+                emptyLists.textContent = 'Нет доступных списков объектов';
+                listsContainer.appendChild(emptyLists);
+            }
 
             UIState.setFilterCheckboxes(
                 'inspectors',
@@ -5249,6 +5265,28 @@
         }
 
         /**
+         * Получить отображаемое имя списка объекта.
+         * Для пустых значений используем стабильный fallback.
+         * @param {Object} obj
+         * @returns {string}
+         */
+        function getObjectListName_(obj) {
+            const raw = String(obj?.list ?? '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            return raw || 'Без списка';
+        }
+
+        /**
+         * Ключ "дивизион::список" для фильтрации.
+         * @param {Object} obj
+         * @returns {string}
+         */
+        function getObjectListDivisionKey_(obj) {
+            return `${resolveObjectDivision_(obj)}::${getObjectListName_(obj)}`;
+        }
+
+        /**
          * Определить дивизион объекта
          * @param {Object} obj
          * @returns {string}
@@ -5454,7 +5492,7 @@
 
                 const title = document.createElement('div');
                 title.className = 'objects-list-item__title';
-                title.textContent = `#${obj.id} • ${obj.list || 'Без списка'}`;
+                title.textContent = `#${obj.id} • ${getObjectListName_(obj)}`;
 
                 const subAddress = document.createElement('div');
                 subAddress.className = 'objects-list-item__sub';
@@ -6597,6 +6635,12 @@
             const mapSearchQuery = RuntimeState.getMapSearchQuery();
             const hasMapSearchQuery = !!mapSearchQuery;
 
+            // Кешируем ключи списка для текущего прохода (ускоряет фильтрацию при большом количестве точек)
+            objectsData.forEach(obj => {
+                if (!obj || typeof obj !== 'object') return;
+                obj.__listDivisionKey = getObjectListDivisionKey_(obj);
+            });
+
             objectsData.forEach((obj) => {
                 // Фильтрация
                 let match = false;
@@ -6617,7 +6661,7 @@
                     // 2. По списку (логика ИЛИ)
                     // Проверяем совпадение имени списка и дивизиона (источника)
                     if (!match && selectedListsSet) {
-                        const listKey = obj.__listDivisionKey || `${resolveObjectDivision_(obj)}::${String(obj.list || '')}`;
+                        const listKey = obj.__listDivisionKey || getObjectListDivisionKey_(obj);
                         if (selectedListsSet.has(listKey)) {
                             match = true;
                         }
