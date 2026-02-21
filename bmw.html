@@ -7402,23 +7402,37 @@
          * @returns {string} HTML-строка
          */
         function getPhotoReportLink_(obj) {
-            return String(obj?.photosLink || obj?.yandexDiskLink || '').trim();
+            return String(obj?.photosLink || '').trim();
         }
 
         function getYandexWorkLink_(obj) {
             return String(obj?.yandexDiskLink || obj?.photosLink || '').trim();
         }
 
+        function buildYandexDiskClientLink_(pathRaw) {
+            const path = String(pathRaw || '').trim().replace(/^\/+|\/+$/g, '');
+            if (!path) return '';
+            const encodedPath = path
+                .split('/')
+                .filter(Boolean)
+                .map(part => encodeURIComponent(part))
+                .join('/');
+            return `https://disk.yandex.ru/client/disk/${encodedPath}`;
+        }
+
         function renderYandexButton(obj, isActive) {
             const reportLink = getPhotoReportLink_(obj);
             const yandexWorkLink = getYandexWorkLink_(obj);
             const objectIdAttr = Utils.escapeAttr(obj.id);
+            const safeReportLink = Utils.sanitizeUrl(reportLink);
             if (isActive) {
+                if (safeReportLink) {
+                    return `<button class="object-card__button" data-action="yandex-disk" data-yandex-mode="open" data-yandex-object="${objectIdAttr}" data-yandex-target="${Utils.escapeAttr(safeReportLink)}" data-yandex-report-link="${Utils.escapeAttr(safeReportLink)}">${renderActionLabel_('🖼️', 'Просмотр фотоотчета')}</button>`;
+                }
                 if (!yandexWorkLink) return '';
                 return `<button class="object-card__button" data-action="yandex-disk" data-yandex-mode="create" data-yandex-object="${objectIdAttr}" data-yandex-link="${Utils.escapeAttr(yandexWorkLink)}" data-yandex-report-link="${Utils.escapeAttr(reportLink)}">${renderActionLabel_('✨', 'Создать папки')}</button>`;
             }
-            if (!reportLink) return '';
-            const safeUrl = Utils.sanitizeUrl(reportLink);
+            const safeUrl = Utils.sanitizeUrl(reportLink || yandexWorkLink);
             if (!safeUrl) return '';
             return `<a href="${Utils.escapeAttr(safeUrl)}" target="_blank" rel="noopener noreferrer" class="object-card__button">${renderActionLabel_('🖼️', 'Просмотр фотоотчета')}</a>`;
         }
@@ -7708,6 +7722,8 @@
                 showNotification('❌ ' + (error?.message || 'Ошибка архивации'), 'error');
             }
         }
+
+        const YANDEX_FOLDER_CREATION_IN_PROGRESS = new Set();
         
         // ==================================================================
         // Работа с папками на Яндекс.Диске
@@ -7792,21 +7808,21 @@
                 alert('Ошибка: не указана ссылка на Яндекс.Диск');
                 return;
             }
+            const objectKey = String(objectId);
+            if (YANDEX_FOLDER_CREATION_IN_PROGRESS.has(objectKey)) {
+                return;
+            }
             
             const btn = document.querySelector(`[data-yandex-object="${objectId}"]`);
             if (!btn) {
                 console.error('❌ Кнопка Яндекс.Диск не найдена');
                 return;
             }
-            
-            // Проверяем статус папок из localStorage
-            const folderStatus = localStorage.getItem('yndx_folders_' + objectId);
-            if (folderStatus === 'created') {
-                window.open(reportLink || yandexLink, '_blank');
-                return;
-            }
+
+            YANDEX_FOLDER_CREATION_IN_PROGRESS.add(objectKey);
             
             // Блокируем кнопку и показываем спиннер
+            btn.dataset.yandexBusy = '1';
             btn.disabled = true;
             btn.style.opacity = '0.6';
             btn.innerHTML = `<div style="display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
@@ -7890,18 +7906,16 @@
                 if (progressBar) progressBar.style.width = `${completeProgress}%`;
                 
                 // Формируем прямую ссылку на созданную папку
-                const directLink = `https://disk.yandex.ru/client/disk/${encodeURIComponent(mainPath)}`;
+                const directLink = buildYandexDiskClientLink_(mainPath);
                 
                 // Обновляем кнопку
-                btn.innerHTML = renderActionLabel_('📂', 'Добавить фотоотчет');
+                btn.innerHTML = renderActionLabel_('🖼️', 'Просмотр фотоотчета');
                 btn.disabled = false;
                 btn.style.opacity = '1';
                 btn.dataset.yandexMode = 'open';
                 btn.dataset.yandexTarget = directLink;
                 btn.dataset.yandexReportLink = directLink;
                 
-                // Сохраняем статус в localStorage
-                localStorage.setItem('yndx_folders_' + objectId, 'created');
                 const saveResult = await savePhotosLinkToSheet_(objectId, directLink);
                 if (!saveResult.success) {
                     console.warn('Не удалось сохранить Photos_link:', saveResult.error || 'unknown error');
@@ -7920,6 +7934,9 @@
                 btn.dataset.yandexMode = 'create';
                 delete btn.dataset.yandexTarget;
                 alert('❌ Не удалось создать папки:\n\n' + (error.message || 'Неизвестная ошибка'));
+            } finally {
+                YANDEX_FOLDER_CREATION_IN_PROGRESS.delete(objectKey);
+                delete btn.dataset.yandexBusy;
             }
         }
 
@@ -7931,8 +7948,12 @@
         function handleYandexDiskAction_(actionNode) {
             const mode = actionNode.dataset.yandexMode || 'create';
             if (mode === 'open') {
-                const directLink = actionNode.dataset.yandexTarget || '';
-                if (directLink) window.open(directLink, '_blank');
+                const directLink = actionNode.dataset.yandexTarget
+                    || actionNode.dataset.yandexReportLink
+                    || actionNode.dataset.yandexLink
+                    || '';
+                const safeUrl = Utils.sanitizeUrl(directLink);
+                if (safeUrl) window.open(safeUrl, '_blank');
                 return;
             }
 
@@ -7955,16 +7976,28 @@
                 const reportLink = btn.getAttribute('data-yandex-report-link') || yandexLink;
                 
                 if (!objectId || !yandexLink) continue;
+                if (btn.dataset.yandexBusy === '1' || YANDEX_FOLDER_CREATION_IN_PROGRESS.has(String(objectId))) continue;
+                if ((btn.dataset.yandexMode || '') === 'open' && (btn.dataset.yandexTarget || '')) continue;
                 
                 // Находим объект в данных
                 const object = DataState.findObjectById(objectId);
                 const isActive = object?.entryTime && !object?.exitTime;
+                const directFromSheet = Utils.sanitizeUrl(String(object?.photosLink || '').trim());
                 
                 // Если вход не выполнен - просто открываем ссылку
                 if (!isActive) {
-                    btn.innerHTML = renderActionLabel_('🖼️', 'Просмотр фотоотчета Я.Диск');
+                    btn.innerHTML = renderActionLabel_('🖼️', 'Просмотр фотоотчета');
                     btn.dataset.yandexMode = 'open';
-                    btn.dataset.yandexTarget = reportLink;
+                    btn.dataset.yandexTarget = directFromSheet || reportLink;
+                    continue;
+                }
+
+                // Если ссылка на фотоотчет уже сохранена в таблице — приоритетно открываем её.
+                if (directFromSheet) {
+                    btn.innerHTML = renderActionLabel_('🖼️', 'Просмотр фотоотчета');
+                    btn.dataset.yandexMode = 'open';
+                    btn.dataset.yandexTarget = directFromSheet;
+                    btn.dataset.yandexReportLink = directFromSheet;
                     continue;
                 }
                 
@@ -7987,10 +8020,11 @@
                 
                 const folderPathToCheck = `${folderPath}/${mainFolderName}`;
                 const folderExists = await checkYandexFolder(folderPathToCheck);
+                if (btn.dataset.yandexBusy === '1' || YANDEX_FOLDER_CREATION_IN_PROGRESS.has(String(objectId))) continue;
                 
                 if (folderExists) {
-                    const directLink = `https://disk.yandex.ru/client/disk/${encodeURIComponent(folderPathToCheck)}`;
-                    btn.innerHTML = renderActionLabel_('📂', 'Добавить фотоотчет');
+                    const directLink = buildYandexDiskClientLink_(folderPathToCheck);
+                    btn.innerHTML = renderActionLabel_('🖼️', 'Просмотр фотоотчета');
                     btn.dataset.yandexMode = 'open';
                     btn.dataset.yandexTarget = directLink;
                     btn.dataset.yandexReportLink = directLink;
