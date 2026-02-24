@@ -5108,6 +5108,22 @@
             };
             const visibleInspectors = getRoleScopedInspectors_(DataState.getInspectorsList());
             const visibleObjects = getRoleScopedObjects_(DataState.getObjectsData());
+            const inspectorStatsByNorm = {};
+
+            visibleObjects.forEach(obj => {
+                if (!obj || typeof obj !== 'object') return;
+                const inspectorNorm = normalizeInspectorName_(obj.inspector);
+                if (!inspectorNorm) return;
+
+                if (!inspectorStatsByNorm[inspectorNorm]) {
+                    inspectorStatsByNorm[inspectorNorm] = { total: 0, completed: 0 };
+                }
+
+                inspectorStatsByNorm[inspectorNorm].total += 1;
+                if (isObjectCompletedForListStats_(obj)) {
+                    inspectorStatsByNorm[inspectorNorm].completed += 1;
+                }
+            });
             
             debugLog('Rendering inspectors, total:', visibleInspectors.length);
             
@@ -5155,8 +5171,15 @@
                     label.setAttribute('for', inputId);
                     label.textContent = insp.name;
 
+                    const stats = inspectorStatsByNorm[normalizeInspectorName_(insp.name)] || { total: 0, completed: 0 };
+                    const progressBadge = document.createElement('span');
+                    progressBadge.className = 'inspector-counter list-progress-counter';
+                    progressBadge.textContent = `${stats.completed}/${stats.total}`;
+                    progressBadge.title = `Выполнено ${stats.completed} из ${stats.total}`;
+
                     item.appendChild(input);
                     item.appendChild(label);
+                    item.appendChild(progressBadge);
                     content.appendChild(item);
                 });
                 
