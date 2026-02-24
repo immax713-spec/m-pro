@@ -1228,6 +1228,12 @@
             user-select: none;
             line-height: 1.4;
         }
+
+        .list-progress-counter {
+            margin-left: auto;
+            min-width: 44px;
+            text-align: center;
+        }
         
         .select-all-item {
             background: #f0f2f5;
@@ -5164,37 +5170,47 @@
                 inspectorsContainer.appendChild(emptyInspectors);
             }
             
-            // 2. Группировка списков объектов по полю list внутри источников
-            const listsBySource = {
-                'ГС': new Set(),
-                'ДМС': new Set(),
-                'СК': new Set(),
-                'Лаборатория': new Set(),
-                'Прочие': new Set()
+            // 2. Группировка списков объектов по полю list внутри дивизионов
+            //    + подсчет "выполнено/всего" по каждому списку.
+            const listStatsByDivision = {
+                'ГС': {},
+                'ДМС': {},
+                'СК': {},
+                'Лаборатория': {},
+                'Прочие': {}
             };
             
             visibleObjects.forEach(obj => {
                 if (!obj || typeof obj !== 'object') return;
                 const sourceName = CONFIG.SOURCES[obj.source] || obj.source;
-                let div = divisionMap[sourceName] || 'Прочие';
-                if (listsBySource[div]) {
-                    listsBySource[div].add(getObjectListName_(obj));
+                const div = divisionMap[sourceName] || 'Прочие';
+                if (!listStatsByDivision[div]) listStatsByDivision[div] = {};
+
+                const listName = getObjectListName_(obj);
+                if (!listStatsByDivision[div][listName]) {
+                    listStatsByDivision[div][listName] = { total: 0, completed: 0 };
+                }
+
+                const stats = listStatsByDivision[div][listName];
+                stats.total += 1;
+                if (isObjectCompletedForListStats_(obj)) {
+                    stats.completed += 1;
                 }
             });
             
             // Рендер списков объектов
-            Object.keys(listsBySource).forEach(div => {
-                const lists = Array.from(listsBySource[div]).sort();
-                if (lists.length === 0) return;
+            Object.keys(listStatsByDivision).forEach(div => {
+                const listNames = Object.keys(listStatsByDivision[div]).sort();
+                if (listNames.length === 0) return;
                 
                 const checkboxId = `chk-group-list-${div}`;
-                const accordion = createAccordion(div, lists.length, checkboxId, {
+                const accordion = createAccordion(div, listNames.length, checkboxId, {
                     division: div,
                     type: 'lists'
                 });
                 const content = accordion.querySelector('.accordion-content');
                 
-                lists.forEach((listName, index) => {
+                listNames.forEach((listName, index) => {
                     const item = document.createElement('div');
                     item.className = 'checkbox-item';
                     const input = document.createElement('input');
@@ -5209,8 +5225,15 @@
                     label.setAttribute('for', inputId);
                     label.textContent = listName;
 
+                    const stats = listStatsByDivision[div][listName] || { total: 0, completed: 0 };
+                    const progressBadge = document.createElement('span');
+                    progressBadge.className = 'inspector-counter list-progress-counter';
+                    progressBadge.textContent = `${stats.completed}/${stats.total}`;
+                    progressBadge.title = `Выполнено ${stats.completed} из ${stats.total}`;
+
                     item.appendChild(input);
                     item.appendChild(label);
+                    item.appendChild(progressBadge);
                     content.appendChild(item);
                 });
                 
@@ -5568,6 +5591,18 @@
                 .replace(/\s+/g, ' ')
                 .trim();
             return raw || 'Без списка';
+        }
+
+        /**
+         * Признак выполненного объекта для счетчика "выполнено/всего".
+         * Отказы (exitTime === 'нет') не считаем выполненными.
+         * @param {Object} obj
+         * @returns {boolean}
+         */
+        function isObjectCompletedForListStats_(obj) {
+            const exitRaw = String(obj?.exitTime ?? '').trim().toLowerCase();
+            if (!exitRaw) return false;
+            return exitRaw !== 'нет';
         }
 
         /**
