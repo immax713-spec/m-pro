@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - bmw.html
+      - mpro.html
       - .github/workflows/deploy.yml
   workflow_dispatch:
 
@@ -64,7 +64,7 @@ jobs:
       - name: Upload new file
         run: |
           scp -P "$DEPLOY_PORT" \
-            ./bmw.html \
+            ./mpro.html \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/bmw.html.new"
 
       - name: Atomic replace + backup
