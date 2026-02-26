@@ -2813,7 +2813,7 @@
                     const idKey = String(obj?.id ?? '');
                     if (!idKey) continue;
                     const division = resolveObjectDivision_(obj);
-                    const listValue = String(obj?.list || '');
+                    const listValue = getObjectListName_(obj);
                     obj.__divisionResolved = division;
                     obj.__listDivisionKey = `${division}::${listValue}`;
                     obj.__searchBlobLower = `${idKey}|${listValue}|${String(obj?.address || '')}`.toLowerCase();
@@ -5525,7 +5525,7 @@
                 scopedObjects.forEach(obj => {
                     const objInspectorNorm = normalizeInspectorName_(obj?.inspector);
                     if (!objInspectorNorm || !selectedNormSet.has(objInspectorNorm)) return;
-                    allowedListKeys.add(obj.__listDivisionKey || getObjectListDivisionKey_(obj));
+                    allowedListKeys.add(getObjectListDivisionKey_(obj));
                 });
             }
 
