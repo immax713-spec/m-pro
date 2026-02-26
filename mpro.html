@@ -4753,6 +4753,40 @@
             'Laboratory': 'Лаборатория'
         };
 
+        const DIVISION_ALIASES = Object.freeze({
+            'гс': 'ГС',
+            'map': 'ГС',
+            'дмс': 'ДМС',
+            'dms': 'ДМС',
+            'ск': 'СК',
+            'constructioncontrol': 'СК',
+            'construction-control': 'СК',
+            'construction control': 'СК',
+            'лаборатория': 'Лаборатория',
+            'laboratory': 'Лаборатория'
+        });
+
+        /**
+         * Нормализовать произвольное название дивизиона к каноническому.
+         * @param {any} value
+         * @returns {string}
+         */
+        function normalizeDivisionName_(value) {
+            const raw = String(value || '')
+                .replace(/\u00A0/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (!raw) return '';
+
+            const lower = raw.toLowerCase();
+            if (DIVISION_ALIASES[lower]) return DIVISION_ALIASES[lower];
+
+            const compact = lower.replace(/\s+/g, '');
+            if (DIVISION_ALIASES[compact]) return DIVISION_ALIASES[compact];
+
+            return '';
+        }
+
 
         
         // ============================================
@@ -5143,17 +5177,6 @@
             inspectorsContainer.innerHTML = '';
             
             // 1. Группировка инспекторов по дивизионам
-            const divisionMap = {
-                'ГС': 'ГС',
-                'Map': 'ГС',
-                'ДМС': 'ДМС',
-                'DMS': 'ДМС',
-                'СК': 'СК',
-                'ConstructionControl': 'СК',
-                'Лаборатория': 'Лаборатория',
-                'Laboratory': 'Лаборатория'
-            };
-            
             // Группируем инспекторов
             const inspectorsByDivision = {
                 'ГС': [],
@@ -5190,10 +5213,8 @@
                 
                 // Нормализация (trim)
                 rawDiv = rawDiv.toString().trim();
-                
-                // Поиск маппинга
-                let div = divisionMap[rawDiv] || divisionMap[Object.keys(divisionMap).find(k => k.toLowerCase() === rawDiv.toLowerCase())];
-                
+
+                let div = normalizeDivisionName_(rawDiv);
                 if (!div) div = 'Прочие';
                 
                 if (!inspectorsByDivision[div]) inspectorsByDivision[div] = [];
@@ -5261,8 +5282,7 @@
             
             visibleObjects.forEach(obj => {
                 if (!obj || typeof obj !== 'object') return;
-                const sourceName = CONFIG.SOURCES[obj.source] || obj.source;
-                const div = divisionMap[sourceName] || 'Прочие';
+                const div = normalizeDivisionName_(resolveObjectDivision_(obj)) || 'Прочие';
                 if (!listStatsByDivision[div]) listStatsByDivision[div] = {};
 
                 const listName = getObjectListName_(obj);
@@ -5375,16 +5395,26 @@
          * Применить сохраненные фильтры к чекбоксам после рендера
          */
         function applyStoredFiltersToUI_() {
-            const stored = loadStoredFilters_();
-            if (!stored) return;
-
             const cache = ensureFilterCheckboxCache_();
-            const inspectorSet = new Set(Array.isArray(stored.inspectors) ? stored.inspectors : []);
+            const current = FiltersState.getCurrent();
+            const hasCurrent =
+                (Array.isArray(current?.inspectors) && current.inspectors.length > 0) ||
+                (Array.isArray(current?.lists) && current.lists.length > 0);
+            const sourceFilters = hasCurrent ? current : loadStoredFilters_();
+
+            if (!sourceFilters) {
+                cache.inspectors.forEach(cb => { cb.checked = false; });
+                cache.lists.forEach(cb => { cb.checked = false; });
+                updateMapFilters();
+                return;
+            }
+
+            const inspectorSet = new Set(Array.isArray(sourceFilters.inspectors) ? sourceFilters.inspectors : []);
             cache.inspectors.forEach(cb => {
                 cb.checked = inspectorSet.has(cb.value);
             });
 
-            const storedLists = Array.isArray(stored.lists) ? stored.lists : [];
+            const storedLists = Array.isArray(sourceFilters.lists) ? sourceFilters.lists : [];
             cache.lists.forEach(cb => {
                 const match = storedLists.some(item => item && item.name === cb.value && item.division === cb.dataset.division);
                 cb.checked = match;
@@ -5751,8 +5781,14 @@
          * @returns {string}
          */
         function resolveObjectDivision_(obj) {
-            if (!obj || typeof obj !== 'object') return 'Прочее';
-            if (obj.__divisionResolved) return obj.__divisionResolved;
+            if (!obj || typeof obj !== 'object') return 'Прочие';
+            if (obj.__divisionResolved) {
+                const normalizedCached = normalizeDivisionName_(obj.__divisionResolved);
+                if (normalizedCached) {
+                    obj.__divisionResolved = normalizedCached;
+                    return normalizedCached;
+                }
+            }
             const mappedBySheet = DIVISION_MAPPING[obj.sheetName];
             if (mappedBySheet) {
                 obj.__divisionResolved = mappedBySheet;
@@ -5766,12 +5802,25 @@
             }
 
             const sourceName = CONFIG.SOURCES[obj.source] || obj.source;
-            if (sourceName) {
-                obj.__divisionResolved = sourceName;
-                return sourceName;
+            const normalizedByName = normalizeDivisionName_(sourceName);
+            if (normalizedByName) {
+                obj.__divisionResolved = normalizedByName;
+                return normalizedByName;
             }
 
-            obj.__divisionResolved = 'Прочее';
+            const normalizedBySheetRaw = normalizeDivisionName_(obj.sheetName);
+            if (normalizedBySheetRaw) {
+                obj.__divisionResolved = normalizedBySheetRaw;
+                return normalizedBySheetRaw;
+            }
+
+            const normalizedBySourceRaw = normalizeDivisionName_(obj.source);
+            if (normalizedBySourceRaw) {
+                obj.__divisionResolved = normalizedBySourceRaw;
+                return normalizedBySourceRaw;
+            }
+
+            obj.__divisionResolved = 'Прочие';
             return obj.__divisionResolved;
         }
 

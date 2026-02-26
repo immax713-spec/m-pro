@@ -1,0 +1,128 @@
+/**
+ * M-PRO: защита листов Google Sheets.
+ *
+ * Что делает:
+ * 1) Снимает старые защиты листов/диапазонов.
+ * 2) Ставит защиту на ВСЕ листы (редактируют только админы).
+ * 3) Даёт точечный доступ:
+ *    - ilamakarov696@gmail.com -> Map, InspectorsMessage, InspectorMessage
+ *    - ahmetshinaanzela95@gmail.com -> Laboratory, InspectorsMessage, InspectorMessage
+ */
+
+const MPRO_SPREADSHEET_ID = '1BEd6qWf8Y2wx1zKh_ysTLcpigPId5HWF52yINkHX_8E';
+const SCOPED_EDITOR_EMAIL = 'ilamakarov696@gmail.com';
+const SCOPED_SHEETS = ['Map', 'InspectorsMessage', 'InspectorMessage', 'МОНИТОРИНГ'];
+const SCOPED_EDITOR_EMAIL_2 = 'ahmetshinaanzela95@gmail.com';
+const SCOPED_SHEETS_2 = ['Laboratory', 'InspectorsMessage', 'InspectorMessage'];
+
+// Добавьте/измените админов под ваш проект.
+const EXTRA_ADMINS = [
+  'mmalakhov7@gmail.com',
+  'Krovikova@gmail.com'
+];
+
+function applyAccessRules_mpro() {
+  const ss = SpreadsheetApp.openById(MPRO_SPREADSHEET_ID);
+  const admins = uniqueEmails_(EXTRA_ADMINS);
+  if (!admins.length) {
+    throw new Error('EXTRA_ADMINS is empty. Add at least one admin email.');
+  }
+  const scopedSheetsNorm = toNameSet_(SCOPED_SHEETS);
+  const scopedSheetsNorm2 = toNameSet_(SCOPED_SHEETS_2);
+
+  // Файловые права: чтобы пользователь мог открыть файл как editor.
+  admins.forEach(email => safeAddFileEditor_(ss, email));
+  safeAddFileEditor_(ss, SCOPED_EDITOR_EMAIL);
+  safeAddFileEditor_(ss, SCOPED_EDITOR_EMAIL_2);
+
+  // 1) Снимаем старые защиты.
+  ss.getProtections(SpreadsheetApp.ProtectionType.SHEET).forEach(p => p.remove());
+  ss.getProtections(SpreadsheetApp.ProtectionType.RANGE).forEach(p => p.remove());
+
+  // 2) Закрываем ВСЕ листы.
+  const applied = [];
+  ss.getSheets().forEach(sheet => {
+    const sheetName = sheet.getName();
+    const sheetNameNorm = normalizeName_(sheetName);
+    const allowScopedEditor = scopedSheetsNorm.has(sheetNameNorm);
+    const allowScopedEditor2 = scopedSheetsNorm2.has(sheetNameNorm);
+
+    const pSheet = sheet.protect().setDescription(`LOCK SHEET: ${sheetName}`);
+    pSheet.setWarningOnly(false);
+
+    // Удаляем всех редакторов защиты и назначаем только нужных.
+    pSheet.removeEditors(pSheet.getEditors());
+    admins.forEach(email => pSheet.addEditor(email));
+    if (allowScopedEditor) pSheet.addEditor(SCOPED_EDITOR_EMAIL);
+    if (allowScopedEditor2) pSheet.addEditor(SCOPED_EDITOR_EMAIL_2);
+
+    // Отключаем доменное редактирование и открытые области.
+    if (pSheet.canDomainEdit && pSheet.canDomainEdit()) pSheet.setDomainEdit(false);
+    pSheet.setUnprotectedRanges([]);
+
+    applied.push({
+      sheet: sheetName,
+      scopedEditorAllowed: allowScopedEditor,
+      scopedEditor2Allowed: allowScopedEditor2
+    });
+  });
+
+  const scopedFound = applied
+    .filter(x => x.scopedEditorAllowed)
+    .map(x => x.sheet);
+  const scopedFound2 = applied
+    .filter(x => x.scopedEditor2Allowed)
+    .map(x => x.sheet);
+
+  Logger.log(JSON.stringify({
+    success: true,
+    spreadsheetId: MPRO_SPREADSHEET_ID,
+    admins: admins,
+    scopedEditor: SCOPED_EDITOR_EMAIL,
+    scopedSheetsConfigured: SCOPED_SHEETS,
+    scopedSheetsFound: scopedFound,
+    scopedEditor2: SCOPED_EDITOR_EMAIL_2,
+    scopedSheetsConfigured2: SCOPED_SHEETS_2,
+    scopedSheetsFound2: scopedFound2,
+    totalSheetsLocked: applied.length
+  }, null, 2));
+
+  return {
+    success: true,
+    totalSheetsLocked: applied.length,
+    scopedSheetsFound: scopedFound,
+    scopedSheetsFound2: scopedFound2
+  };
+}
+
+function uniqueEmails_(emails) {
+  const set = new Set();
+  (emails || []).forEach(raw => {
+    const email = String(raw || '').trim().toLowerCase();
+    if (email) set.add(email);
+  });
+  return Array.from(set);
+}
+
+function normalizeName_(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function toNameSet_(names) {
+  const set = new Set();
+  (names || []).forEach(name => {
+    const norm = normalizeName_(name);
+    if (norm) set.add(norm);
+  });
+  return set;
+}
+
+function safeAddFileEditor_(file, emailRaw) {
+  const email = String(emailRaw || '').trim().toLowerCase();
+  if (!email) return;
+  try {
+    file.addEditor(email);
+  } catch (error) {
+    Logger.log('Failed to add file editor "' + email + '": ' + error);
+  }
+}
