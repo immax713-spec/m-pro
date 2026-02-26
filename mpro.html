@@ -5364,8 +5364,9 @@
          * @returns {{inspectors: string[], lists: {name: string, division: string}[]} | null}
          */
         function loadStoredFilters_() {
+            const storageKey = getFiltersStorageKey_();
             try {
-                const raw = localStorage.getItem(CONFIG.FILTERS_STORAGE_KEY);
+                const raw = localStorage.getItem(storageKey);
                 if (!raw) return null;
                 const parsed = JSON.parse(raw);
                 if (!parsed || typeof parsed !== 'object') return null;
@@ -5384,11 +5385,24 @@
          * @param {{inspectors: string[], lists: {name: string, division: string}[]}} filters
          */
         function saveFiltersToStorage_(filters) {
+            const storageKey = getFiltersStorageKey_();
             try {
-                localStorage.setItem(CONFIG.FILTERS_STORAGE_KEY, JSON.stringify(filters));
+                localStorage.setItem(storageKey, JSON.stringify(filters));
             } catch (err) {
                 console.warn('⚠️ Не удалось сохранить фильтры:', err);
             }
+        }
+
+        /**
+         * Получить ключ хранения фильтров с привязкой к текущему пользователю.
+         * Это предотвращает перенос фильтров между разными учетными записями.
+         * @returns {string}
+         */
+        function getFiltersStorageKey_() {
+            const baseKey = String(CONFIG.FILTERS_STORAGE_KEY || 'mpro_filters');
+            const userNorm = normalizeInspectorName_(RuntimeState.getCurrentUserName(''));
+            if (!userNorm) return baseKey;
+            return `${baseKey}:${userNorm}`;
         }
 
         /**
