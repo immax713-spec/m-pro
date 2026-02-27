@@ -2421,7 +2421,7 @@
             },
             
             // Адрес Google Apps Script
-            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwCDhLhVlZuo-UYX6V-pWuyS_eTPuRBVpjw0LJIn_4ZTJ9wbCfyYksCTfBwVbMvJ-uz/exec',
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbx1oZiYjzM9DGZdpbRadB7v8Itz_R9ugpnOkzjEpB4IEB27ynue9Y2ySgzMK-F_MNsz/exec',
             
             // Конфигурация Яндекс.Диска
             YANDEX: {
@@ -2466,7 +2466,8 @@
                 Map: 'ГС',
                 Laboratory: 'Лаборатория',
                 ConstructionControl: 'СК',
-                DMS: 'ДМС'
+                DMS: 'ДМС',
+                Metro: 'Метро'
             }),
             
             // Ключ временной сессии (до закрытия вкладки)
@@ -4750,7 +4751,8 @@
             'Map': 'ГС',
             'DMS': 'ДМС',
             'ConstructionControl': 'СК',
-            'Laboratory': 'Лаборатория'
+            'Laboratory': 'Лаборатория',
+            'Metro': 'Метро'
         };
 
         const DIVISION_ALIASES = Object.freeze({
@@ -4763,7 +4765,9 @@
             'construction-control': 'СК',
             'construction control': 'СК',
             'лаборатория': 'Лаборатория',
-            'laboratory': 'Лаборатория'
+            'laboratory': 'Лаборатория',
+            'метро': 'Метро',
+            'metro': 'Метро'
         });
 
         /**
@@ -5183,6 +5187,7 @@
                 'ДМС': [],
                 'СК': [],
                 'Лаборатория': [],
+                'Метро': [],
                 'Прочие': []
             };
             const visibleInspectors = getRoleScopedInspectors_(DataState.getInspectorsList());
@@ -5277,6 +5282,7 @@
                 'ДМС': {},
                 'СК': {},
                 'Лаборатория': {},
+                'Метро': {},
                 'Прочие': {}
             };
             
