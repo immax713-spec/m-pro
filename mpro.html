@@ -5776,14 +5776,14 @@
 
         /**
          * Признак выполненного объекта для счетчика "выполнено/всего".
-         * Отказы (exitTime === 'нет') не считаем выполненными.
+         * Любой заполненный exitTime (включая "нет") считаем выполнением.
          * @param {Object} obj
          * @returns {boolean}
          */
         function isObjectCompletedForListStats_(obj) {
             const exitRaw = String(obj?.exitTime ?? '').trim().toLowerCase();
             if (!exitRaw) return false;
-            return exitRaw !== 'нет';
+            return true;
         }
 
         /**
