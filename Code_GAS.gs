@@ -87,10 +87,18 @@ const HEADERS = {
   METRO: OBJECT_HEADERS
 };
 
+const MAP_POINT_SOURCES = Object.freeze([
+  Object.freeze({ name: 'Map', source: 'Map', divisionNorm: 'map' }),
+  Object.freeze({ name: 'Laboratory', source: 'Laboratory', divisionNorm: 'laboratory' }),
+  Object.freeze({ name: 'ConstructionControl', source: 'ConstructionControl', divisionNorm: 'constructioncontrol' }),
+  Object.freeze({ name: 'DMS', source: 'DMS', divisionNorm: 'dms' }),
+  Object.freeze({ name: 'Metro', source: 'Metro', divisionNorm: 'metro' })
+]);
+
 /**
- * Получить заголовки для указанного листа
+ * РџРѕР»СѓС‡РёС‚СЊ Р·Р°РіРѕР»РѕРІРєРё РґР»СЏ СѓРєР°Р·Р°РЅРЅРѕРіРѕ Р»РёСЃС‚Р°
  * @param {string} source - Sheet name (Map, Laboratory, ConstructionControl, DMS, Metro)
- * @returns {Object} Объект с заголовками
+ * @returns {Object} РћР±СЉРµРєС‚ СЃ Р·Р°РіРѕР»РѕРІРєР°РјРё
  */
 function getHeadersForSource_(source) {
   const sourceUpper = String(source || 'Map').toUpperCase();
@@ -145,27 +153,98 @@ function normalizeDivisionAlias_(valueRaw) {
   const value = normalizeText_(valueRaw);
   if (!value) return '';
 
-  const tokens = value.split(/[^a-zа-я0-9]+/).filter(Boolean);
+  const compact = value.replace(/[^a-z\u0430-\u044f0-9]+/g, ' ').trim();
+  if (!compact) return '';
+
+  const tokens = compact.split(/\s+/).filter(Boolean);
   const hasToken = token => tokens.indexOf(token) !== -1;
+  const hasTokenPrefix = prefix => tokens.some(token => token.indexOf(prefix) === 0);
+  const hasFragment = fragment => compact.indexOf(fragment) !== -1;
 
-  if (hasToken('гс') || hasToken('map')) return 'гс';
-  if (hasToken('дмс') || hasToken('dms')) return 'дмс';
-  if (hasToken('лаборатория') || hasToken('laboratory') || tokens.some(token => token.indexOf('лабор') === 0)) return 'лаборатория';
-  if (hasToken('метро') || hasToken('metro')) return 'метро';
-  if (hasToken('ск') || hasToken('constructioncontrol')) return 'ск';
+  if (
+    hasToken('map') || hasTokenPrefix('map') ||
+    hasToken('\u0433\u0441') || hasTokenPrefix('\u0433\u0441') ||
+    hasFragment('\u0433\u0440\u0430\u0436\u0434') ||
+    hasFragment('\u0433\u0435\u043d\u0441\u0442\u0440')
+  ) return 'map';
 
-  return value;
+  if (
+    hasToken('dms') || hasTokenPrefix('dms') ||
+    hasToken('\u0434\u043c\u0441') || hasTokenPrefix('\u0434\u043c\u0441')
+  ) return 'dms';
+
+  if (
+    hasToken('laboratory') || hasTokenPrefix('laboratory') ||
+    hasToken('lab') || hasTokenPrefix('lab') ||
+    hasFragment('\u043b\u0430\u0431\u043e\u0440')
+  ) return 'laboratory';
+
+  if (
+    hasToken('metro') || hasTokenPrefix('metro') ||
+    hasFragment('\u043c\u0435\u0442\u0440')
+  ) return 'metro';
+
+  if (
+    hasToken('constructioncontrol') || hasTokenPrefix('constructioncontrol') ||
+    (hasToken('construction') && hasToken('control')) ||
+    hasToken('cc') || hasTokenPrefix('cc') ||
+    hasToken('\u0441\u043a') || hasTokenPrefix('\u0441\u043a') ||
+    hasFragment('\u0441\u0442\u0440\u043e\u0439\u043a\u043e\u043d\u0442\u0440')
+  ) return 'constructioncontrol';
+
+  return compact;
 }
 
 function getSourceDivisionNorm_(sourceRaw) {
   const source = normalizeText_(sourceRaw);
   if (!source) return '';
-  if (source === 'map') return 'гс';
-  if (source === 'dms') return 'дмс';
-  if (source === 'laboratory') return 'лаборатория';
-  if (source === 'metro') return 'метро';
-  if (source === 'constructioncontrol') return 'ск';
+  if (source === 'map') return 'map';
+  if (source === 'dms') return 'dms';
+  if (source === 'laboratory') return 'laboratory';
+  if (source === 'metro') return 'metro';
+  if (source === 'constructioncontrol') return 'constructioncontrol';
   return '';
+}
+
+function addDivisionNormIfPresent_(collector, seen, valueRaw) {
+  const normalized = normalizeDivisionAlias_(valueRaw);
+  const canonical = getSourceDivisionNorm_(normalized);
+  const value = canonical || normalized;
+  if (!value || seen[value]) return;
+  seen[value] = true;
+  collector.push(value);
+}
+
+function getDivisionNormsFromRaw_(divisionRaw) {
+  const rawDivision = String(divisionRaw || '').replace(/\u00A0/g, ' ').trim();
+  if (!rawDivision) return [];
+
+  const parts = rawDivision
+    .split(/(?:\r?\n|[;,|/])+/)
+    .map(item => String(item || '').trim())
+    .filter(Boolean);
+  const sourceParts = parts.length ? parts : [rawDivision];
+  const result = [];
+  const seen = {};
+
+  for (let i = 0; i < sourceParts.length; i += 1) {
+    const part = sourceParts[i];
+    addDivisionNormIfPresent_(result, seen, part);
+
+    // РџРѕРґРґРµСЂР¶РєР° РєСЂР°С‚РєРѕР№ Р·Р°РїРёСЃРё РІРёРґР° "Map DMS"
+    const tokens = normalizeText_(part).split(/\s+/).filter(Boolean);
+    for (let j = 0; j < tokens.length; j += 1) {
+      addDivisionNormIfPresent_(result, seen, tokens[j]);
+    }
+  }
+
+  return result.filter(norm => !!getSourceDivisionNorm_(norm));
+}
+
+function getAdminAllowedDivisionNorms_(requestUser) {
+  const user = (requestUser && typeof requestUser === 'object') ? requestUser : {};
+  if (!user.isAdmin) return [];
+  return getDivisionNormsFromRaw_(user.division);
 }
 
 function splitInspectorNames_(value) {
@@ -175,7 +254,7 @@ function splitInspectorNames_(value) {
   if (!raw) return [];
 
   const parts = raw
-    .split(/(?:\r?\n|[;,|/+&])+|\s+и\s+/i)
+    .split(/(?:\r?\n|[;,|/+&])+|\s+\u0438\s+/i)
     .map(item => String(item || '').replace(/\u00A0/g, ' ').trim())
     .filter(Boolean);
 
@@ -450,6 +529,84 @@ function filterInspectorsWorkDayByInspector_(statusMap, inspectorNameNorm) {
   }
   return result;
 }
+
+function collectInspectorNameNormSetFromPoints_(points) {
+  const source = Array.isArray(points) ? points : [];
+  const set = {};
+
+  for (let i = 0; i < source.length; i += 1) {
+    const point = source[i] || {};
+    const names = splitInspectorNames_(point.inspector);
+    const fallback = String(point.inspector || '').trim();
+    const normalizedFallback = normalizeText_(fallback);
+
+    if (names.length) {
+      for (let j = 0; j < names.length; j += 1) {
+        const nameNorm = normalizeText_(names[j]);
+        if (nameNorm) set[nameNorm] = true;
+      }
+      continue;
+    }
+
+    if (normalizedFallback) {
+      set[normalizedFallback] = true;
+    }
+  }
+
+  return set;
+}
+
+function filterInspectorsListByInspectorNormSet_(inspectors, inspectorNormSet) {
+  const source = Array.isArray(inspectors) ? inspectors : [];
+  if (!inspectorNormSet || typeof inspectorNormSet !== 'object') return [];
+  return source.filter(item => {
+    const nameNorm = normalizeText_(item && item.name);
+    return !!(nameNorm && inspectorNormSet[nameNorm]);
+  });
+}
+
+function filterHomesByInspectorNormSet_(homes, inspectorNormSet) {
+  if (!homes || typeof homes !== 'object' || !inspectorNormSet || typeof inspectorNormSet !== 'object') {
+    return {};
+  }
+  const result = {};
+  Object.keys(homes).forEach(name => {
+    const nameNorm = normalizeText_(name);
+    if (nameNorm && inspectorNormSet[nameNorm]) {
+      result[name] = homes[name];
+    }
+  });
+  return result;
+}
+
+function filterInspectorsConfigByInspectorNormSet_(config, inspectorNormSet) {
+  if (!config || typeof config !== 'object' || !inspectorNormSet || typeof inspectorNormSet !== 'object') {
+    return {};
+  }
+  const result = {};
+  Object.keys(config).forEach(name => {
+    const nameNorm = normalizeText_(name);
+    if (nameNorm && inspectorNormSet[nameNorm]) {
+      result[name] = config[name];
+    }
+  });
+  return result;
+}
+
+function filterInspectorsWorkDayByInspectorNormSet_(statusMap, inspectorNormSet) {
+  if (!statusMap || typeof statusMap !== 'object' || !inspectorNormSet || typeof inspectorNormSet !== 'object') {
+    return {};
+  }
+  const result = {};
+  Object.keys(statusMap).forEach(nameNorm => {
+    const normalized = normalizeText_(nameNorm);
+    if (normalized && inspectorNormSet[normalized]) {
+      result[nameNorm] = statusMap[nameNorm];
+    }
+  });
+  return result;
+}
+
 function doGet(e) {
   const p = (e && e.parameter) ? e.parameter : {};
   const action = String(p.action || '');
@@ -555,7 +712,7 @@ function getData_(p) {
   let config = getInspectorsConfig_(ss);
   
   // Р—Р°РіСЂСѓР·РёС‚СЊ С‚РѕС‡РєРё РѕР±СЉРµРєС‚РѕРІ (РёР· С‚СЂС‘С… Р»РёСЃС‚РѕРІ)
-  const mapPoints = getMapPoints_(p);
+  const mapPoints = getMapPoints_(p, ss);
   
   // Р—Р°РіСЂСѓР·РёС‚СЊ СЃРїРёСЃРѕРє РёРЅСЃРїРµРєС‚РѕСЂРѕРІ СЃ РїРѕРґСЂР°Р·РґРµР»РµРЅРёСЏРјРё
   let inspectorsList = getInspectorsList_(ss);
@@ -571,6 +728,15 @@ function getData_(p) {
     homes = filterHomesByInspector_(homes, requestUser.nameNorm);
     config = filterInspectorsConfigByInspector_(config, requestUser.nameNorm);
     inspectorsWorkDay = filterInspectorsWorkDayByInspector_(inspectorsWorkDay, requestUser.nameNorm);
+  } else if (requestUser.isAdmin) {
+    const adminDivisionNorms = getAdminAllowedDivisionNorms_(requestUser);
+    if (adminDivisionNorms.length > 0) {
+      const inspectorNormSet = collectInspectorNameNormSetFromPoints_(points);
+      inspectorsList = filterInspectorsListByInspectorNormSet_(inspectorsList, inspectorNormSet);
+      homes = filterHomesByInspectorNormSet_(homes, inspectorNormSet);
+      config = filterInspectorsConfigByInspectorNormSet_(config, inspectorNormSet);
+      inspectorsWorkDay = filterInspectorsWorkDayByInspectorNormSet_(inspectorsWorkDay, inspectorNormSet);
+    }
   }
   
   return {
@@ -726,7 +892,7 @@ function getInspectorsWorkDayStatusByInspectorForDate_(ss, dateValue) {
       continue;
     }
 
-    // Если есть хотя бы одна открытая запись за день — считаем день открытым.
+    // Р•СЃР»Рё РµСЃС‚СЊ С…РѕС‚СЏ Р±С‹ РѕРґРЅР° РѕС‚РєСЂС‹С‚Р°СЏ Р·Р°РїРёСЃСЊ Р·Р° РґРµРЅСЊ вЂ” СЃС‡РёС‚Р°РµРј РґРµРЅСЊ РѕС‚РєСЂС‹С‚С‹Рј.
     if (rowOpen && !prev.open) {
       result[inspectorNorm] = {
         inspector: inspectorRaw,
@@ -739,7 +905,7 @@ function getInspectorsWorkDayStatusByInspectorForDate_(ss, dateValue) {
       continue;
     }
 
-    // Если обе записи одного типа, берём более позднюю строку как актуальную.
+    // Р•СЃР»Рё РѕР±Рµ Р·Р°РїРёСЃРё РѕРґРЅРѕРіРѕ С‚РёРїР°, Р±РµСЂС‘Рј Р±РѕР»РµРµ РїРѕР·РґРЅСЋСЋ СЃС‚СЂРѕРєСѓ РєР°Рє Р°РєС‚СѓР°Р»СЊРЅСѓСЋ.
     if (rowOpen === !!prev.open && (i + 2) > Number(prev.rowIndex || 0)) {
       result[inspectorNorm] = {
         inspector: inspectorRaw,
@@ -914,7 +1080,7 @@ function authenticateUser_(p) {
     }
   }
 
-  // Найти пользователя по паролю (legacy) или proof (secure flow)
+  // РќР°Р№С‚Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РїРѕ РїР°СЂРѕР»СЋ (legacy) РёР»Рё proof (secure flow)
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     const inspectorName = indices.NAME !== undefined ? row[indices.NAME] : '';
@@ -928,7 +1094,7 @@ function authenticateUser_(p) {
     if (isMatch) {
       let role = indices.ROLE !== undefined ? row[indices.ROLE] : '';
       if (!role) {
-        role = String(inspectorName || '').toLowerCase().includes('admin') ? 'Администратор' : 'Инспектор';
+        role = String(inspectorName || '').toLowerCase().includes('admin') ? 'РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ' : 'РРЅСЃРїРµРєС‚РѕСЂ';
       }
       const division = indices.DIVISION !== undefined ? row[indices.DIVISION] : '';
       const user = {
@@ -952,7 +1118,7 @@ function authenticateUser_(p) {
     }
   }
 
-  return { success: false, error: 'Неверный пароль' };
+  return { success: false, error: 'РќРµРІРµСЂРЅС‹Р№ РїР°СЂРѕР»СЊ' };
 }
 
 /**
@@ -1018,21 +1184,29 @@ function saveInspectorConfig_(p) {
 /**
  * РџРѕР»СѓС‡РёС‚СЊ С‚РѕС‡РєРё РёР· С‚СЂС‘С… Р»РёСЃС‚РѕРІ: Map, Laboratory, ConstructionControl
  */
-function getMapPoints_(p) {
+function getMapPoints_(p, ssOptional) {
   const requestUser = getRequestUserContext_(p);
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = ssOptional || SpreadsheetApp.openById(SPREADSHEET_ID);
   const allPoints = [];
+  const restrictByInspector = requestUser.isInspector && !!requestUser.nameNorm;
+  const inspectorDivisionNorms = requestUser.isInspector
+    ? getDivisionNormsFromRaw_(requestUser.division)
+    : [];
+  const restrictByInspectorDivision = requestUser.isInspector && inspectorDivisionNorms.length > 0;
+  const adminDivisionNorms = getAdminAllowedDivisionNorms_(requestUser);
+  const restrictByAdminDivision = requestUser.isAdmin && adminDivisionNorms.length > 0;
   
   // Р—Р°РіСЂСѓР¶Р°РµРј РёР· С‡РµС‚С‹СЂС‘С… Р»РёСЃС‚РѕРІ
-  const sources = [
-    { name: 'Map', source: 'Map' },
-    { name: 'Laboratory', source: 'Laboratory' },
-    { name: 'ConstructionControl', source: 'ConstructionControl' },
-    { name: 'DMS', source: 'DMS' },
-    { name: 'Metro', source: 'Metro' }
-  ];
+  const sources = MAP_POINT_SOURCES;
   
   for (const src of sources) {
+    if (restrictByInspectorDivision && inspectorDivisionNorms.indexOf(src.divisionNorm) === -1) {
+      continue;
+    }
+    if (restrictByAdminDivision && adminDivisionNorms.indexOf(src.divisionNorm) === -1) {
+      continue;
+    }
+
     const sheet = ss.getSheetByName(src.name);
     if (!sheet) {
       Logger.log('вљ пёЏ Р›РёСЃС‚ РЅРµ РЅР°Р№РґРµРЅ: ' + src.name);
@@ -1044,6 +1218,11 @@ function getMapPoints_(p) {
     
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
+      const inspectorRaw = indices.INSPECTOR !== undefined ? row[indices.INSPECTOR] : '';
+      if (restrictByInspector && !inspectorCellContainsInspector_(inspectorRaw, requestUser.nameNorm)) {
+        continue;
+      }
+
       const id = indices.ID !== undefined ? String(row[indices.ID] || '').trim() : '';
       if (!id) continue;
       
@@ -1061,7 +1240,7 @@ function getMapPoints_(p) {
         latitude: coords.lat,
         longitude: coords.lon,
         address: indices.ADDRESS !== undefined ? row[indices.ADDRESS] : '',
-        inspector: indices.INSPECTOR !== undefined ? row[indices.INSPECTOR] : '',
+        inspector: inspectorRaw,
         list: indices.LIST !== undefined ? row[indices.LIST] : '',
         date: indices.DATE !== undefined ? formatDateRU_(row[indices.DATE]) : '',
         entryTime: formatDateTime_(indices.ENTRY_TIME !== undefined ? row[indices.ENTRY_TIME] : ''),
@@ -1081,15 +1260,11 @@ function getMapPoints_(p) {
       allPoints.push(point);
     }
   }
-  
-  const scopedPoints = requestUser.isInspector
-    ? filterPointsByInspector_(allPoints, requestUser.nameNorm)
-    : allPoints;
 
   return {
     success: true,
-    points: scopedPoints,
-    count: scopedPoints.length,
+    points: allPoints,
+    count: allPoints.length,
     timestamp: new Date().toISOString()
   };
 }
@@ -1197,7 +1372,7 @@ function getInspectorDivisionByName_(ss, inspectorNameRaw) {
   if (!inspectorNameNorm) return '';
 
   const divisionMap = getInspectorDivisionMap_(ss);
-  return normalizeDivisionAlias_(divisionMap[inspectorNameNorm] || '');
+  return resolveDivisionFromInspectorNameNorm_(divisionMap, inspectorNameNorm);
 }
 
 function getInspectorDivisionMap_(ss) {
@@ -1234,9 +1409,12 @@ function getInspectorDivisionNormsForInspectorCell_(ss, inspectorCellRaw) {
 
   for (let i = 0; i < source.length; i += 1) {
     const nameNorm = normalizeText_(source[i]);
-    let divisionNorm = normalizeDivisionAlias_(nameNorm);
-    if (!divisionNorm || divisionNorm === nameNorm) {
-      divisionNorm = normalizeDivisionAlias_(divisionMap[nameNorm] || '');
+    let divisionNorm = resolveDivisionFromInspectorNameNorm_(divisionMap, nameNorm);
+    if (!divisionNorm) {
+      divisionNorm = normalizeDivisionAlias_(nameNorm);
+      if (divisionNorm === nameNorm) {
+        divisionNorm = '';
+      }
     }
     if (!divisionNorm || seen[divisionNorm]) continue;
     seen[divisionNorm] = true;
@@ -1246,11 +1424,133 @@ function getInspectorDivisionNormsForInspectorCell_(ss, inspectorCellRaw) {
   return divisions;
 }
 
+function getInspectorAllowedDivisionNorms_(ss, requestUser) {
+  const safeUser = (requestUser && typeof requestUser === 'object') ? requestUser : {};
+  const nameNorm = normalizeText_(safeUser.nameNorm || safeUser.name || '');
+  const result = [];
+  const seen = {};
+
+  addDivisionNormIfPresent_(result, seen, safeUser.division || '');
+  addDivisionNormIfPresent_(result, seen, getInspectorDivisionByName_(ss, nameNorm || safeUser.name || ''));
+
+  if (!nameNorm) return result;
+
+  const sourceSheets = [
+    { name: 'Map', source: 'map' },
+    { name: 'Laboratory', source: 'laboratory' },
+    { name: 'ConstructionControl', source: 'constructioncontrol' },
+    { name: 'DMS', source: 'dms' },
+    { name: 'Metro', source: 'metro' }
+  ];
+
+  for (let s = 0; s < sourceSheets.length; s += 1) {
+    const sourceItem = sourceSheets[s];
+    const sheet = ss.getSheetByName(sourceItem.name);
+    if (!sheet) continue;
+
+    const lastRow = Number(sheet.getLastRow() || 0);
+    const lastCol = Number(sheet.getLastColumn() || 0);
+    if (lastRow < 2 || lastCol < 1) continue;
+
+    const headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+    const inspectorCol = findColumnIndexByHeaderCandidates_(headers, [
+      OBJECT_HEADERS.INSPECTOR,
+      'Inspector',
+      'РРЅСЃРїРµРєС‚РѕСЂ'
+    ]);
+    if (inspectorCol < 0) continue;
+
+    const divisionCol = findColumnIndexByHeaderCandidates_(headers, [
+      'Division',
+      'division',
+      'РћС‚РґРµР»',
+      'РџРѕРґСЂР°Р·РґРµР»РµРЅРёРµ',
+      'Department',
+      'Р”РёРІРёР·РёРѕРЅ'
+    ]);
+
+    const rowCount = lastRow - 1;
+    const inspectorValues = sheet.getRange(2, inspectorCol + 1, rowCount, 1).getDisplayValues();
+    const divisionValues = divisionCol >= 0
+      ? sheet.getRange(2, divisionCol + 1, rowCount, 1).getDisplayValues()
+      : null;
+
+    let foundAssignmentInSheet = false;
+    for (let i = 0; i < rowCount; i += 1) {
+      const rowInspectorRaw = inspectorValues[i] && inspectorValues[i][0];
+      if (!inspectorCellContainsInspector_(rowInspectorRaw, nameNorm)) continue;
+
+      foundAssignmentInSheet = true;
+      if (divisionValues) {
+        const rowDivisionRaw = divisionValues[i] && divisionValues[i][0];
+        addDivisionNormIfPresent_(result, seen, rowDivisionRaw);
+      }
+    }
+
+    if (foundAssignmentInSheet) {
+      addDivisionNormIfPresent_(result, seen, sourceItem.source);
+    }
+  }
+
+  return result;
+}
+
+function resolveDivisionFromInspectorNameNorm_(divisionMap, inspectorNameNorm) {
+  const map = (divisionMap && typeof divisionMap === 'object') ? divisionMap : {};
+  const rawNameNorm = normalizeText_(inspectorNameNorm);
+  if (!rawNameNorm) return '';
+
+  if (map[rawNameNorm]) {
+    return normalizeDivisionAlias_(map[rawNameNorm]);
+  }
+
+  const cleanedName = rawNameNorm
+    .replace(/[(){}\[\]"']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (cleanedName && map[cleanedName]) {
+    return normalizeDivisionAlias_(map[cleanedName]);
+  }
+
+  const targetTokens = cleanedName.split(/\s+/).filter(Boolean);
+  if (targetTokens.length < 2) return '';
+
+  const keys = Object.keys(map);
+  for (let i = 0; i < keys.length; i += 1) {
+    const keyName = normalizeText_(keys[i]);
+    if (!keyName) continue;
+    const keyTokens = keyName.split(/\s+/).filter(Boolean);
+    if (keyTokens.length < 2) continue;
+
+    let tokenMatches = 0;
+    for (let j = 0; j < targetTokens.length; j += 1) {
+      if (keyTokens.indexOf(targetTokens[j]) !== -1) {
+        tokenMatches += 1;
+      }
+    }
+    if (tokenMatches >= 2) {
+      return normalizeDivisionAlias_(map[keys[i]]);
+    }
+  }
+
+  return '';
+}
+
 function getObjectActionContext_(p) {
   const requestUser = getRequestUserContext_(p);
   const source = String(p.source || 'Map');
   const id = extractObjectId_(p.objectId);
   if (!id) return { error: 'No objectId' };
+
+  if (requestUser.isAdmin) {
+    const adminDivisionNorms = getAdminAllowedDivisionNorms_(requestUser);
+    if (adminDivisionNorms.length > 0) {
+      const sourceDivisionNorm = getSourceDivisionNorm_(source);
+      if (!sourceDivisionNorm || adminDivisionNorms.indexOf(sourceDivisionNorm) === -1) {
+        return { error: 'Forbidden: source is not allowed for this admin' };
+      }
+    }
+  }
 
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(source);
@@ -1260,27 +1560,52 @@ function getObjectActionContext_(p) {
   const rowNumber = findObjectRowNumberById_(sheet, indices, id);
   if (rowNumber < 2) return { error: 'Object not found' };
   const rowData = sheet.getRange(rowNumber, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const objectHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+  const objectDivisionColumnIndex = findColumnIndexByHeaderCandidates_(objectHeaders, [
+    'Division',
+    'division',
+    'РћС‚РґРµР»',
+    'РџРѕРґСЂР°Р·РґРµР»РµРЅРёРµ',
+    'Department',
+    'Р”РёРІРёР·РёРѕРЅ'
+  ]);
 
   if (requestUser.isInspector) {
     const rowInspectorRaw = indices.INSPECTOR !== undefined ? rowData[indices.INSPECTOR] : '';
     const rowInspectorNorm = normalizeText_(rowInspectorRaw);
+    const rowDivisionRaw = objectDivisionColumnIndex >= 0 ? rowData[objectDivisionColumnIndex] : '';
+    const rowDivisionNorm = normalizeDivisionAlias_(rowDivisionRaw);
 
     if (rowInspectorNorm) {
       const directInspectorMatch = inspectorCellContainsInspector_(rowInspectorRaw, requestUser.nameNorm);
 
       if (!directInspectorMatch) {
-        const requestDivisionNorm = normalizeDivisionAlias_(
-          requestUser.division || getInspectorDivisionByName_(ss, requestUser.name) || ''
-        );
+        const requestDivisionNorms = getInspectorAllowedDivisionNorms_(ss, requestUser);
         const rowDivisionNorms = getInspectorDivisionNormsForInspectorCell_(ss, rowInspectorRaw);
-        const sameDivision = !!requestDivisionNorm &&
-          rowDivisionNorms.some(divNorm => normalizeDivisionAlias_(divNorm) === requestDivisionNorm);
         const sourceDivisionNorm = getSourceDivisionNorm_(source);
-        const sameBySourceFallback = !!requestDivisionNorm && !rowDivisionNorms.length &&
-          !!sourceDivisionNorm && requestDivisionNorm === sourceDivisionNorm;
+        const sameObjectDivision = !!rowDivisionNorm &&
+          requestDivisionNorms.indexOf(rowDivisionNorm) !== -1;
+        const sameDivisionByInspectorCell = rowDivisionNorms.some(divNorm => {
+          const value = normalizeDivisionAlias_(divNorm);
+          return value && requestDivisionNorms.indexOf(value) !== -1;
+        });
+        const sameBySourceFallback = !!sourceDivisionNorm &&
+          requestDivisionNorms.indexOf(sourceDivisionNorm) !== -1;
+        const unresolvedInspectorDivision = requestDivisionNorms.length === 0;
+        const allowedByDivision = sameObjectDivision || sameDivisionByInspectorCell || sameBySourceFallback;
 
-        if (!sameDivision && !sameBySourceFallback) {
+        if (!allowedByDivision && !unresolvedInspectorDivision) {
           return { error: 'Forbidden: object is assigned to another inspector' };
+        }
+
+        if (!allowedByDivision && unresolvedInspectorDivision) {
+          Logger.log(
+            'Access fallback (unresolved inspector division). inspector=' +
+            String(requestUser.name || '') +
+            ', source=' + String(source || '') +
+            ', objectId=' + String(id || '') +
+            ', objectDivision=' + String(rowDivisionNorm || '')
+          );
         }
       }
     }
