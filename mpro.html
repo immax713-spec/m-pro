@@ -2421,7 +2421,7 @@
             },
             
             // Адрес Google Apps Script
-            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbydi2CFCyetLSOFbHxlizsXtBRtvmg03REt6h82K7pgKWwSMLW4vIffY928AuiJk-4/exec',
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwtzJ_FHYRa5BHUlcavMASiu-FC-E-vhM6Vtyg2yiJFqjyT26xSFmyEGdJb-iavNcFp/exec',
             
             // Конфигурация Яндекс.Диска
             YANDEX: {
@@ -4654,8 +4654,6 @@
                         // Важно: карту рендерим после загрузки конфигурации инспекторов,
                         // чтобы маркеры сразу получили цвет/иконку своего инспектора.
                         scheduleMapUpdate_();
-                        // Страховочный второй проход рендера (устраняет редкие стартовые гонки стилей/слоев).
-                        setTimeout(scheduleMapUpdate_, 180);
                         updateUserCard();
                         
                         // ⭐ Авто-рендер открытых панелей
@@ -8376,14 +8374,15 @@
                     if (response.success) {
                         notifyRealtimeSync_(`object:${action}`);
                         showNotification('✅ ' + (response.message || 'Действие выполнено'), 'success');
-                        // Для переназначения оставляем локальный мгновенный UI и
-                        // не перетираем его immediate-перезагрузкой данных.
-                        if (action === 'reassign') {
-                            return;
-                        } else {
-                            // Перезагружаем данные для синхронизации
-                            reloadData_();
+                        // Для большинства действий держим UI быстрым за счет оптимистичного обновления.
+                        // Тяжелую синхронизацию всей модели делаем только для entry/exit и в фоне.
+                        if (action === 'entry' || action === 'exit') {
+                            if (isInspectorRole_()) {
+                                syncWorkDayStateFromServer_({ force: true, silent: true }).catch(() => null);
+                            }
+                            scheduleBackgroundReloadAfterObjectAction_();
                         }
+                        return;
                     } else {
                         showNotification('❌ ' + (response.error || 'Ошибка'), 'error');
                         // Откат при ошибке
@@ -8487,6 +8486,20 @@
         function reloadData_() {
             RuntimeState.clearDataLoadPromise();
             loadData().catch(err => console.error('Reload error:', err));
+        }
+
+        const OBJECT_ACTION_BACKGROUND_RELOAD_DELAY_MS = 1200;
+        let objectActionBackgroundReloadTimer_ = null;
+
+        function scheduleBackgroundReloadAfterObjectAction_(delayMs = OBJECT_ACTION_BACKGROUND_RELOAD_DELAY_MS) {
+            const timeoutMs = Math.max(300, Number(delayMs) || OBJECT_ACTION_BACKGROUND_RELOAD_DELAY_MS);
+            if (objectActionBackgroundReloadTimer_) {
+                clearTimeout(objectActionBackgroundReloadTimer_);
+            }
+            objectActionBackgroundReloadTimer_ = setTimeout(() => {
+                objectActionBackgroundReloadTimer_ = null;
+                reloadData_();
+            }, timeoutMs);
         }
         
         // ============================================

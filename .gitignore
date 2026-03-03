@@ -1,0 +1,10 @@
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# Archives / dumps
+*.rar
+*.7z
+*.zip

@@ -141,6 +141,69 @@ function normalizeText_(value) {
     .trim();
 }
 
+function normalizeDivisionAlias_(valueRaw) {
+  const value = normalizeText_(valueRaw);
+  if (!value) return '';
+
+  const tokens = value.split(/[^a-zà-ÿ0-9]+/).filter(Boolean);
+  const hasToken = token => tokens.indexOf(token) !== -1;
+
+  if (hasToken('ãñ') || hasToken('map')) return 'ãñ';
+  if (hasToken('äìñ') || hasToken('dms')) return 'äìñ';
+  if (hasToken('ëàáîðàòîðèÿ') || hasToken('laboratory') || tokens.some(token => token.indexOf('ëàáîð') === 0)) return 'ëàáîðàòîðèÿ';
+  if (hasToken('ìåòðî') || hasToken('metro')) return 'ìåòðî';
+  if (hasToken('ñê') || hasToken('constructioncontrol')) return 'ñê';
+
+  return value;
+}
+
+function getSourceDivisionNorm_(sourceRaw) {
+  const source = normalizeText_(sourceRaw);
+  if (!source) return '';
+  if (source === 'map') return 'ãñ';
+  if (source === 'dms') return 'äìñ';
+  if (source === 'laboratory') return 'ëàáîðàòîðèÿ';
+  if (source === 'metro') return 'ìåòðî';
+  if (source === 'constructioncontrol') return 'ñê';
+  return '';
+}
+
+function splitInspectorNames_(value) {
+  const raw = String(value || '')
+    .replace(/\u00A0/g, ' ')
+    .trim();
+  if (!raw) return [];
+
+  const parts = raw
+    .split(/(?:\r?\n|[;,|/+&])+|\s+è\s+/i)
+    .map(item => String(item || '').replace(/\u00A0/g, ' ').trim())
+    .filter(Boolean);
+
+  const result = [];
+  const seen = {};
+  for (let i = 0; i < parts.length; i += 1) {
+    const name = parts[i];
+    const norm = normalizeText_(name);
+    if (!norm || seen[norm]) continue;
+    seen[norm] = true;
+    result.push(name);
+  }
+  return result;
+}
+
+function inspectorCellContainsInspector_(inspectorCellRaw, inspectorNameNorm) {
+  const target = normalizeText_(inspectorNameNorm);
+  if (!target) return false;
+
+  const names = splitInspectorNames_(inspectorCellRaw);
+  if (!names.length) return normalizeText_(inspectorCellRaw) === target;
+
+  for (let i = 0; i < names.length; i += 1) {
+    if (normalizeText_(names[i]) === target) return true;
+  }
+  return false;
+}
+
 function normalizeInspectorCustomStatus_(statusRaw) {
   const statusNorm = normalizeText_(statusRaw);
   if (!statusNorm) return 'active';
@@ -348,7 +411,7 @@ function getRequestUserContext_(p) {
 function filterPointsByInspector_(points, inspectorNameNorm) {
   if (!inspectorNameNorm) return [];
   const source = Array.isArray(points) ? points : [];
-  return source.filter(point => normalizeText_(point && point.inspector) === inspectorNameNorm);
+  return source.filter(point => inspectorCellContainsInspector_(point && point.inspector, inspectorNameNorm));
 }
 
 function filterInspectorsListByInspector_(inspectors, inspectorNameNorm) {
@@ -504,7 +567,6 @@ function getData_(p) {
     : { individual: [], group: [] };
 
   if (requestUser.isInspector) {
-    points = filterPointsByInspector_(points, requestUser.nameNorm);
     inspectorsList = filterInspectorsListByInspector_(inspectorsList, requestUser.nameNorm);
     homes = filterHomesByInspector_(homes, requestUser.nameNorm);
     config = filterInspectorsConfigByInspector_(config, requestUser.nameNorm);
@@ -749,7 +811,7 @@ function getInspectorMessagesForUser_(ss, requestUser) {
       result.group.push(payload);
       continue;
     }
-    if (inspectorNorm === requestUser.nameNorm) {
+    if (inspectorNorm === requestUser.nameNorm || inspectorCellContainsInspector_(inspectorRaw, requestUser.nameNorm)) {
       result.individual.push(payload);
     }
   }
@@ -757,13 +819,14 @@ function getInspectorMessagesForUser_(ss, requestUser) {
   return result;
 }
 
-function appendInspectorMessage_(inspectorName, messageText) {
+function appendInspectorMessage_(inspectorName, messageText, options) {
   const inspector = String(inspectorName || '').trim();
   const message = String(messageText || '').trim();
   if (!inspector || !message) return { saved: false, reason: 'empty_payload' };
 
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ensureInspectorsMessageSheet_(ss);
+  const opts = (options && typeof options === 'object') ? options : {};
+  const ss = opts.ss || SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = opts.sheet || ensureInspectorsMessageSheet_(ss);
   const lastRow = sheet.getLastRow();
   if (lastRow >= 2) {
     const rows = sheet.getRange(2, 1, lastRow - 1, 2).getDisplayValues();
@@ -780,6 +843,40 @@ function appendInspectorMessage_(inspectorName, messageText) {
 
   sheet.appendRow([inspector, message]);
   return { saved: true, rowIndex: sheet.getLastRow(), mode: 'append' };
+}
+
+function appendInspectorMessageToTargets_(inspectorTargetsRaw, messageText) {
+  const message = String(messageText || '').trim();
+  if (!message) return { saved: false, reason: 'empty_message', targets: [] };
+
+  const parsedTargets = splitInspectorNames_(inspectorTargetsRaw);
+  const source = parsedTargets.length ? parsedTargets : [String(inspectorTargetsRaw || '').trim()];
+  const uniqueTargets = [];
+  const seen = {};
+
+  for (let i = 0; i < source.length; i += 1) {
+    const target = String(source[i] || '').trim();
+    const targetNorm = normalizeText_(target);
+    if (!targetNorm || seen[targetNorm]) continue;
+    seen[targetNorm] = true;
+    uniqueTargets.push(target);
+  }
+
+  if (!uniqueTargets.length) return { saved: false, reason: 'empty_targets', targets: [] };
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ensureInspectorsMessageSheet_(ss);
+  const targets = uniqueTargets.map(inspector => {
+    return {
+      inspector: inspector,
+      result: appendInspectorMessage_(inspector, message, { ss: ss, sheet: sheet })
+    };
+  });
+
+  return {
+    saved: targets.some(item => !!(item && item.result && item.result.saved)),
+    targets: targets
+  };
 }
 
 /**
@@ -1074,6 +1171,24 @@ function findObjectRowById_(data, indices, id) {
   return null;
 }
 
+function findObjectRowNumberById_(sheet, indices, id) {
+  if (!sheet || !indices || indices.ID === undefined) return -1;
+
+  const targetId = String(id || '').trim();
+  if (!targetId) return -1;
+
+  const lastRow = Number(sheet.getLastRow() || 0);
+  if (lastRow < 2) return -1;
+
+  const idRange = sheet.getRange(2, indices.ID + 1, lastRow - 1, 1);
+  const match = idRange
+    .createTextFinder(targetId)
+    .matchEntireCell(true)
+    .findNext();
+
+  return match ? Number(match.getRow() || -1) : -1;
+}
+
 /**
  * ÐŸÐ¾Ð´Ð³Ð¾Ñ‚Ð¾Ð²Ð¸Ñ‚ÑŒ Ð¾Ð±Ñ‰Ð¸Ð¹ ÐºÐ¾Ð½Ñ‚ÐµÐºÑÑ‚ Ð´Ð»Ñ Ð¾Ð¿ÐµÑ€Ð°Ñ†Ð¸Ð¹ Ñ Ð¾Ð±ÑŠÐµÐºÑ‚Ð¾Ð¼ Ð½Ð° Ð»Ð¸ÑÑ‚Ðµ.
  */
@@ -1081,16 +1196,56 @@ function getInspectorDivisionByName_(ss, inspectorNameRaw) {
   const inspectorNameNorm = normalizeText_(inspectorNameRaw);
   if (!inspectorNameNorm) return '';
 
-  const inspectors = getInspectorsList_(ss);
-  for (let i = 0; i < inspectors.length; i += 1) {
-    const item = inspectors[i] || {};
-    if (normalizeText_(item.name) === inspectorNameNorm) {
-      return String(item.division || '').trim();
-    }
+  const divisionMap = getInspectorDivisionMap_(ss);
+  return normalizeDivisionAlias_(divisionMap[inspectorNameNorm] || '');
+}
+
+function getInspectorDivisionMap_(ss) {
+  const safeSs = ss || SpreadsheetApp.openById(SPREADSHEET_ID);
+  const cacheBySpreadsheet = getInspectorDivisionMap_._runtimeCache || (getInspectorDivisionMap_._runtimeCache = {});
+  const cacheKey = safeSs.getId();
+  const cacheTtlMs = 60 * 1000;
+  const nowTs = Date.now();
+  const cached = cacheBySpreadsheet[cacheKey];
+  if (cached && cached.map && (nowTs - Number(cached.ts || 0)) < cacheTtlMs) {
+    return cached.map;
   }
 
-  return '';
+  const inspectors = getInspectorsList_(safeSs);
+  const map = {};
+
+  for (let i = 0; i < inspectors.length; i += 1) {
+    const item = inspectors[i] || {};
+    const nameNorm = normalizeText_(item.name);
+    if (!nameNorm) continue;
+    map[nameNorm] = normalizeDivisionAlias_(item.division);
+  }
+
+  cacheBySpreadsheet[cacheKey] = { ts: nowTs, map: map };
+  return map;
 }
+
+function getInspectorDivisionNormsForInspectorCell_(ss, inspectorCellRaw) {
+  const names = splitInspectorNames_(inspectorCellRaw);
+  const source = names.length ? names : [String(inspectorCellRaw || '').trim()];
+  const divisionMap = getInspectorDivisionMap_(ss);
+  const seen = {};
+  const divisions = [];
+
+  for (let i = 0; i < source.length; i += 1) {
+    const nameNorm = normalizeText_(source[i]);
+    let divisionNorm = normalizeDivisionAlias_(nameNorm);
+    if (!divisionNorm || divisionNorm === nameNorm) {
+      divisionNorm = normalizeDivisionAlias_(divisionMap[nameNorm] || '');
+    }
+    if (!divisionNorm || seen[divisionNorm]) continue;
+    seen[divisionNorm] = true;
+    divisions.push(divisionNorm);
+  }
+
+  return divisions;
+}
+
 function getObjectActionContext_(p) {
   const requestUser = getRequestUserContext_(p);
   const source = String(p.source || 'Map');
@@ -1102,22 +1257,31 @@ function getObjectActionContext_(p) {
   if (!sheet) return { error: 'Sheet not found: ' + source };
 
   const indices = getColumnIndices_(sheet, getHeadersForSource_(source));
-  const data = sheet.getDataRange().getValues();
-  const row = findObjectRowById_(data, indices, id);
-  if (!row) return { error: 'Object not found' };
+  const rowNumber = findObjectRowNumberById_(sheet, indices, id);
+  if (rowNumber < 2) return { error: 'Object not found' };
+  const rowData = sheet.getRange(rowNumber, 1, 1, sheet.getLastColumn()).getValues()[0];
 
   if (requestUser.isInspector) {
-    const rowInspector = indices.INSPECTOR !== undefined ? row.rowData[indices.INSPECTOR] : '';
-    const rowInspectorNorm = normalizeText_(rowInspector);
-    if (rowInspectorNorm && rowInspectorNorm !== requestUser.nameNorm) {
-      const requestDivisionNorm = normalizeText_(requestUser.division || '');
-      const rowInspectorDivisionNorm = normalizeText_(getInspectorDivisionByName_(ss, rowInspector) || '');
-      const sameDivision = !!requestDivisionNorm &&
-        !!rowInspectorDivisionNorm &&
-        requestDivisionNorm === rowInspectorDivisionNorm;
+    const rowInspectorRaw = indices.INSPECTOR !== undefined ? rowData[indices.INSPECTOR] : '';
+    const rowInspectorNorm = normalizeText_(rowInspectorRaw);
 
-      if (!sameDivision) {
-        return { error: 'Forbidden: object is assigned to another inspector' };
+    if (rowInspectorNorm) {
+      const directInspectorMatch = inspectorCellContainsInspector_(rowInspectorRaw, requestUser.nameNorm);
+
+      if (!directInspectorMatch) {
+        const requestDivisionNorm = normalizeDivisionAlias_(
+          requestUser.division || getInspectorDivisionByName_(ss, requestUser.name) || ''
+        );
+        const rowDivisionNorms = getInspectorDivisionNormsForInspectorCell_(ss, rowInspectorRaw);
+        const sameDivision = !!requestDivisionNorm &&
+          rowDivisionNorms.some(divNorm => normalizeDivisionAlias_(divNorm) === requestDivisionNorm);
+        const sourceDivisionNorm = getSourceDivisionNorm_(source);
+        const sameBySourceFallback = !!requestDivisionNorm && !rowDivisionNorms.length &&
+          !!sourceDivisionNorm && requestDivisionNorm === sourceDivisionNorm;
+
+        if (!sameDivision && !sameBySourceFallback) {
+          return { error: 'Forbidden: object is assigned to another inspector' };
+        }
       }
     }
   }
@@ -1127,9 +1291,8 @@ function getObjectActionContext_(p) {
     id: id,
     sheet: sheet,
     indices: indices,
-    data: data,
-    rowNumber: row.rowNumber,
-    rowData: row.rowData,
+    rowNumber: rowNumber,
+    rowData: rowData,
     requestUser: requestUser
   };
 }
@@ -1217,10 +1380,10 @@ function syncObjectEntryMetrics_(ctx, params) {
     const inspectorName = indices.INSPECTOR !== undefined
       ? String(rowValues[indices.INSPECTOR] || '').trim()
       : '';
-    const messageTarget = inspectorName || (ctx.requestUser && ctx.requestUser.name) || '';
-    if (messageTarget) {
+    const messageTargetRaw = inspectorName || (ctx.requestUser && ctx.requestUser.name) || '';
+    if (messageTargetRaw) {
       const mismatchMessage = buildSelfieRequestMessageForObject_(ctx, rowValues, indices);
-      appendInspectorMessage_(messageTarget, mismatchMessage);
+      appendInspectorMessageToTargets_(messageTargetRaw, mismatchMessage);
     }
   }
 
@@ -1322,7 +1485,7 @@ function syncWorkDayOnEntry_(ctx, params, objectEntrySync) {
 
     if (rowValues[5] !== WORKDAY_COORD_MATCH_YES && ctx.requestUser && ctx.requestUser.name) {
       const mismatchMessage = buildSelfieRequestMessageForObject_(ctx, ctx.rowData, ctx.indices);
-      appendInspectorMessage_(ctx.requestUser.name, mismatchMessage);
+      appendInspectorMessageToTargets_(ctx.requestUser.name, mismatchMessage);
     }
   }
 
@@ -1447,21 +1610,27 @@ function getNextNumber_(sheet, indices, inspector, date) {
   if (indices.NUMBER === undefined || indices.INSPECTOR === undefined || indices.DATE === undefined) {
     return 1;
   }
-  
-  const data = sheet.getDataRange().getValues();
+
+  const lastRow = Number(sheet.getLastRow() || 0);
+  if (lastRow < 2) return 1;
+
+  const rowCount = lastRow - 1;
+  const inspectorValues = sheet.getRange(2, indices.INSPECTOR + 1, rowCount, 1).getDisplayValues();
+  const dateValues = sheet.getRange(2, indices.DATE + 1, rowCount, 1).getValues();
+  const numberValues = sheet.getRange(2, indices.NUMBER + 1, rowCount, 1).getValues();
   const dateStr = formatDateRU_(date);
   let maxNumber = 0;
-  
-  for (let i = 1; i < data.length; i++) {
-    const rowInspector = String(data[i][indices.INSPECTOR] || '');
-    const rowDate = formatDateRU_(data[i][indices.DATE]);
-    const rowNumber = parseInt(data[i][indices.NUMBER]) || 0;
-    
+
+  for (let i = 0; i < rowCount; i += 1) {
+    const rowInspector = String(inspectorValues[i][0] || '');
+    const rowDate = formatDateRU_(dateValues[i][0]);
+    const rowNumber = parseInt(numberValues[i][0], 10) || 0;
+
     if (rowInspector === inspector && rowDate === dateStr && rowNumber > maxNumber) {
       maxNumber = rowNumber;
     }
   }
-  
+
   return maxNumber + 1;
 }
 
