@@ -247,6 +247,40 @@ function getAdminAllowedDivisionNorms_(requestUser) {
   return getDivisionNormsFromRaw_(user.division);
 }
 
+function getInspectorAllowedDivisionNormsFast_(ss, requestUser) {
+  const user = (requestUser && typeof requestUser === 'object') ? requestUser : {};
+  if (!user.isInspector) return [];
+
+  const result = [];
+  const seen = {};
+  const directNorms = getDivisionNormsFromRaw_(user.division);
+  for (let i = 0; i < directNorms.length; i += 1) {
+    addDivisionNormIfPresent_(result, seen, directNorms[i]);
+  }
+
+  if (result.length === 0) {
+    const fallbackDivision = getInspectorDivisionByName_(
+      ss,
+      user.nameNorm || user.name || ''
+    );
+    addDivisionNormIfPresent_(result, seen, fallbackDivision);
+  }
+
+  return result.filter(norm => !!getSourceDivisionNorm_(norm));
+}
+
+function getMaxDefinedColumnIndex_(indices) {
+  const source = (indices && typeof indices === 'object') ? indices : {};
+  const keys = Object.keys(source);
+  let maxIndex = -1;
+  for (let i = 0; i < keys.length; i += 1) {
+    const idx = Number(source[keys[i]]);
+    if (!Number.isFinite(idx) || idx < 0) continue;
+    if (idx > maxIndex) maxIndex = idx;
+  }
+  return maxIndex;
+}
+
 function splitInspectorNames_(value) {
   const raw = String(value || '')
     .replace(/\u00A0/g, ' ')
@@ -1190,7 +1224,7 @@ function getMapPoints_(p, ssOptional) {
   const allPoints = [];
   const restrictByInspector = requestUser.isInspector && !!requestUser.nameNorm;
   const inspectorDivisionNorms = requestUser.isInspector
-    ? getDivisionNormsFromRaw_(requestUser.division)
+    ? getInspectorAllowedDivisionNormsFast_(ss, requestUser)
     : [];
   const restrictByInspectorDivision = requestUser.isInspector && inspectorDivisionNorms.length > 0;
   const adminDivisionNorms = getAdminAllowedDivisionNorms_(requestUser);
@@ -1214,7 +1248,12 @@ function getMapPoints_(p, ssOptional) {
     }
     
     const indices = getColumnIndices_(sheet, getHeadersForSource_(src.source));
-    const data = sheet.getDataRange().getValues();
+    const maxColIndex = getMaxDefinedColumnIndex_(indices);
+    if (maxColIndex < 0) continue;
+
+    const lastRow = Number(sheet.getLastRow() || 0);
+    if (lastRow < 2) continue;
+    const data = sheet.getRange(1, 1, lastRow, maxColIndex + 1).getValues();
     
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
@@ -1362,6 +1401,50 @@ function findObjectRowNumberById_(sheet, indices, id) {
     .findNext();
 
   return match ? Number(match.getRow() || -1) : -1;
+}
+
+function resolveObjectRowNumberByIdAndHint_(sheet, indices, id, rowHintRaw) {
+  if (!sheet || !indices || indices.ID === undefined) return -1;
+
+  const targetId = String(id || '').trim();
+  if (!targetId) return -1;
+
+  const lastRow = Number(sheet.getLastRow() || 0);
+  if (lastRow < 2) return -1;
+
+  const hintedRow = parseInt(String(rowHintRaw || '').trim(), 10);
+  if (Number.isFinite(hintedRow) && hintedRow >= 2 && hintedRow <= lastRow) {
+    const hintedId = String(sheet.getRange(hintedRow, indices.ID + 1).getDisplayValue() || '').trim();
+    if (hintedId === targetId) return hintedRow;
+  }
+
+  return findObjectRowNumberById_(sheet, indices, targetId);
+}
+
+function findObjectRowNumberByIdForInspector_(sheet, indices, id, inspectorNameNorm) {
+  if (!sheet || !indices || indices.ID === undefined || indices.INSPECTOR === undefined) return -1;
+
+  const targetId = String(id || '').trim();
+  const targetInspectorNorm = normalizeText_(inspectorNameNorm);
+  if (!targetId || !targetInspectorNorm) return -1;
+
+  const lastRow = Number(sheet.getLastRow() || 0);
+  if (lastRow < 2) return -1;
+
+  const rowCount = lastRow - 1;
+  const idValues = sheet.getRange(2, indices.ID + 1, rowCount, 1).getDisplayValues();
+  const inspectorValues = sheet.getRange(2, indices.INSPECTOR + 1, rowCount, 1).getDisplayValues();
+
+  for (let i = 0; i < rowCount; i += 1) {
+    const rowId = String(idValues[i] && idValues[i][0] || '').trim();
+    if (rowId !== targetId) continue;
+    const rowInspectorRaw = inspectorValues[i] && inspectorValues[i][0];
+    if (inspectorCellContainsInspector_(rowInspectorRaw, targetInspectorNorm)) {
+      return i + 2;
+    }
+  }
+
+  return -1;
 }
 
 /**
@@ -1557,7 +1640,19 @@ function getObjectActionContext_(p) {
   if (!sheet) return { error: 'Sheet not found: ' + source };
 
   const indices = getColumnIndices_(sheet, getHeadersForSource_(source));
-  const rowNumber = findObjectRowNumberById_(sheet, indices, id);
+  const rowHintRaw = p.rowIndex || p.rowNumber || p.sheetRowIndex || '';
+  let rowNumber = resolveObjectRowNumberByIdAndHint_(sheet, indices, id, rowHintRaw);
+  if (requestUser.isInspector) {
+    const ownRowNumber = findObjectRowNumberByIdForInspector_(
+      sheet,
+      indices,
+      id,
+      requestUser.nameNorm
+    );
+    if (ownRowNumber >= 2) {
+      rowNumber = ownRowNumber;
+    }
+  }
   if (rowNumber < 2) return { error: 'Object not found' };
   const rowData = sheet.getRange(rowNumber, 1, 1, sheet.getLastColumn()).getValues()[0];
   const objectHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];

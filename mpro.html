@@ -2421,7 +2421,7 @@
             },
             
             // Адрес Google Apps Script
-            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzgkFRNC28LXbXIK5xbCtVY0CJG_ofPSHfh9yhvZ97gc_9dDCItLkdFr7hsfGbajrik/exec',
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzlQ_rHH05qu_oBKKpInnYSbAkfCHMoqylQ3w5pGfPVsho5z5XOIgBaeMYNx7yFg9lO/exec',
             
             // Конфигурация Яндекс.Диска
             YANDEX: {
@@ -8065,6 +8065,7 @@
                     action: 'savePhotosLink',
                     objectId: String(objectId),
                     source: object.source || 'Map',
+                    rowIndex: String(object.rowIndex || ''),
                     photosLink: photosLink
                 }, 15000);
 
@@ -8346,6 +8347,7 @@
                 action: action,
                 objectId: String(objectId),
                 source: object?.source || 'Map',
+                rowIndex: String(object?.rowIndex || ''),
                 ...params
             };
 
