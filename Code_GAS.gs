@@ -641,6 +641,30 @@ function filterInspectorsWorkDayByInspectorNormSet_(statusMap, inspectorNormSet)
   return result;
 }
 
+function filterInspectorsListByDivisionNorms_(inspectors, divisionNorms) {
+  const source = Array.isArray(inspectors) ? inspectors : [];
+  const allowedNorms = Array.isArray(divisionNorms) ? divisionNorms.filter(Boolean) : [];
+  if (allowedNorms.length === 0) return source.slice();
+
+  return source.filter(item => {
+    const divisionNorm = getSourceDivisionNorm_(normalizeDivisionAlias_(item && item.division));
+    return !!(divisionNorm && allowedNorms.indexOf(divisionNorm) !== -1);
+  });
+}
+
+function collectInspectorNormSetFromInspectorsList_(inspectors) {
+  const source = Array.isArray(inspectors) ? inspectors : [];
+  const result = {};
+
+  for (let i = 0; i < source.length; i += 1) {
+    const item = source[i] || {};
+    const nameNorm = normalizeText_(item.name);
+    if (nameNorm) result[nameNorm] = true;
+  }
+
+  return result;
+}
+
 function doGet(e) {
   const p = (e && e.parameter) ? e.parameter : {};
   const action = String(p.action || '');
@@ -765,7 +789,8 @@ function getData_(p) {
   } else if (requestUser.isAdmin) {
     const adminDivisionNorms = getAdminAllowedDivisionNorms_(requestUser);
     if (adminDivisionNorms.length > 0) {
-      const inspectorNormSet = collectInspectorNameNormSetFromPoints_(points);
+      inspectorsList = filterInspectorsListByDivisionNorms_(inspectorsList, adminDivisionNorms);
+      const inspectorNormSet = collectInspectorNormSetFromInspectorsList_(inspectorsList);
       inspectorsList = filterInspectorsListByInspectorNormSet_(inspectorsList, inspectorNormSet);
       homes = filterHomesByInspectorNormSet_(homes, inspectorNormSet);
       config = filterInspectorsConfigByInspectorNormSet_(config, inspectorNormSet);
