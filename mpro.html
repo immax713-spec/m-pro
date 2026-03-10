@@ -7653,12 +7653,29 @@
          */
         function renderReassignSelect(obj) {
             if (isInspectorRole_()) return '';
+            const inspectorsList = Array.isArray(DataState.getInspectorsList())
+                ? DataState.getInspectorsList()
+                : [];
+            const currentInspectorNorm = normalizeInspectorName_(obj?.inspector);
+            const seen = new Set();
+            const reassignInspectors = inspectorsList
+                .filter(item => {
+                    if (!item || !item.name) return false;
+                    const role = String(item.role || '').toLowerCase();
+                    if (role && role.indexOf('admin') !== -1) return false;
+                    const norm = normalizeInspectorName_(item.name);
+                    if (!norm || seen.has(norm)) return false;
+                    seen.add(norm);
+                    return true;
+                })
+                .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ru'));
 
-            const options = Object.keys(DataState.getInspectorsConfig()).sort().map(insp => {
-                const style = getInspectorStyle(insp);
-                const selected = obj.inspector === insp ? 'selected' : '';
-                const valueAttr = Utils.escapeAttr(insp);
-                const optionText = Utils.escapeHtml(`${style.icon} ${insp}`);
+            const options = reassignInspectors.map(item => {
+                const inspectorName = String(item.name || '').trim();
+                const style = getInspectorStyle(inspectorName);
+                const selected = normalizeInspectorName_(inspectorName) === currentInspectorNorm ? 'selected' : '';
+                const valueAttr = Utils.escapeAttr(inspectorName);
+                const optionText = Utils.escapeHtml(`${style.icon} ${inspectorName}`);
                 return `<option value="${valueAttr}" ${selected}>${optionText}</option>`;
             }).join('');
             const objectIdAttr = Utils.escapeAttr(obj.id);
