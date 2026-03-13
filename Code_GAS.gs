@@ -11,21 +11,26 @@ const WORKDAY_HEADERS = Object.freeze([
   'inspector',
   'time_open',
   'open_coordinats',
-  'coordinates_first_object',
-  'coordinate_correspondence_open',
   'open_comment',
   'time_close',
   'close_coordinats',
-  'coordinates_last_object',
-  'coordinate_correspondence_close',
   'close_comment'
 ]);
+const WORKDAY_COLS = Object.freeze({
+  DATE: 0,
+  INSPECTOR: 1,
+  TIME_OPEN: 2,
+  OPEN_COORDS: 3,
+  OPEN_COMMENT: 4,
+  TIME_CLOSE: 5,
+  CLOSE_COORDS: 6,
+  CLOSE_COMMENT: 7
+});
 const WORKDAY_NO_GEO_MARKER = 'ГЕОЛОКАЦИЯ НЕДОСТУПНА: запросить селфи';
 const WORKDAY_COORD_MATCH_DISTANCE_M = 1000;
 const WORKDAY_COORD_MATCH_YES = '✅';
 const WORKDAY_COORD_MATCH_NO = '❌';
 const SELFIE_REQUEST_MESSAGE = 'Требуется прислать селфи Администратору';
-const WORKDAY_COORD_MATCH_NO_OPEN = WORKDAY_COORD_MATCH_NO + ' ' + SELFIE_REQUEST_MESSAGE;
 const GLOBAL_MESSAGE_TARGET = 'all';
 const AUTH_NONCE_CACHE_PREFIX = 'auth_nonce:';
 const AUTH_NONCE_TTL_SEC = 120;
@@ -54,7 +59,6 @@ const OBJECT_HEADERS = {
   YANDEX_LINK: 'Yandex_link',
   PHOTOS_LINK: 'Photos_link',
   READINESS: 'Readiness',
-  NUMBER: 'Number',
   ENTRY: 'Entry',
   COORDINATE_CORRESPONDENCE: 'Coordinate_correspondence',
   LABORATORY: 'Laboratory',
@@ -923,7 +927,7 @@ function getInspectorsWorkDayStatusByInspectorForDate_(ss, dateValue) {
 
   const timeZone = Session.getScriptTimeZone() || 'Etc/GMT';
   const targetDateToken = formatDateToken_(dateValue, timeZone) || Utilities.formatDate(new Date(), timeZone, 'dd.MM.yyyy');
-  const rows = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+  const rows = sheet.getRange(2, 1, lastRow - 1, WORKDAY_HEADERS.length).getValues();
 
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
@@ -934,8 +938,8 @@ function getInspectorsWorkDayStatusByInspectorForDate_(ss, dateValue) {
     const inspectorNorm = normalizeText_(inspectorRaw);
     if (!inspectorNorm) continue;
 
-    const openTime = String(row[2] || '').trim();
-    const closeTime = String(row[7] || '').trim();
+    const openTime = String(row[WORKDAY_COLS.TIME_OPEN] || '').trim();
+    const closeTime = String(row[WORKDAY_COLS.TIME_CLOSE] || '').trim();
     const rowOpen = !!openTime && !closeTime;
 
     const prev = result[inspectorNorm];
@@ -1316,7 +1320,6 @@ function getMapPoints_(p, ssOptional) {
         yandexDiskLink: indices.YANDEX_LINK !== undefined ? row[indices.YANDEX_LINK] : '',
         photosLink: indices.PHOTOS_LINK !== undefined ? row[indices.PHOTOS_LINK] : '',
         readiness: indices.READINESS !== undefined ? row[indices.READINESS] : '',
-        number: indices.NUMBER !== undefined ? row[indices.NUMBER] : '',
         laboratory: indices.LABORATORY !== undefined ? row[indices.LABORATORY] : '',
         laboratoryComment: indices.LABORATORY_COMMENT !== undefined ? row[indices.LABORATORY_COMMENT] : ''
       };
@@ -1747,11 +1750,6 @@ function buildSelfieRequestMessageForObject_(ctx, rowValues, indices) {
   const safeIndices = indices || {};
   const safeRow = Array.isArray(rowValues) ? rowValues : [];
 
-  const pointNumber = safeIndices.NUMBER !== undefined
-    ? String(safeRow[safeIndices.NUMBER] || '').trim()
-    : '';
-  if (pointNumber) return SELFIE_REQUEST_MESSAGE + ' (point #' + pointNumber + ')';
-
   const objectId = safeIndices.ID !== undefined
     ? String(safeRow[safeIndices.ID] || '').trim()
     : String(safeCtx.id || '').trim();
@@ -1865,84 +1863,12 @@ function entry_(p) {
     Logger.log('Object entry sync failed: ' + error);
   }
 
-  let workDaySync = { updated: false };
-  try {
-    workDaySync = syncWorkDayOnEntry_(ctx, p, objectEntrySync);
-  } catch (error) {
-    Logger.log('WorkDay sync on entry failed: ' + error);
-  }
-
   SpreadsheetApp.flush();
   return {
     success: true,
     updated: true,
     row: ctx.rowNumber,
-    objectEntrySync: objectEntrySync,
-    workDaySync: workDaySync
-  };
-}
-
-function syncWorkDayOnEntry_(ctx, params, objectEntrySync) {
-  if (!ctx || !ctx.requestUser || !ctx.requestUser.isInspector) {
-    return { updated: false, reason: 'not_inspector' };
-  }
-
-  const workDaySheet = ensureWorkDaySheet_();
-  const rowIndex = getWorkDayRowIndex_(workDaySheet, ctx.requestUser.nameNorm, new Date());
-  if (rowIndex < 0) {
-    return { updated: false, reason: 'workday_row_not_found' };
-  }
-
-  const rowValues = workDaySheet.getRange(rowIndex, 1, 1, WORKDAY_HEADERS.length).getValues()[0];
-  const entryCoordsRaw = resolveWorkDayCoords_(params, 'entry');
-  const entryCoords = parseCoordsPair_(entryCoordsRaw);
-  const entryCoordsText = entryCoords
-    ? formatCoordsFixed4_(entryCoords.lat, entryCoords.lon)
-    : WORKDAY_NO_GEO_MARKER;
-
-  const objectCoordsRaw = ctx.indices.LATLON !== undefined ? ctx.rowData[ctx.indices.LATLON] : '';
-  const objectCoords = parseLatLon_(objectCoordsRaw);
-  const objectCoordsText = objectCoords
-    ? formatCoordsFixed4_(objectCoords.lat, objectCoords.lon)
-    : entryCoordsText;
-
-  // Last visited object coordinates (always refresh on entry).
-  rowValues[9] = objectCoordsText;
-
-  let distanceM = null;
-  let compared = false;
-  const hasFirstCoords = String(rowValues[4] || '').trim() !== '';
-
-  // First object of the day: store once and compare with opening coordinates.
-  if (!hasFirstCoords) {
-    rowValues[4] = entryCoordsText;
-
-    const openCoords = parseCoordsPair_(rowValues[3]);
-    if (openCoords && entryCoords) {
-      compared = true;
-      distanceM = distanceMeters_(openCoords.lat, openCoords.lon, entryCoords.lat, entryCoords.lon);
-      rowValues[5] = distanceM <= WORKDAY_COORD_MATCH_DISTANCE_M
-        ? WORKDAY_COORD_MATCH_YES
-        : getCoordMismatchValue_();
-    } else {
-      rowValues[5] = WORKDAY_COORD_MATCH_NO_OPEN;
-    }
-
-    if (rowValues[5] !== WORKDAY_COORD_MATCH_YES && ctx.requestUser && ctx.requestUser.name) {
-      const mismatchMessage = buildSelfieRequestMessageForObject_(ctx, ctx.rowData, ctx.indices);
-      appendInspectorMessageToTargets_(ctx.requestUser.name, mismatchMessage);
-    }
-  }
-
-  workDaySheet.getRange(rowIndex, 1, 1, WORKDAY_HEADERS.length).setValues([rowValues]);
-
-  return {
-    updated: true,
-    rowIndex: rowIndex,
-    firstObjectCaptured: !hasFirstCoords,
-    compared: compared,
-    distanceM: distanceM,
-    objectEntrySync: objectEntrySync || null
+    objectEntrySync: objectEntrySync
   };
 }
 
@@ -1964,14 +1890,6 @@ function exit_(p) {
     const timeSpentCol = ctx.indices.TIME_SPENT + 1;
     const formula = `=IF(AND(${exitColLetter}${ctx.rowNumber}<>"";${entryColLetter}${ctx.rowNumber}<>"");${exitColLetter}${ctx.rowNumber}-${entryColLetter}${ctx.rowNumber};"")`;
     ctx.sheet.getRange(ctx.rowNumber, timeSpentCol).setFormula(formula);
-  }
-
-  // Нумерация (Number)
-  if (ctx.indices.NUMBER !== undefined) {
-    const inspector = ctx.indices.INSPECTOR !== undefined ? ctx.rowData[ctx.indices.INSPECTOR] : '';
-    const date = ctx.indices.DATE !== undefined ? ctx.rowData[ctx.indices.DATE] : new Date();
-    const newNumber = getNextNumber_(ctx.sheet, ctx.indices, inspector, date);
-    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.NUMBER + 1).setValue(newNumber);
   }
 
   SpreadsheetApp.flush();
@@ -2051,35 +1969,6 @@ function columnIndexToLetter_(index) {
 /**
  * Получить следующий номер для объекта (нумерация в рамках дня и инспектора)
  */
-function getNextNumber_(sheet, indices, inspector, date) {
-  if (indices.NUMBER === undefined || indices.INSPECTOR === undefined || indices.DATE === undefined) {
-    return 1;
-  }
-
-  const lastRow = Number(sheet.getLastRow() || 0);
-  if (lastRow < 2) return 1;
-
-  const rowCount = lastRow - 1;
-  const inspectorValues = sheet.getRange(2, indices.INSPECTOR + 1, rowCount, 1).getDisplayValues();
-  const dateValues = sheet.getRange(2, indices.DATE + 1, rowCount, 1).getValues();
-  const numberValues = sheet.getRange(2, indices.NUMBER + 1, rowCount, 1).getValues();
-  const dateStr = formatDateRU_(date);
-  let maxNumber = 0;
-
-  for (let i = 0; i < rowCount; i += 1) {
-    const rowInspector = String(inspectorValues[i][0] || '');
-    const rowDate = formatDateRU_(dateValues[i][0]);
-    const rowNumber = parseInt(numberValues[i][0], 10) || 0;
-
-    if (rowInspector === inspector && rowDate === dateStr && rowNumber > maxNumber) {
-      maxNumber = rowNumber;
-    }
-  }
-
-  return maxNumber + 1;
-}
-
-
 function formatDateRU_(d) {
   if (!d) return '';
   if (!(d instanceof Date)) {
@@ -2108,7 +1997,7 @@ function ensureWorkDaySheet_() {
     sheet.insertColumnsAfter(currentLastCol, WORKDAY_HEADERS.length - currentLastCol);
   }
 
-  // WorkDay schema is strict: keep only operational 12 columns.
+  // WorkDay schema is strict: keep only operational 8 columns.
   const afterEnsureLastCol = sheet.getLastColumn();
   if (afterEnsureLastCol > WORKDAY_HEADERS.length) {
     sheet.deleteColumns(WORKDAY_HEADERS.length + 1, afterEnsureLastCol - WORKDAY_HEADERS.length);
@@ -2208,8 +2097,8 @@ function checkWorkDay_(p) {
   }
 
   const row = sheet.getRange(rowIndex, 1, 1, WORKDAY_HEADERS.length).getValues()[0];
-  const openTime = String(row[2] || '').trim();
-  const closeTime = String(row[7] || '').trim();
+  const openTime = String(row[WORKDAY_COLS.TIME_OPEN] || '').trim();
+  const closeTime = String(row[WORKDAY_COLS.TIME_CLOSE] || '').trim();
   const open = !!openTime && !closeTime;
 
   return {
@@ -2240,24 +2129,23 @@ function startWorkDay_(p) {
 
   if (rowIndex > 0) {
     rowValues = sheet.getRange(rowIndex, 1, 1, WORKDAY_HEADERS.length).getValues()[0];
-    const closeTime = String(rowValues[7] || '').trim();
-    const alreadyOpen = !closeTime && String(rowValues[2] || '').trim();
+    const closeTime = String(rowValues[WORKDAY_COLS.TIME_CLOSE] || '').trim();
+    const alreadyOpen = !closeTime && String(rowValues[WORKDAY_COLS.TIME_OPEN] || '').trim();
     if (alreadyOpen) {
       return { success: false, error: 'WorkDay already open today', code: 'ALREADY_OPEN' };
     }
   }
 
-  rowValues[0] = dateToken;
-  rowValues[1] = inspectorCtx.inspectorName;
-  rowValues[2] = timeToken;
-  rowValues[3] = openCoordsValue;
-  rowValues[6] = openComment || rowValues[6] || '';
+  rowValues[WORKDAY_COLS.DATE] = dateToken;
+  rowValues[WORKDAY_COLS.INSPECTOR] = inspectorCtx.inspectorName;
+  rowValues[WORKDAY_COLS.TIME_OPEN] = timeToken;
+  rowValues[WORKDAY_COLS.OPEN_COORDS] = openCoordsValue;
+  rowValues[WORKDAY_COLS.OPEN_COMMENT] = openComment || rowValues[WORKDAY_COLS.OPEN_COMMENT] || '';
 
   // On start/re-open: clear all close-related fields.
-  rowValues[7] = '';
-  rowValues[8] = '';
-  rowValues[10] = '';
-  rowValues[11] = '';
+  rowValues[WORKDAY_COLS.TIME_CLOSE] = '';
+  rowValues[WORKDAY_COLS.CLOSE_COORDS] = '';
+  rowValues[WORKDAY_COLS.CLOSE_COMMENT] = '';
 
   if (rowIndex > 0) {
     sheet.getRange(rowIndex, 1, 1, WORKDAY_HEADERS.length).setValues([rowValues]);
@@ -2269,7 +2157,7 @@ function startWorkDay_(p) {
   SpreadsheetApp.flush();
 
   const verify = sheet.getRange(rowIndex, 1, 1, WORKDAY_HEADERS.length).getValues()[0];
-  const persistedOpen = !!String(verify[2] || '').trim() && !String(verify[7] || '').trim();
+  const persistedOpen = !!String(verify[WORKDAY_COLS.TIME_OPEN] || '').trim() && !String(verify[WORKDAY_COLS.TIME_CLOSE] || '').trim();
   if (!persistedOpen) {
     return { success: false, error: 'Failed to persist open status', code: 'PERSIST_FAILED' };
   }
@@ -2278,7 +2166,7 @@ function startWorkDay_(p) {
     success: true,
     persisted: true,
     open: true,
-    openTime: String(verify[2] || ''),
+    openTime: String(verify[WORKDAY_COLS.TIME_OPEN] || ''),
     rowIndex: rowIndex
   };
 }
@@ -2301,8 +2189,8 @@ function endWorkDay_(p) {
   }
 
   const rowValues = sheet.getRange(rowIndex, 1, 1, WORKDAY_HEADERS.length).getValues()[0];
-  const openTime = String(rowValues[2] || '').trim();
-  const closeTime = String(rowValues[7] || '').trim();
+  const openTime = String(rowValues[WORKDAY_COLS.TIME_OPEN] || '').trim();
+  const closeTime = String(rowValues[WORKDAY_COLS.TIME_CLOSE] || '').trim();
   if (!openTime) {
     return { success: false, error: 'WorkDay open time is missing', code: 'INVALID_STATE' };
   }
@@ -2310,15 +2198,15 @@ function endWorkDay_(p) {
     return { success: false, error: 'WorkDay already closed today', code: 'ALREADY_CLOSED' };
   }
 
-  rowValues[7] = timeToken;
-  rowValues[8] = closeCoordsValue;
-  rowValues[11] = closeComment || rowValues[11] || '';
+  rowValues[WORKDAY_COLS.TIME_CLOSE] = timeToken;
+  rowValues[WORKDAY_COLS.CLOSE_COORDS] = closeCoordsValue;
+  rowValues[WORKDAY_COLS.CLOSE_COMMENT] = closeComment || rowValues[WORKDAY_COLS.CLOSE_COMMENT] || '';
   sheet.getRange(rowIndex, 1, 1, WORKDAY_HEADERS.length).setValues([rowValues]);
 
   SpreadsheetApp.flush();
 
   const verify = sheet.getRange(rowIndex, 1, 1, WORKDAY_HEADERS.length).getValues()[0];
-  const persistedClosed = !!String(verify[7] || '').trim();
+  const persistedClosed = !!String(verify[WORKDAY_COLS.TIME_CLOSE] || '').trim();
   if (!persistedClosed) {
     return { success: false, error: 'Failed to persist close status', code: 'PERSIST_FAILED' };
   }
@@ -2327,7 +2215,7 @@ function endWorkDay_(p) {
     success: true,
     persisted: true,
     open: false,
-    closeTime: String(verify[7] || ''),
+    closeTime: String(verify[WORKDAY_COLS.TIME_CLOSE] || ''),
     rowIndex: rowIndex
   };
 }
