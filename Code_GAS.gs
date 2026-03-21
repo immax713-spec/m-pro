@@ -62,7 +62,17 @@ const OBJECT_HEADERS = {
   ENTRY: 'Entry',
   COORDINATE_CORRESPONDENCE: 'Coordinate_correspondence',
   LABORATORY: 'Laboratory',
-  LABORATORY_COMMENT: 'Laboratory_Comment'
+  LABORATORY_COMMENT: 'Laboratory_Comment',
+  STUDY_COORDINATE_1: 'Coordinate_1_(s)',
+  STUDY_COORDINATE_2: 'Coordinate_2_(f)',
+  STUDY_RANDOM_TASK: 'Random_task',
+  STUDY_LENGTH: 'Length',
+  STUDY_WIDTH: 'Width',
+  STUDY_COORDINATE: 'Study_coordinate',
+  STUDY_TYPE: 'Study_type',
+  STUDY_COMPLETED: 'Completed',
+  STUDY_INSPECTOR_COMMENT: 'Ispector_comment',
+  STUDY_ROUTE_LINK: 'Route_link'
 };
 
 const HEADERS = {
@@ -716,6 +726,12 @@ function doGet(e) {
       case 'callLaboratory':
         result = callLaboratory_(p);
         break;
+      case 'generateLaboratoryStudy':
+        result = generateLaboratoryStudy_(p);
+        break;
+      case 'completeLaboratoryStudy':
+        result = completeLaboratoryStudy_(p);
+        break;
       case 'reassign':
         result = reassign_(p);
         break;
@@ -1296,9 +1312,21 @@ function getMapPoints_(p, ssOptional) {
       
       // Парсим LatLon
       const latlon = indices.LATLON !== undefined ? String(row[indices.LATLON] || '') : '';
-      const coords = parseLatLon_(latlon);
+      const studyCoordinateRaw = indices.STUDY_COORDINATE !== undefined ? String(row[indices.STUDY_COORDINATE] || '').trim() : '';
+      const coords = parseCoordsPair_(studyCoordinateRaw) || parseLatLon_(latlon);
       if (!coords) continue; // Пропускаем если нет координат
       
+      const studyCoordinate1 = indices.STUDY_COORDINATE_1 !== undefined ? String(row[indices.STUDY_COORDINATE_1] || '').trim() : '';
+      const studyCoordinate2 = indices.STUDY_COORDINATE_2 !== undefined ? String(row[indices.STUDY_COORDINATE_2] || '').trim() : '';
+      const studyRandomTask = indices.STUDY_RANDOM_TASK !== undefined ? String(row[indices.STUDY_RANDOM_TASK] || '').trim() : '';
+      const studyLength = indices.STUDY_LENGTH !== undefined ? row[indices.STUDY_LENGTH] : '';
+      const studyWidth = indices.STUDY_WIDTH !== undefined ? row[indices.STUDY_WIDTH] : '';
+      const studyType = indices.STUDY_TYPE !== undefined ? String(row[indices.STUDY_TYPE] || '').trim() : '';
+      const studyCompleted = indices.STUDY_COMPLETED !== undefined ? String(row[indices.STUDY_COMPLETED] || '').trim() : '';
+      const studyInspectorComment = indices.STUDY_INSPECTOR_COMMENT !== undefined ? String(row[indices.STUDY_INSPECTOR_COMMENT] || '').trim() : '';
+      const storedStudyRouteLink = indices.STUDY_ROUTE_LINK !== undefined ? String(row[indices.STUDY_ROUTE_LINK] || '').trim() : '';
+      const studyRouteLink = storedStudyRouteLink || buildLaboratoryRouteLink_(studyCoordinate1, studyCoordinateRaw, studyCoordinate2);
+
       const point = {
         id: src.source + '_' + id,  // Уникальный ID: Map_123, Laboratory_456
         originalId: id,  // Оригинальный ID для обновления
@@ -1321,7 +1349,17 @@ function getMapPoints_(p, ssOptional) {
         photosLink: indices.PHOTOS_LINK !== undefined ? row[indices.PHOTOS_LINK] : '',
         readiness: indices.READINESS !== undefined ? row[indices.READINESS] : '',
         laboratory: indices.LABORATORY !== undefined ? row[indices.LABORATORY] : '',
-        laboratoryComment: indices.LABORATORY_COMMENT !== undefined ? row[indices.LABORATORY_COMMENT] : ''
+        laboratoryComment: indices.LABORATORY_COMMENT !== undefined ? row[indices.LABORATORY_COMMENT] : '',
+        studyCoordinate1: studyCoordinate1,
+        studyCoordinate2: studyCoordinate2,
+        studyRandomTask: studyRandomTask,
+        studyLength: studyLength,
+        studyWidth: studyWidth,
+        studyCoordinate: studyCoordinateRaw,
+        studyType: studyType,
+        studyCompleted: studyCompleted,
+        studyInspectorComment: studyInspectorComment,
+        studyRouteLink: studyRouteLink
       };
       
       allPoints.push(point);
@@ -1363,6 +1401,73 @@ function parseCoordsPair_(value) {
   if (isNaN(lat) || isNaN(lon)) return null;
 
   return { lat: lat, lon: lon };
+}
+
+function formatCoordsFixed6_(lat, lon) {
+  return Number(lat).toFixed(6) + ', ' + Number(lon).toFixed(6);
+}
+
+function randomMetric_(from, to) {
+  return (Number(from) + Math.random() * (Number(to) - Number(from))).toFixed(1);
+}
+
+function formatLaboratoryRandomTask_(y, x) {
+  return 'Y=' + String(y) + '; X=' + String(x);
+}
+
+function hasLaboratoryGeneratedValues_(rowData, indices) {
+  if (!Array.isArray(rowData) || !indices) return false;
+  const keys = [
+    'STUDY_COORDINATE_1',
+    'STUDY_COORDINATE_2',
+    'STUDY_RANDOM_TASK',
+    'STUDY_LENGTH',
+    'STUDY_WIDTH'
+  ];
+  return keys.some(key => {
+    const columnIndex = indices[key];
+    if (columnIndex === undefined) return false;
+    const value = rowData[columnIndex];
+    return !(value === null || value === undefined || String(value).trim() === '');
+  });
+}
+
+function buildLaboratoryRouteLink_(startCoordsRaw, studyCoordsRaw, finishCoordsRaw) {
+  const start = parseCoordsPair_(startCoordsRaw);
+  const study = parseCoordsPair_(studyCoordsRaw);
+  const finish = parseCoordsPair_(finishCoordsRaw);
+  if (!start || !study || !finish) return '';
+
+  const points = [
+    { coords: start, preset: 'pm2rdm' },
+    { coords: study, preset: 'pm2ylm' },
+    { coords: finish, preset: 'pm2blm' }
+  ];
+
+  const placemarks = points.map(item => (
+    Number(item.coords.lon).toFixed(6) + ',' +
+    Number(item.coords.lat).toFixed(6) + ',' +
+    item.preset
+  )).join('~');
+
+  const minLat = Math.min(start.lat, study.lat, finish.lat);
+  const maxLat = Math.max(start.lat, study.lat, finish.lat);
+  const minLon = Math.min(start.lon, study.lon, finish.lon);
+  const maxLon = Math.max(start.lon, study.lon, finish.lon);
+  const centerLon = ((minLon + maxLon) / 2).toFixed(6);
+  const centerLat = ((minLat + maxLat) / 2).toFixed(6);
+
+  return 'https://yandex.ru/maps/?ll=' + centerLon + '%2C' + centerLat + '&z=16&pt=' + encodeURIComponent(placemarks);
+}
+
+function isLaboratoryAdmin_(requestUser) {
+  const user = requestUser || {};
+  return !!(user.isAdmin && getDivisionNormsFromRaw_(user.division).indexOf('laboratory') !== -1);
+}
+
+function isLaboratoryInspector_(requestUser) {
+  const user = requestUser || {};
+  return !!(user.isInspector && getDivisionNormsFromRaw_(user.division).indexOf('laboratory') !== -1);
 }
 
 function formatCoordsFixed4_(lat, lon) {
@@ -1478,6 +1583,87 @@ function findObjectRowNumberByIdForInspector_(sheet, indices, id, inspectorNameN
 /**
  * Подготовить общий контекст для операций с объектом на листе.
  */
+function hasOpenEntryState_(rowData, indices) {
+  const safeRow = Array.isArray(rowData) ? rowData : [];
+  const safeIndices = indices || {};
+  const entryValue = safeIndices.ENTRY_TIME !== undefined ? safeRow[safeIndices.ENTRY_TIME] : '';
+  const exitValue = safeIndices.EXIT_TIME !== undefined ? safeRow[safeIndices.EXIT_TIME] : '';
+  const hasEntry = !(entryValue === null || entryValue === undefined || String(entryValue).trim() === '');
+  const hasExit = !(exitValue === null || exitValue === undefined || String(exitValue).trim() === '');
+  return hasEntry && !hasExit;
+}
+
+function describeActiveObjectForInspector_(activeObject) {
+  const safeObject = activeObject || {};
+  const sourceName = String(safeObject.sourceName || safeObject.source || '').trim();
+  const address = String(safeObject.address || '').trim();
+  const objectId = String(safeObject.id || '').trim();
+
+  if (address) {
+    return sourceName ? `${sourceName}: ${address}` : address;
+  }
+  if (objectId) {
+    return sourceName ? `${sourceName} #${objectId}` : `объект #${objectId}`;
+  }
+  return sourceName ? `объект (${sourceName})` : 'другую активную точку';
+}
+
+function findActiveObjectForInspector_(ss, inspectorNameNorm, excludeCurrent) {
+  const safeSs = ss || SpreadsheetApp.openById(SPREADSHEET_ID);
+  const targetInspectorNorm = normalizeText_(inspectorNameNorm);
+  if (!targetInspectorNorm) return null;
+
+  const excludedSourceNorm = normalizeText_(excludeCurrent && excludeCurrent.source);
+  const excludedRowNumber = Number(excludeCurrent && excludeCurrent.rowNumber || 0);
+  const sources = Array.isArray(MAP_POINT_SOURCES) ? MAP_POINT_SOURCES : [];
+
+  for (let s = 0; s < sources.length; s += 1) {
+    const src = sources[s] || {};
+    const sheet = safeSs.getSheetByName(src.name);
+    if (!sheet) continue;
+
+    const indices = getColumnIndices_(sheet, getHeadersForSource_(src.source));
+    if (indices.INSPECTOR === undefined || indices.ENTRY_TIME === undefined || indices.EXIT_TIME === undefined) {
+      continue;
+    }
+
+    const maxColIndex = getMaxDefinedColumnIndex_(indices);
+    if (maxColIndex < 0) continue;
+
+    const lastRow = Number(sheet.getLastRow() || 0);
+    if (lastRow < 2) continue;
+
+    const data = sheet.getRange(2, 1, lastRow - 1, maxColIndex + 1).getValues();
+    const sourceNorm = normalizeText_(src.source || src.name);
+
+    for (let i = 0; i < data.length; i += 1) {
+      const row = data[i] || [];
+      const rowNumber = i + 2;
+
+      if (excludedSourceNorm && excludedRowNumber > 0 && sourceNorm === excludedSourceNorm && rowNumber === excludedRowNumber) {
+        continue;
+      }
+
+      if (!inspectorCellContainsInspector_(row[indices.INSPECTOR], targetInspectorNorm)) {
+        continue;
+      }
+      if (!hasOpenEntryState_(row, indices)) {
+        continue;
+      }
+
+      return {
+        source: src.source || src.name || '',
+        sourceName: src.name || src.source || '',
+        rowNumber: rowNumber,
+        id: indices.ID !== undefined ? String(row[indices.ID] || '').trim() : '',
+        address: indices.ADDRESS !== undefined ? String(row[indices.ADDRESS] || '').trim() : ''
+      };
+    }
+  }
+
+  return null;
+}
+
 function getInspectorDivisionByName_(ss, inspectorNameRaw) {
   const inspectorNameNorm = normalizeText_(inspectorNameRaw);
   if (!inspectorNameNorm) return '';
@@ -1852,6 +2038,31 @@ function entry_(p) {
   const ctx = getObjectActionContext_(p);
   if (ctx.error) return { success: false, error: ctx.error };
 
+  if (ctx.requestUser && ctx.requestUser.isInspector) {
+    if (hasOpenEntryState_(ctx.rowData, ctx.indices)) {
+      return {
+        success: false,
+        error: 'Эта точка уже в работе. Сначала выполните "Выход".',
+        code: 'ALREADY_ACTIVE_OBJECT'
+      };
+    }
+
+    const ss = (ctx.sheet && typeof ctx.sheet.getParent === 'function')
+      ? ctx.sheet.getParent()
+      : SpreadsheetApp.openById(SPREADSHEET_ID);
+    const activeObject = findActiveObjectForInspector_(ss, ctx.requestUser.nameNorm, {
+      source: ctx.source,
+      rowNumber: ctx.rowNumber
+    });
+    if (activeObject) {
+      return {
+        success: false,
+        error: 'Сначала закройте активную точку: ' + describeActiveObjectForInspector_(activeObject),
+        code: 'ACTIVE_OBJECT_EXISTS'
+      };
+    }
+  }
+
   if (ctx.indices.ENTRY_TIME !== undefined) {
     ctx.sheet.getRange(ctx.rowNumber, ctx.indices.ENTRY_TIME + 1).setValue(new Date());
   }
@@ -1928,6 +2139,134 @@ function callLaboratory_(p) {
   }
   SpreadsheetApp.flush();
   return { success: true, updated: true, row: ctx.rowNumber };
+}
+
+function generateLaboratoryStudy_(p) {
+  const ctx = getObjectActionContext_(p);
+  if (ctx.error) return { success: false, error: ctx.error };
+  if (String(ctx.source || '') !== 'Laboratory') {
+    return { success: false, error: 'Study generation is available only for Laboratory source' };
+  }
+  if (!isLaboratoryAdmin_(ctx.requestUser)) {
+    return { success: false, error: 'Forbidden for current user' };
+  }
+  if (hasLaboratoryGeneratedValues_(ctx.rowData, ctx.indices)) {
+    return { success: false, error: 'Исследование уже сгенерировано для этой точки' };
+  }
+
+  const startCoords = parseCoordsPair_(p.studyCoordinate1 || p.coordinate1 || p.startCoords || '');
+  const finishCoords = parseCoordsPair_(p.studyCoordinate2 || p.coordinate2 || p.finishCoords || '');
+  const lengthValue = parseFloat(String(p.studyLength || p.length || '').replace(',', '.'));
+  const widthValue = parseFloat(String(p.studyWidth || p.width || '').replace(',', '.'));
+  const studyType = String(p.studyType || p.type || '').trim();
+
+  if (!startCoords || !finishCoords) {
+    return { success: false, error: 'Некорректные координаты начала или конца объекта' };
+  }
+  if (!(lengthValue > 0) || !(widthValue > 0)) {
+    return { success: false, error: 'Некорректные длина или ширина объекта' };
+  }
+
+  if (!studyType) {
+    return { success: false, error: 'Study type is required' };
+  }
+
+  const y = randomMetric_(0, lengthValue);
+  const x = randomMetric_(-widthValue / 2, widthValue / 2);
+  const randomTask = formatLaboratoryRandomTask_(y, x);
+  const studyCoordinateRaw = ctx.indices.STUDY_COORDINATE !== undefined
+    ? String(ctx.rowData[ctx.indices.STUDY_COORDINATE] || '').trim()
+    : '';
+  const routeLink = buildLaboratoryRouteLink_(
+    formatCoordsFixed6_(startCoords.lat, startCoords.lon),
+    studyCoordinateRaw,
+    formatCoordsFixed6_(finishCoords.lat, finishCoords.lon)
+  );
+
+  if (ctx.indices.STUDY_COORDINATE_1 !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.STUDY_COORDINATE_1 + 1).setValue(formatCoordsFixed6_(startCoords.lat, startCoords.lon));
+  }
+  if (ctx.indices.STUDY_COORDINATE_2 !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.STUDY_COORDINATE_2 + 1).setValue(formatCoordsFixed6_(finishCoords.lat, finishCoords.lon));
+  }
+  if (ctx.indices.STUDY_RANDOM_TASK !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.STUDY_RANDOM_TASK + 1).setValue(randomTask);
+  }
+  if (ctx.indices.STUDY_LENGTH !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.STUDY_LENGTH + 1).setValue(Number(lengthValue.toFixed(1)));
+  }
+  if (ctx.indices.STUDY_WIDTH !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.STUDY_WIDTH + 1).setValue(Number(widthValue.toFixed(1)));
+  }
+  if (ctx.indices.STUDY_TYPE !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.STUDY_TYPE + 1).setValue(studyType);
+  }
+  if (ctx.indices.STUDY_ROUTE_LINK !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.STUDY_ROUTE_LINK + 1).setValue(routeLink);
+  }
+
+  SpreadsheetApp.flush();
+  return {
+    success: true,
+    updated: true,
+    row: ctx.rowNumber,
+    studyCoordinate1: formatCoordsFixed6_(startCoords.lat, startCoords.lon),
+    studyCoordinate2: formatCoordsFixed6_(finishCoords.lat, finishCoords.lon),
+    studyRandomTask: randomTask,
+    studyLength: Number(lengthValue.toFixed(1)),
+    studyWidth: Number(widthValue.toFixed(1)),
+    studyType: studyType,
+    studyRouteLink: routeLink
+  };
+}
+
+function completeLaboratoryStudy_(p) {
+  const ctx = getObjectActionContext_(p);
+  if (ctx.error) return { success: false, error: ctx.error };
+  if (String(ctx.source || '') !== 'Laboratory') {
+    return { success: false, error: 'Study completion is available only for Laboratory source' };
+  }
+  if (!isLaboratoryInspector_(ctx.requestUser)) {
+    return { success: false, error: 'Forbidden for current user' };
+  }
+  if (!hasLaboratoryGeneratedValues_(ctx.rowData, ctx.indices)) {
+    return { success: false, error: 'Исследование еще не сгенерировано для этой точки' };
+  }
+
+  const status = String(p.studyStatus || p.status || '').trim().toLowerCase();
+  const isCompleted = status === 'completed';
+  const isNotCompleted = status === 'not_completed';
+  if (!isCompleted && !isNotCompleted) {
+    return { success: false, error: 'Unknown study status' };
+  }
+
+  const completedMarker = isCompleted ? '✅' : '❌';
+  const comment = String(p.studyInspectorComment || p.comment || '').trim();
+  const routeLink = buildLaboratoryRouteLink_(
+    ctx.indices.STUDY_COORDINATE_1 !== undefined ? ctx.rowData[ctx.indices.STUDY_COORDINATE_1] : '',
+    ctx.indices.STUDY_COORDINATE !== undefined ? ctx.rowData[ctx.indices.STUDY_COORDINATE] : '',
+    ctx.indices.STUDY_COORDINATE_2 !== undefined ? ctx.rowData[ctx.indices.STUDY_COORDINATE_2] : ''
+  );
+
+  if (ctx.indices.STUDY_COMPLETED !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.STUDY_COMPLETED + 1).setValue(completedMarker);
+  }
+  if (ctx.indices.STUDY_INSPECTOR_COMMENT !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.STUDY_INSPECTOR_COMMENT + 1).setValue(comment);
+  }
+  if (ctx.indices.STUDY_ROUTE_LINK !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.STUDY_ROUTE_LINK + 1).setValue(routeLink);
+  }
+
+  SpreadsheetApp.flush();
+  return {
+    success: true,
+    updated: true,
+    row: ctx.rowNumber,
+    studyCompleted: completedMarker,
+    studyInspectorComment: comment,
+    studyRouteLink: routeLink
+  };
 }
 
 /**
@@ -2129,20 +2468,27 @@ function startWorkDay_(p) {
 
   if (rowIndex > 0) {
     rowValues = sheet.getRange(rowIndex, 1, 1, WORKDAY_HEADERS.length).getValues()[0];
+    const existingOpenTime = String(rowValues[WORKDAY_COLS.TIME_OPEN] || '').trim();
     const closeTime = String(rowValues[WORKDAY_COLS.TIME_CLOSE] || '').trim();
-    const alreadyOpen = !closeTime && String(rowValues[WORKDAY_COLS.TIME_OPEN] || '').trim();
+    const alreadyOpen = !closeTime && existingOpenTime;
     if (alreadyOpen) {
       return { success: false, error: 'WorkDay already open today', code: 'ALREADY_OPEN' };
     }
   }
 
-  rowValues[WORKDAY_COLS.DATE] = dateToken;
-  rowValues[WORKDAY_COLS.INSPECTOR] = inspectorCtx.inspectorName;
-  rowValues[WORKDAY_COLS.TIME_OPEN] = timeToken;
-  rowValues[WORKDAY_COLS.OPEN_COORDS] = openCoordsValue;
-  rowValues[WORKDAY_COLS.OPEN_COMMENT] = openComment || rowValues[WORKDAY_COLS.OPEN_COMMENT] || '';
+  const hasExistingOpenTime = !!String(rowValues[WORKDAY_COLS.TIME_OPEN] || '').trim();
+  if (!hasExistingOpenTime) {
+    rowValues[WORKDAY_COLS.DATE] = dateToken;
+    rowValues[WORKDAY_COLS.INSPECTOR] = inspectorCtx.inspectorName;
+    rowValues[WORKDAY_COLS.TIME_OPEN] = timeToken;
+    rowValues[WORKDAY_COLS.OPEN_COORDS] = openCoordsValue;
+    rowValues[WORKDAY_COLS.OPEN_COMMENT] = openComment || rowValues[WORKDAY_COLS.OPEN_COMMENT] || '';
+  } else {
+    rowValues[WORKDAY_COLS.DATE] = rowValues[WORKDAY_COLS.DATE] || dateToken;
+    rowValues[WORKDAY_COLS.INSPECTOR] = rowValues[WORKDAY_COLS.INSPECTOR] || inspectorCtx.inspectorName;
+  }
 
-  // On start/re-open: clear all close-related fields.
+  // Re-open on the same date keeps original open fields and only clears close-related state.
   rowValues[WORKDAY_COLS.TIME_CLOSE] = '';
   rowValues[WORKDAY_COLS.CLOSE_COORDS] = '';
   rowValues[WORKDAY_COLS.CLOSE_COMMENT] = '';

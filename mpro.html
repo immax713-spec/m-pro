@@ -2057,6 +2057,182 @@
             }
         }
 
+        .lab-study-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 12000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .lab-study-modal.hidden {
+            display: none;
+        }
+
+        .lab-study-modal__backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.48);
+        }
+
+        .lab-study-modal__card {
+            position: relative;
+            width: min(760px, 100%);
+            max-height: 92dvh;
+            overflow: auto;
+            padding: 22px;
+            border-radius: 22px;
+            background: #fdfefe;
+            border: 1px solid #dbe6ef;
+            box-shadow: 0 24px 60px rgba(10, 22, 34, 0.25);
+        }
+
+        .lab-study-modal__card--compact {
+            width: min(560px, 100%);
+        }
+
+        .lab-study-modal__close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            border: none;
+            background: transparent;
+            color: #466078;
+            font-size: 22px;
+            cursor: pointer;
+        }
+
+        .lab-study-modal__title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #123b60;
+        }
+
+        .lab-study-modal__subtitle {
+            margin-top: 6px;
+            margin-bottom: 18px;
+            color: #5b7388;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .lab-study-modal__grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .lab-study-modal__field {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            min-width: 0;
+        }
+
+        .lab-study-modal__field--full {
+            grid-column: 1 / -1;
+        }
+
+        .lab-study-modal__field label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #4b647c;
+            letter-spacing: .02em;
+            text-transform: uppercase;
+        }
+
+        .lab-study-modal__field input,
+        .lab-study-modal__textarea {
+            width: 100%;
+            border-radius: 12px;
+            border: 1px solid #cad8e5;
+            padding: 11px 12px;
+            font-size: 14px;
+            color: #152535;
+            background: #fff;
+            font-family: inherit;
+        }
+
+        .lab-study-modal__textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        .lab-study-modal__inline {
+            display: flex;
+            gap: 8px;
+            align-items: stretch;
+        }
+
+        .lab-study-modal__inline input {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .lab-study-modal__primary,
+        .lab-study-modal__secondary {
+            appearance: none;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .lab-study-modal__primary {
+            border: 1px solid #1764a3;
+            background: #1764a3;
+            color: #fff;
+            box-shadow: 0 8px 18px rgba(23, 100, 163, .18);
+        }
+
+        .lab-study-modal__secondary {
+            border: 1px solid #c7d6e3;
+            background: #fff;
+            color: #21415e;
+        }
+
+        .lab-study-modal__primary:disabled,
+        .lab-study-modal__secondary:disabled {
+            opacity: .6;
+            cursor: default;
+        }
+
+        .lab-study-modal__result {
+            border-radius: 16px;
+            background: linear-gradient(180deg, #f3f9ff 0%, #e8f4ff 100%);
+            border: 1px solid #cde3f6;
+            padding: 14px;
+        }
+
+        .lab-study-modal__result-title {
+            font-size: 12px;
+            font-weight: 800;
+            color: #2e587e;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .lab-study-modal__result-text {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #183c5d;
+            white-space: pre-wrap;
+        }
+
+        .lab-study-modal__actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .lab-study-modal__actions--stack {
+            flex-direction: column;
+        }
+
 
     </style>
 </head>
@@ -2067,6 +2243,76 @@
         <div class="object-details__card" role="dialog" aria-modal="true">
             <button class="object-details__close" type="button" data-action="close-object-details">✕</button>
             <div class="object-details__content" id="objectDetailsContent"></div>
+        </div>
+    </div>
+
+    <div class="lab-study-modal hidden" id="labStudyAdminOverlay">
+        <div class="lab-study-modal__backdrop" data-action="close-lab-study-admin"></div>
+        <div class="lab-study-modal__card" role="dialog" aria-modal="true">
+            <button class="lab-study-modal__close" type="button" data-action="close-lab-study-admin">✕</button>
+            <div class="lab-study-modal__title">Исследование</div>
+            <div class="lab-study-modal__subtitle" id="labStudyAdminSubtitle"></div>
+            <div class="lab-study-modal__grid">
+                <div class="lab-study-modal__field">
+                    <label for="labStudyCoordinate1Input">Начальная точка объекта</label>
+                    <div class="lab-study-modal__inline">
+                        <input id="labStudyCoordinate1Input" type="text" placeholder="55.000000, 37.000000">
+                        <button class="lab-study-modal__secondary" type="button" data-action="lab-study-pick-field" data-pick-field="studyCoordinate1">На карте</button>
+                    </div>
+                </div>
+                <div class="lab-study-modal__field">
+                    <label for="labStudyCoordinate2Input">Конечная точка объекта</label>
+                    <div class="lab-study-modal__inline">
+                        <input id="labStudyCoordinate2Input" type="text" placeholder="55.000500, 37.000500">
+                        <button class="lab-study-modal__secondary" type="button" data-action="lab-study-pick-field" data-pick-field="studyCoordinate2">На карте</button>
+                    </div>
+                </div>
+                <div class="lab-study-modal__field">
+                    <label for="labStudyLengthInput">Длина, м</label>
+                    <div class="lab-study-modal__inline">
+                        <input id="labStudyLengthInput" type="number" min="0.1" step="0.1" placeholder="100">
+                        <button class="lab-study-modal__secondary" id="labStudyMeasureBtn" type="button" data-action="measure-lab-study-length">Измерить</button>
+                    </div>
+                </div>
+                <div class="lab-study-modal__field">
+                    <label for="labStudyWidthInput">Ширина, м</label>
+                    <input id="labStudyWidthInput" type="number" min="0.1" step="0.1" placeholder="10">
+                </div>
+                <div class="lab-study-modal__field lab-study-modal__field--full">
+                    <label for="labStudyTypeInput">Тип исследования</label>
+                    <input id="labStudyTypeInput" type="text" placeholder="Например: Контрольное исследование">
+                </div>
+                <div class="lab-study-modal__field lab-study-modal__field--full">
+                    <div class="lab-study-modal__result">
+                        <div class="lab-study-modal__result-title">Сгенерированное задание</div>
+                        <div class="lab-study-modal__result-text" id="labStudyRandomTaskText">Сначала укажи тип исследования, начальную и конечную точки объекта, длину и ширину, затем нажми "Сгенерировать".</div>
+                    </div>
+                </div>
+            </div>
+            <div class="lab-study-modal__actions">
+                <button class="lab-study-modal__primary" id="labStudyGenerateBtn" type="button" data-action="submit-lab-study-generate">Сгенерировать</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="lab-study-modal hidden" id="labStudyFinishOverlay">
+        <div class="lab-study-modal__backdrop" data-action="close-lab-study-finish"></div>
+        <div class="lab-study-modal__card lab-study-modal__card--compact" role="dialog" aria-modal="true">
+            <button class="lab-study-modal__close" type="button" data-action="close-lab-study-finish">✕</button>
+            <div class="lab-study-modal__title">Завершить исследование</div>
+            <div class="lab-study-modal__subtitle" id="labStudyFinishSubtitle"></div>
+            <div class="lab-study-modal__result">
+                <div class="lab-study-modal__result-title">Задание</div>
+                <div class="lab-study-modal__result-text" id="labStudyFinishTaskText">—</div>
+            </div>
+            <div class="lab-study-modal__field" style="margin-top:16px;">
+                <label for="labStudyFinishCommentInput">Комментарий</label>
+                <textarea id="labStudyFinishCommentInput" class="lab-study-modal__textarea" placeholder="Комментарий инспектора"></textarea>
+            </div>
+            <div class="lab-study-modal__actions lab-study-modal__actions--stack">
+                <button class="lab-study-modal__primary" type="button" data-action="submit-lab-study-finish" data-study-status="completed">✅ Завершено</button>
+                <button class="lab-study-modal__secondary" type="button" data-action="submit-lab-study-finish" data-study-status="not_completed">❌ Не завершено</button>
+            </div>
         </div>
     </div>
 
@@ -2173,6 +2419,10 @@
                             <button class="ios-btn" data-action="archive-completed">
                                 <span class="ios-btn-emoji">🗄️</span>
                                 <span>Архивировать выполненные</span>
+                            </button>
+                            <button class="ios-btn hidden" id="labStudyAdminMenuBtn" data-action="open-lab-study-admin">
+                                <span class="ios-btn-emoji">🧪</span>
+                                <span>Исследование</span>
                             </button>
                         </div>
                     </div>
@@ -2421,7 +2671,7 @@
             },
             
             // Адрес Google Apps Script
-            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbyg-uN1ozuE7LQAAKubEKIpTHXWdtSZcoJqCdfbL-NKOd_kwSQgog7nmtFZhIPnyXMJ/exec',
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwM_7DLp9_U12LNt-T9XydVRT8ssZQskRqL2Wbv89ga6xeXdTM_M5YKW5IdWmzqpJL6/exec',
             
             // Конфигурация Яндекс.Диска
             YANDEX: {
@@ -2550,6 +2800,7 @@
             ui: {
                 showInspectorsHomes: false,
                 currentOpenObjectId: null,
+                selectedObjectId: null,
                 delegatedEventsInitialized: false,
                 objectsListUpdateTimer: null,
                 objectsListRenderQueued: false,
@@ -2605,6 +2856,12 @@
                 sessionToken: '',
                 dataLoadPromise: null,
                 mapSearchQuery: '',
+                laboratoryStudy: {
+                    adminObjectId: null,
+                    finishObjectId: null,
+                    mapPickField: '',
+                    adminDraft: null
+                },
                 workDay: {
                     isLoaded: false,
                     isOpen: false,
@@ -2750,6 +3007,12 @@
             },
             clearCurrentOpenObjectId() {
                 AppState.ui.currentOpenObjectId = null;
+            },
+            getSelectedObjectId() {
+                return AppState.ui.selectedObjectId;
+            },
+            setSelectedObjectId(objectId) {
+                AppState.ui.selectedObjectId = objectId || null;
             }
         });
 
@@ -2904,6 +3167,25 @@
             },
             clearMapSearchQuery() {
                 AppState.runtime.mapSearchQuery = '';
+            },
+            getLaboratoryStudy() {
+                return AppState.runtime.laboratoryStudy;
+            },
+            patchLaboratoryStudy(patch) {
+                const nextPatch = (patch && typeof patch === 'object') ? patch : {};
+                AppState.runtime.laboratoryStudy = {
+                    ...AppState.runtime.laboratoryStudy,
+                    ...nextPatch
+                };
+                return AppState.runtime.laboratoryStudy;
+            },
+            resetLaboratoryStudy() {
+                AppState.runtime.laboratoryStudy = {
+                    adminObjectId: null,
+                    finishObjectId: null,
+                    mapPickField: '',
+                    adminDraft: null
+                };
             }
         });
 
@@ -3156,6 +3438,36 @@
             return role.indexOf('\u0438\u043d\u0441\u043f\u0435\u043a\u0442') !== -1 || role.indexOf('inspector') !== -1;
         }
 
+        function getCurrentUserDivisionNorms_() {
+            const raw = String(RuntimeState.getCurrentUser()?.division || '')
+                .replace(/\u00A0/g, ' ')
+                .trim();
+            if (!raw) return [];
+
+            const seen = new Set();
+            const result = [];
+            const tryAdd = (value) => {
+                const normalized = normalizeDivisionName_(value);
+                if (!normalized || seen.has(normalized)) return;
+                seen.add(normalized);
+                result.push(normalized);
+            };
+
+            tryAdd(raw);
+            raw.split(/[;,/|]+/).forEach(tryAdd);
+            raw.split(/\s{2,}/).forEach(tryAdd);
+
+            return result;
+        }
+
+        function isLaboratoryAdminClient_() {
+            return !isInspectorRole_() && getCurrentUserDivisionNorms_().includes('Лаборатория');
+        }
+
+        function isLaboratoryInspectorClient_() {
+            return isInspectorRole_() && getCurrentUserDivisionNorms_().includes('Лаборатория');
+        }
+
         function isActionAllowedForCurrentRole_(action, channel = 'click') {
             if (!action) return false;
             if (!isInspectorRole_()) return true;
@@ -3169,10 +3481,14 @@
             const managementPanel = UIState.getDomById('inspectorManagementPanel');
             const workDaySection = UIState.getDomById('workDaySection');
             const inspectorMessagesSection = UIState.getDomById('inspectorMessagesSection');
+            const labStudyAdminButton = UIState.getDomById('labStudyAdminMenuBtn');
             if (adminSection) adminSection.style.display = hideAdmin ? 'none' : '';
             if (managementPanel && hideAdmin) managementPanel.classList.add('hidden');
             if (workDaySection) workDaySection.style.display = hideAdmin ? '' : 'none';
             if (inspectorMessagesSection) inspectorMessagesSection.style.display = hideAdmin ? '' : 'none';
+            if (labStudyAdminButton) {
+                labStudyAdminButton.classList.toggle('hidden', !isLaboratoryAdminClient_());
+            }
             renderInspectorMessages_();
         }
 
@@ -3231,6 +3547,30 @@
                         break;
                     case 'archive-completed':
                         archiveCompletedObjects();
+                        break;
+                    case 'open-lab-study-admin':
+                        openLaboratoryStudyAdminModal_();
+                        break;
+                    case 'close-lab-study-admin':
+                        closeLaboratoryStudyAdminModal_();
+                        break;
+                    case 'lab-study-pick-field':
+                        startLaboratoryStudyMapPick_(actionNode.dataset.pickField || '');
+                        break;
+                    case 'measure-lab-study-length':
+                        measureLaboratoryStudyLength_();
+                        break;
+                    case 'submit-lab-study-generate':
+                        submitLaboratoryStudyGenerate_();
+                        break;
+                    case 'open-lab-study-finish':
+                        if (actionNode.dataset.objectId) openLaboratoryStudyFinishModal_(actionNode.dataset.objectId);
+                        break;
+                    case 'close-lab-study-finish':
+                        closeLaboratoryStudyFinishModal_();
+                        break;
+                    case 'submit-lab-study-finish':
+                        submitLaboratoryStudyFinish_(actionNode.dataset.studyStatus || '');
                         break;
                     case 'toggle-filter':
                         if (actionNode.dataset.filterId) {
@@ -3753,6 +4093,7 @@
             firebase.initializeApp(CONFIG.FIREBASE);
             initRealtimeSync_();
             initDelegatedEvents_();
+            initLaboratoryStudyUi_();
             syncViewportHeight_();
             syncMobileLayoutState_();
             window.addEventListener('resize', () => {
@@ -3774,6 +4115,8 @@
                 if (event.key === 'Escape') {
                     setMobileFabExpanded_(false);
                     setMapInlineSearchOpen_(false);
+                    closeLaboratoryStudyAdminModal_();
+                    closeLaboratoryStudyFinishModal_();
                 }
                 if (event.key === 'Enter' && event.target && event.target.id === 'mapInlineSearchInput') {
                     event.preventDefault();
@@ -4087,8 +4430,11 @@
         function clearSessionScopedUiData_() {
             RuntimeState.clearDataLoadPromise();
             RuntimeState.clearMapSearchQuery();
+            RuntimeState.resetLaboratoryStudy();
             syncSearchInputsValue_('');
             closeObjectDetails();
+            closeLaboratoryStudyAdminModal_({ keepDraft: false });
+            closeLaboratoryStudyFinishModal_();
 
             DataState.clearObjectsData();
             DataState.clearInspectorsList();
@@ -4105,6 +4451,7 @@
             UIState.setObjectsBadge('active', null);
             UIState.setObjectsBadge('new', null);
             UIState.setObjectsBadge('completed', null);
+            UIState.setSelectedObjectId(null);
 
             renderFilterLists();
             scheduleObjectsListRender_();
@@ -4497,6 +4844,7 @@
                     zoom: 10,
                     controls: ['zoomControl', 'typeSelector']
                 }));
+                MapState.getMapInstance().events.add('click', handleLaboratoryStudyMapClick_);
                 scheduleMapFitToViewport_();
                 setTimeout(scheduleMapFitToViewport_, 120);
                 
@@ -7161,11 +7509,19 @@
             // Обработчики клика на точки - открываем кастомный балун
             objectManager.objects.events.add('click', (e) => {
                 const objectId = e.get('objectId');
+                if (isLaboratoryStudyMapPickActive_()) {
+                    handleLaboratoryStudyObjectPickById_(objectId);
+                    return;
+                }
                 openObjectDetails(objectId);
             });
             
             activeObjectsLayer.objects.events.add('click', (e) => {
                 const objectId = e.get('objectId');
+                if (isLaboratoryStudyMapPickActive_()) {
+                    handleLaboratoryStudyObjectPickById_(objectId);
+                    return;
+                }
                 openObjectDetails(objectId);
             });
             
@@ -7553,7 +7909,564 @@
                 status: resolvedStatus
             };
         }
-        
+
+        let laboratoryStudyUiInitialized_ = false;
+
+        function initLaboratoryStudyUi_() {
+            if (laboratoryStudyUiInitialized_) return;
+            laboratoryStudyUiInitialized_ = true;
+
+            const trackedIds = [
+                'labStudyCoordinate1Input',
+                'labStudyCoordinate2Input',
+                'labStudyLengthInput',
+                'labStudyWidthInput',
+                'labStudyTypeInput'
+            ];
+            trackedIds.forEach((id) => {
+                const input = UIState.getDomById(id);
+                if (!input) return;
+                input.addEventListener('input', () => {
+                    const state = RuntimeState.getLaboratoryStudy();
+                    if (!state?.adminObjectId) return;
+                    RuntimeState.patchLaboratoryStudy({
+                        adminDraft: readLaboratoryStudyAdminDraftFromInputs_()
+                    });
+                });
+            });
+        }
+
+        function parseCoordsPair_(value) {
+            const raw = String(value || '').trim();
+            if (!raw) return null;
+            const parts = raw.split(',');
+            if (parts.length < 2) return null;
+
+            const lat = parseFloat(String(parts[0] || '').trim().replace(',', '.'));
+            const lon = parseFloat(String(parts[1] || '').trim().replace(',', '.'));
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+            return { lat, lon };
+        }
+
+        function formatCoordsFixed6_(lat, lon) {
+            return `${Number(lat).toFixed(6)}, ${Number(lon).toFixed(6)}`;
+        }
+
+        function distanceMeters_(lat1, lon1, lat2, lon2) {
+            const toRad = (value) => (value * Math.PI) / 180;
+            const earthRadius = 6371000;
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return earthRadius * c;
+        }
+
+        function isLaboratoryObject_(obj) {
+            if (!obj || typeof obj !== 'object') return false;
+            return String(obj.source || '') === 'Laboratory' || resolveObjectDivision_(obj) === 'Лаборатория';
+        }
+
+        function hasLaboratoryStudyGenerated_(obj) {
+            if (!isLaboratoryObject_(obj)) return false;
+            return [
+                obj?.studyCoordinate1,
+                obj?.studyCoordinate2,
+                obj?.studyRandomTask,
+                obj?.studyLength,
+                obj?.studyWidth
+            ].some(value => String(value ?? '').trim() !== '');
+        }
+
+        function getLaboratoryStudyCompletedMarker_(obj) {
+            return String(obj?.studyCompleted || '').trim();
+        }
+
+        function isLaboratoryStudyResolved_(obj) {
+            const marker = getLaboratoryStudyCompletedMarker_(obj);
+            return marker === '✅' || marker === '❌';
+        }
+
+        function getLaboratoryStudyStatusLabel_(obj) {
+            const marker = getLaboratoryStudyCompletedMarker_(obj);
+            if (marker === '✅') return '✅ Завершено';
+            if (marker === '❌') return '❌ Не завершено';
+            if (hasLaboratoryStudyGenerated_(obj)) return 'Не приступали';
+            return 'Не создано';
+        }
+
+        function getLaboratoryStudyRouteLinkUrl_(obj) {
+            return Utils.sanitizeUrl(String(obj?.studyRouteLink || '').trim());
+        }
+
+        function canOpenLaboratoryStudyFinish_(obj) {
+            return isLaboratoryInspectorClient_() &&
+                isLaboratoryObject_(obj) &&
+                hasLaboratoryStudyGenerated_(obj) &&
+                !isLaboratoryStudyResolved_(obj);
+        }
+
+        function formatLaboratoryStudyMetric_(value) {
+            const num = parseFloat(String(value ?? '').replace(',', '.'));
+            return Number.isFinite(num) ? num.toFixed(1).replace(/\.0$/, '') : '';
+        }
+
+        function buildLaboratoryStudySummaryText_(payload) {
+            const studyType = String(payload?.studyType || '').trim();
+            const task = String(payload?.studyRandomTask || '').trim();
+            const length = formatLaboratoryStudyMetric_(payload?.studyLength);
+            const width = formatLaboratoryStudyMetric_(payload?.studyWidth);
+            const lines = [];
+            if (studyType) lines.push(`Тип: ${studyType}`);
+            if (task) lines.push(task);
+            if (length || width) {
+                const parts = [];
+                if (length) parts.push(`Длина: ${length} м`);
+                if (width) parts.push(`Ширина: ${width} м`);
+                lines.push(parts.join(' • '));
+            }
+            if (!lines.length) {
+                lines.push('Сначала укажи тип исследования, начальную и конечную точки объекта, длину и ширину, затем нажми "Сгенерировать".');
+            }
+            return lines.join('\n');
+        }
+
+        function buildLaboratoryStudyObjectSubtitle_(obj) {
+            if (!obj) return '';
+            const address = String(obj.address || '').trim();
+            const displayId = Utils.extractDisplayId(obj.originalId || obj.id);
+            return address
+                ? `${address} • LAB-${displayId}`
+                : `Точка LAB-${displayId}`;
+        }
+
+        function buildLaboratoryStudyAdminDraftFromObject_(obj) {
+            return {
+                studyCoordinate1: String(obj?.studyCoordinate1 || '').trim(),
+                studyCoordinate2: String(obj?.studyCoordinate2 || '').trim(),
+                studyLength: String(obj?.studyLength ?? '').trim(),
+                studyWidth: String(obj?.studyWidth ?? '').trim(),
+                studyType: String(obj?.studyType || '').trim(),
+                studyRandomTask: String(obj?.studyRandomTask || '').trim()
+            };
+        }
+
+        function readLaboratoryStudyAdminDraftFromInputs_() {
+            const state = RuntimeState.getLaboratoryStudy();
+            const base = (state?.adminDraft && typeof state.adminDraft === 'object') ? state.adminDraft : {};
+            const coordinate1Input = UIState.getDomById('labStudyCoordinate1Input');
+            const coordinate2Input = UIState.getDomById('labStudyCoordinate2Input');
+            const lengthInput = UIState.getDomById('labStudyLengthInput');
+            const widthInput = UIState.getDomById('labStudyWidthInput');
+            const studyTypeInput = UIState.getDomById('labStudyTypeInput');
+
+            return {
+                ...base,
+                studyCoordinate1: coordinate1Input
+                    ? String(coordinate1Input.value || '').trim()
+                    : String(base.studyCoordinate1 || '').trim(),
+                studyCoordinate2: coordinate2Input
+                    ? String(coordinate2Input.value || '').trim()
+                    : String(base.studyCoordinate2 || '').trim(),
+                studyLength: lengthInput
+                    ? String(lengthInput.value || '').trim()
+                    : String(base.studyLength || '').trim(),
+                studyWidth: widthInput
+                    ? String(widthInput.value || '').trim()
+                    : String(base.studyWidth || '').trim(),
+                studyType: studyTypeInput
+                    ? String(studyTypeInput.value || '').trim()
+                    : String(base.studyType || '').trim(),
+                studyRandomTask: String(base.studyRandomTask || '').trim()
+            };
+        }
+
+        function syncLaboratoryStudyAdminModal_(object, options = {}) {
+            if (!object) return;
+            const state = RuntimeState.getLaboratoryStudy();
+            const generated = hasLaboratoryStudyGenerated_(object);
+            const draft = (state?.adminDraft && typeof state.adminDraft === 'object')
+                ? state.adminDraft
+                : buildLaboratoryStudyAdminDraftFromObject_(object);
+            const subtitle = UIState.getDomById('labStudyAdminSubtitle');
+            const coordinate1Input = UIState.getDomById('labStudyCoordinate1Input');
+            const coordinate2Input = UIState.getDomById('labStudyCoordinate2Input');
+            const lengthInput = UIState.getDomById('labStudyLengthInput');
+            const widthInput = UIState.getDomById('labStudyWidthInput');
+            const studyTypeInput = UIState.getDomById('labStudyTypeInput');
+            const resultText = UIState.getDomById('labStudyRandomTaskText');
+            const generateButton = UIState.getDomById('labStudyGenerateBtn');
+
+            if (subtitle) subtitle.textContent = buildLaboratoryStudyObjectSubtitle_(object);
+            if (coordinate1Input) coordinate1Input.value = String(draft.studyCoordinate1 || '').trim();
+            if (coordinate2Input) coordinate2Input.value = String(draft.studyCoordinate2 || '').trim();
+            if (lengthInput) lengthInput.value = String(draft.studyLength ?? '').trim();
+            if (widthInput) widthInput.value = String(draft.studyWidth ?? '').trim();
+            if (studyTypeInput) studyTypeInput.value = String(draft.studyType || '').trim();
+            if (resultText) resultText.textContent = buildLaboratoryStudySummaryText_(generated ? object : draft);
+            if (generateButton) {
+                if (!options.preserveBusyState) {
+                    generateButton.disabled = generated;
+                }
+                generateButton.textContent = generated ? 'Сгенерировано' : 'Сгенерировать';
+            }
+
+            RuntimeState.patchLaboratoryStudy({ adminDraft: draft });
+        }
+
+        function showLaboratoryStudyAdminModal_() {
+            const overlay = UIState.getDomById('labStudyAdminOverlay');
+            if (!overlay) return;
+            overlay.classList.remove('hidden');
+        }
+
+        function hideLaboratoryStudyAdminModal_() {
+            const overlay = UIState.getDomById('labStudyAdminOverlay');
+            if (!overlay) return;
+            overlay.classList.add('hidden');
+        }
+
+        function openLaboratoryStudyAdminModal_() {
+            if (!isLaboratoryAdminClient_()) {
+                showNotification('❌ Доступно только для администратора Лаборатории', 'error');
+                return;
+            }
+
+            const objectId = UIState.getCurrentOpenObjectId() || UIState.getSelectedObjectId();
+            const object = DataState.findObjectById(objectId);
+            if (!object) {
+                showNotification('ℹ️ Сначала выбери точку на карте', 'info');
+                return;
+            }
+            if (!isLaboratoryObject_(object)) {
+                showNotification('❌ Исследование доступно только для точек Laboratory', 'error');
+                return;
+            }
+
+            closeObjectDetails();
+            RuntimeState.patchLaboratoryStudy({
+                adminObjectId: object.id,
+                finishObjectId: null,
+                mapPickField: '',
+                adminDraft: buildLaboratoryStudyAdminDraftFromObject_(object)
+            });
+            syncLaboratoryStudyAdminModal_(object);
+            showLaboratoryStudyAdminModal_();
+        }
+
+        function closeLaboratoryStudyAdminModal_(options = {}) {
+            hideLaboratoryStudyAdminModal_();
+            if (options.keepDraft) {
+                return;
+            }
+            RuntimeState.patchLaboratoryStudy({
+                adminObjectId: null,
+                mapPickField: '',
+                adminDraft: null
+            });
+        }
+
+        function isLaboratoryStudyMapPickActive_() {
+            return !!String(RuntimeState.getLaboratoryStudy()?.mapPickField || '').trim();
+        }
+
+        function startLaboratoryStudyMapPick_(pickField) {
+            const field = String(pickField || '').trim();
+            if (!field) return;
+
+            const state = RuntimeState.getLaboratoryStudy();
+            const object = DataState.findObjectById(state?.adminObjectId);
+            if (!object) {
+                showNotification('❌ Сначала открой исследование для точки', 'error');
+                return;
+            }
+
+            RuntimeState.patchLaboratoryStudy({
+                adminDraft: readLaboratoryStudyAdminDraftFromInputs_(),
+                mapPickField: field
+            });
+            hideLaboratoryStudyAdminModal_();
+            showNotification(
+                field === 'studyCoordinate1'
+                    ? '🧭 Кликни по карте, чтобы выбрать начальную точку объекта'
+                    : '🧭 Кликни по карте, чтобы выбрать конечную точку объекта',
+                'info'
+            );
+        }
+
+        function applyLaboratoryStudyPickedCoords_(coords) {
+            const state = RuntimeState.getLaboratoryStudy();
+            const pickField = String(state?.mapPickField || '').trim();
+            const object = DataState.findObjectById(state?.adminObjectId);
+            if (!pickField || !object || !coords) return;
+
+            const lat = Array.isArray(coords) ? Number(coords[0]) : Number(coords.lat);
+            const lon = Array.isArray(coords) ? Number(coords[1]) : Number(coords.lon);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+            const draft = {
+                ...(state?.adminDraft && typeof state.adminDraft === 'object' ? state.adminDraft : buildLaboratoryStudyAdminDraftFromObject_(object))
+            };
+            draft[pickField] = formatCoordsFixed6_(lat, lon);
+
+            RuntimeState.patchLaboratoryStudy({
+                adminDraft: draft,
+                mapPickField: ''
+            });
+            syncLaboratoryStudyAdminModal_(object);
+            showLaboratoryStudyAdminModal_();
+            showNotification('✅ Координата сохранена', 'success');
+        }
+
+        function handleLaboratoryStudyMapClick_(event) {
+            if (!isLaboratoryStudyMapPickActive_()) return;
+            const coords = event?.get?.('coords');
+            if (!Array.isArray(coords) || coords.length < 2) return;
+            applyLaboratoryStudyPickedCoords_(coords);
+        }
+
+        function handleLaboratoryStudyObjectPickById_(objectId) {
+            if (!isLaboratoryStudyMapPickActive_()) return;
+            const object = DataState.findObjectById(objectId);
+            if (!object) return;
+            const lat = parseFloat(object.latitude);
+            const lon = parseFloat(object.longitude);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+            applyLaboratoryStudyPickedCoords_([lat, lon]);
+        }
+
+        function measureLaboratoryStudyLength_() {
+            const draft = readLaboratoryStudyAdminDraftFromInputs_();
+            const start = parseCoordsPair_(draft.studyCoordinate1);
+            const finish = parseCoordsPair_(draft.studyCoordinate2);
+            if (!start || !finish) {
+                showNotification('ℹ️ Укажи начальную и конечную точки объекта', 'info');
+                return;
+            }
+
+            const lengthValue = distanceMeters_(start.lat, start.lon, finish.lat, finish.lon).toFixed(1);
+            const lengthInput = UIState.getDomById('labStudyLengthInput');
+            if (lengthInput) lengthInput.value = lengthValue;
+
+            RuntimeState.patchLaboratoryStudy({
+                adminDraft: {
+                    ...draft,
+                    studyLength: lengthValue
+                }
+            });
+        }
+
+        function applyLaboratoryStudyLocalUpdate_(objectId, patch) {
+            const object = DataState.findObjectById(objectId);
+            if (!object) return;
+            Object.assign(object, patch || {});
+            scheduleMapUpdate_();
+            refreshObjectsTabIfVisible_();
+            if (UIState.getCurrentOpenObjectId() == objectId) {
+                renderOpenObjectDetailsContent_(object);
+            }
+        }
+
+        async function submitLaboratoryStudyGenerate_() {
+            if (!isLaboratoryAdminClient_()) {
+                showNotification('❌ Доступно только для администратора Лаборатории', 'error');
+                return;
+            }
+
+            const state = RuntimeState.getLaboratoryStudy();
+            const object = DataState.findObjectById(state?.adminObjectId);
+            if (!object) {
+                showNotification('❌ Точка исследования не выбрана', 'error');
+                return;
+            }
+            if (hasLaboratoryStudyGenerated_(object)) {
+                syncLaboratoryStudyAdminModal_(object);
+                showNotification('ℹ️ Исследование уже сгенерировано для этой точки', 'info');
+                return;
+            }
+
+            const draft = readLaboratoryStudyAdminDraftFromInputs_();
+            const start = parseCoordsPair_(draft.studyCoordinate1);
+            const finish = parseCoordsPair_(draft.studyCoordinate2);
+            const lengthValue = parseFloat(String(draft.studyLength || '').replace(',', '.'));
+            const widthValue = parseFloat(String(draft.studyWidth || '').replace(',', '.'));
+            const studyType = String(draft.studyType || '').trim();
+            if (!start || !finish) {
+                showNotification('❌ Укажи начальную и конечную точки объекта', 'error');
+                return;
+            }
+            if (!(lengthValue > 0) || !(widthValue > 0)) {
+                showNotification('❌ Укажи корректные длину и ширину объекта', 'error');
+                return;
+            }
+            if (!studyType) {
+                showNotification('❌ Укажи тип исследования', 'error');
+                return;
+            }
+
+            const generateButton = UIState.getDomById('labStudyGenerateBtn');
+            if (generateButton) {
+                generateButton.disabled = true;
+                generateButton.textContent = 'Сохранение...';
+            }
+
+            try {
+                const response = await createJsonpRequest({
+                    action: 'generateLaboratoryStudy',
+                    objectId: String(object.id),
+                    source: object.source || 'Laboratory',
+                    rowIndex: String(object.rowIndex || ''),
+                    studyCoordinate1: draft.studyCoordinate1,
+                    studyCoordinate2: draft.studyCoordinate2,
+                    studyLength: String(lengthValue),
+                    studyWidth: String(widthValue),
+                    studyType: studyType
+                }, 15000);
+
+                if (!response?.success) {
+                    showNotification('❌ ' + (response?.error || 'Ошибка генерации исследования'), 'error');
+                    if (generateButton) {
+                        generateButton.disabled = false;
+                        generateButton.textContent = 'Сгенерировать';
+                    }
+                    return;
+                }
+
+                const nextPatch = {
+                    studyCoordinate1: response.studyCoordinate1 || draft.studyCoordinate1,
+                    studyCoordinate2: response.studyCoordinate2 || draft.studyCoordinate2,
+                    studyRandomTask: response.studyRandomTask || '',
+                    studyLength: response.studyLength ?? draft.studyLength,
+                    studyWidth: response.studyWidth ?? draft.studyWidth,
+                    studyType: response.studyType || studyType,
+                    studyRouteLink: response.studyRouteLink || object.studyRouteLink || ''
+                };
+                applyLaboratoryStudyLocalUpdate_(object.id, nextPatch);
+                RuntimeState.patchLaboratoryStudy({
+                    adminDraft: buildLaboratoryStudyAdminDraftFromObject_(DataState.findObjectById(object.id))
+                });
+                syncLaboratoryStudyAdminModal_(DataState.findObjectById(object.id));
+                notifyRealtimeSync_('object:generateLaboratoryStudy');
+                scheduleBackgroundReloadAfterObjectAction_();
+                showNotification('✅ Исследование сгенерировано и сохранено', 'success');
+            } catch (error) {
+                console.error('Laboratory generate error:', error);
+                if (generateButton) {
+                    generateButton.disabled = false;
+                    generateButton.textContent = 'Сгенерировать';
+                }
+                showNotification('❌ Ошибка соединения', 'error');
+            }
+        }
+
+        function syncLaboratoryStudyFinishModal_(object) {
+            if (!object) return;
+            const subtitle = UIState.getDomById('labStudyFinishSubtitle');
+            const taskText = UIState.getDomById('labStudyFinishTaskText');
+            const commentInput = UIState.getDomById('labStudyFinishCommentInput');
+            if (subtitle) subtitle.textContent = buildLaboratoryStudyObjectSubtitle_(object);
+            if (taskText) taskText.textContent = buildLaboratoryStudySummaryText_(object);
+            if (commentInput) commentInput.value = String(object.studyInspectorComment || '').trim();
+        }
+
+        function openLaboratoryStudyFinishModal_(objectId) {
+            if (!isLaboratoryInspectorClient_()) {
+                showNotification('❌ Доступно только для инспектора Лаборатории', 'error');
+                return;
+            }
+
+            const object = DataState.findObjectById(objectId);
+            if (!object || !isLaboratoryObject_(object)) {
+                showNotification('❌ Точка исследования не найдена', 'error');
+                return;
+            }
+            if (!hasLaboratoryStudyGenerated_(object)) {
+                showNotification('ℹ️ Для этой точки исследование еще не сгенерировано', 'info');
+                return;
+            }
+            if (isLaboratoryStudyResolved_(object)) {
+                showNotification('ℹ️ Исследование для этой точки уже завершено', 'info');
+                return;
+            }
+
+            closeObjectDetails();
+            RuntimeState.patchLaboratoryStudy({ finishObjectId: object.id });
+            syncLaboratoryStudyFinishModal_(object);
+            const overlay = UIState.getDomById('labStudyFinishOverlay');
+            if (overlay) overlay.classList.remove('hidden');
+        }
+
+        function closeLaboratoryStudyFinishModal_() {
+            const overlay = UIState.getDomById('labStudyFinishOverlay');
+            if (overlay) overlay.classList.add('hidden');
+            RuntimeState.patchLaboratoryStudy({ finishObjectId: null });
+        }
+
+        async function submitLaboratoryStudyFinish_(studyStatus) {
+            if (!isLaboratoryInspectorClient_()) {
+                showNotification('❌ Доступно только для инспектора Лаборатории', 'error');
+                return;
+            }
+
+            const status = String(studyStatus || '').trim();
+            if (status !== 'completed' && status !== 'not_completed') {
+                showNotification('❌ Неизвестный статус исследования', 'error');
+                return;
+            }
+
+            const state = RuntimeState.getLaboratoryStudy();
+            const object = DataState.findObjectById(state?.finishObjectId);
+            if (!object) {
+                showNotification('❌ Точка исследования не найдена', 'error');
+                return;
+            }
+
+            const commentInput = UIState.getDomById('labStudyFinishCommentInput');
+            const comment = String(commentInput?.value || '').trim();
+            const finishButtons = Array.from(document.querySelectorAll('[data-action="submit-lab-study-finish"]'));
+            finishButtons.forEach(btn => { btn.disabled = true; });
+
+            try {
+                const response = await createJsonpRequest({
+                    action: 'completeLaboratoryStudy',
+                    objectId: String(object.id),
+                    source: object.source || 'Laboratory',
+                    rowIndex: String(object.rowIndex || ''),
+                    studyStatus: status,
+                    studyInspectorComment: comment
+                }, 15000);
+
+                finishButtons.forEach(btn => { btn.disabled = false; });
+
+                if (!response?.success) {
+                    showNotification('❌ ' + (response?.error || 'Ошибка завершения исследования'), 'error');
+                    return;
+                }
+
+                applyLaboratoryStudyLocalUpdate_(object.id, {
+                    studyCompleted: response.studyCompleted || (status === 'completed' ? '✅' : '❌'),
+                    studyInspectorComment: response.studyInspectorComment ?? comment,
+                    studyRouteLink: response.studyRouteLink || object.studyRouteLink || ''
+                });
+                notifyRealtimeSync_('object:completeLaboratoryStudy');
+                scheduleBackgroundReloadAfterObjectAction_();
+                closeLaboratoryStudyFinishModal_();
+                showNotification(
+                    status === 'completed'
+                        ? '✅ Исследование отмечено как завершенное'
+                        : '❌ Исследование отмечено как не завершенное',
+                    'success'
+                );
+            } catch (error) {
+                console.error('Laboratory finish error:', error);
+                finishButtons.forEach(btn => { btn.disabled = false; });
+                showNotification('❌ Ошибка соединения', 'error');
+            }
+        }
+
         // ============================================
         // Модуль балуна (кастомный модал)
         // ============================================
@@ -7570,6 +8483,7 @@
             }
             
             UIState.setCurrentOpenObjectId(objectId);
+            UIState.setSelectedObjectId(objectId);
             const content = UIState.getDomById('objectDetailsContent');
             if (!content) return;
             
@@ -7629,21 +8543,30 @@
          */
         function renderActionButtons(obj, { isNew, isActive }) {
             const objectIdAttr = Utils.escapeAttr(obj.id);
+            const buttons = [];
+
             if (isNew) {
-                return `<div class="object-card__actions" style="margin-top: 12px;">
-                    <button class="object-card__button" data-action="mark-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('➡️', 'Вход')}</button>
-                </div>`;
+                buttons.push(`<button class="object-card__button" data-action="mark-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('➡️', 'Вход')}</button>`);
             }
+
             if (isActive) {
                 const allowCancelEntry = !isInspectorRole_();
-                return `<div class="object-card__actions" style="margin-top: 12px;">
-                    <button class="object-card__button" data-action="mark-exit" data-object-id="${objectIdAttr}">${renderActionLabel_('🏁', 'Выход')}</button>
-                    ${allowCancelEntry ? `<button class="object-card__button" data-action="cancel-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('↩️', 'Отменить вход')}</button>` : ''}
-                    <button class="object-card__button" data-action="mark-denied" data-object-id="${objectIdAttr}">${renderActionLabel_('🚫', 'Отказано')}</button>
-                    <button class="object-card__button" data-action="call-laboratory" data-object-id="${objectIdAttr}">${renderActionLabel_('🔬', 'Лаборатория')}</button>
-                </div>`;
+                buttons.push(`<button class="object-card__button" data-action="mark-exit" data-object-id="${objectIdAttr}">${renderActionLabel_('🏁', 'Выход')}</button>`);
+                if (allowCancelEntry) {
+                    buttons.push(`<button class="object-card__button" data-action="cancel-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('↩️', 'Отменить вход')}</button>`);
+                }
+                buttons.push(`<button class="object-card__button" data-action="mark-denied" data-object-id="${objectIdAttr}">${renderActionLabel_('🚫', 'Отказано')}</button>`);
+                if (!isLaboratoryObject_(obj)) {
+                    buttons.push(`<button class="object-card__button" data-action="call-laboratory" data-object-id="${objectIdAttr}">${renderActionLabel_('🔬', 'Лаборатория')}</button>`);
+                }
             }
-            return '';
+
+            if (canOpenLaboratoryStudyFinish_(obj)) {
+                buttons.push(`<button class="object-card__button" data-action="open-lab-study-finish" data-object-id="${objectIdAttr}">${renderActionLabel_('', 'Завершить исследование')}</button>`);
+            }
+
+            if (!buttons.length) return '';
+            return `<div class="object-card__actions" style="margin-top: 12px;">${buttons.join('')}</div>`;
         }
         
         /**
@@ -7775,6 +8698,53 @@
             `;
         }
 
+        function renderLaboratoryStudyInfoHtml_(obj) {
+            if (!isLaboratoryObject_(obj)) return '';
+
+            const generated = hasLaboratoryStudyGenerated_(obj);
+            const studyType = Utils.escapeHtml(String(obj?.studyType || '').trim());
+            const statusLabel = Utils.escapeHtml(getLaboratoryStudyStatusLabel_(obj));
+            const taskLabel = Utils.escapeHtml(String(obj?.studyRandomTask || '').trim());
+            const lengthLabel = formatLaboratoryStudyMetric_(obj?.studyLength);
+            const widthLabel = formatLaboratoryStudyMetric_(obj?.studyWidth);
+            const sizeParts = [];
+            if (lengthLabel) sizeParts.push(`Длина ${lengthLabel} м`);
+            if (widthLabel) sizeParts.push(`Ширина ${widthLabel} м`);
+            const sizeLabel = Utils.escapeHtml(sizeParts.join(' • '));
+            const inspectorComment = Utils.escapeHtml(String(obj?.studyInspectorComment || '').trim());
+
+            return `
+                <div class="object-card__row">
+                    <span class="object-card__label">Исследование</span>
+                    <span class="object-card__value">${statusLabel}</span>
+                </div>
+                ${studyType ? `
+                <div class="object-card__row">
+                    <span class="object-card__label">Тип</span>
+                    <span class="object-card__value">${studyType}</span>
+                </div>
+                ` : ''}
+                ${generated && taskLabel ? `
+                <div class="object-card__row">
+                    <span class="object-card__label">Задание</span>
+                    <span class="object-card__value">${taskLabel}</span>
+                </div>
+                ` : ''}
+                ${generated && sizeLabel ? `
+                <div class="object-card__row">
+                    <span class="object-card__label">Параметры</span>
+                    <span class="object-card__value">${sizeLabel}</span>
+                </div>
+                ` : ''}
+                ${inspectorComment ? `
+                <div class="object-card__row">
+                    <span class="object-card__label">Комментарий</span>
+                    <span class="object-card__value">${inspectorComment}</span>
+                </div>
+                ` : ''}
+            `;
+        }
+
         function renderObjectCardInfoHtml_(obj, vm) {
             return `
                 <div class="object-card__row">
@@ -7809,13 +8779,21 @@
                     <span class="object-card__value">${vm.laboratoryComment}</span>
                 </div>
                 ` : ''}
+                ${renderLaboratoryStudyInfoHtml_(obj)}
             `;
+        }
+
+        function renderLaboratoryStudyRouteActionHtml_(obj) {
+            const routeLink = getLaboratoryStudyRouteLinkUrl_(obj);
+            if (!routeLink) return '';
+            return `<a href="${Utils.escapeAttr(routeLink)}" target="_blank" rel="noopener noreferrer" class="object-card__button">${renderActionLabel_('🗺️', 'Открыть точки на карте')}</a>`;
         }
 
         function renderObjectCardPrimaryActionsHtml_(obj, vm) {
             return `
                 ${vm.googleLink ? `<a href="${Utils.escapeAttr(vm.googleLink)}" target="_blank" rel="noopener noreferrer" class="object-card__button">${renderActionLabel_('📝', 'Чек-лист')}</a>` : ''}
                 ${renderYandexButton(obj, vm.status.isActive)}
+                ${renderLaboratoryStudyRouteActionHtml_(obj)}
                 <button class="object-card__button" data-action="copy-coordinates" data-coordinates="${vm.coordinates}">${renderActionLabel_('🧭', 'Координаты')}</button>
             `;
         }
