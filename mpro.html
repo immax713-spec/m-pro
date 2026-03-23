@@ -2420,10 +2420,6 @@
                                 <span class="ios-btn-emoji">🗄️</span>
                                 <span>Архивировать выполненные</span>
                             </button>
-                            <button class="ios-btn hidden" id="labStudyAdminMenuBtn" data-action="open-lab-study-admin">
-                                <span class="ios-btn-emoji">🧪</span>
-                                <span>Исследование</span>
-                            </button>
                         </div>
                     </div>
                     
@@ -2671,7 +2667,7 @@
             },
             
             // Адрес Google Apps Script
-            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwM_7DLp9_U12LNt-T9XydVRT8ssZQskRqL2Wbv89ga6xeXdTM_M5YKW5IdWmzqpJL6/exec',
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxYoxVi5I4Z3P-ymMjqgzKP4B2Ki-O7OVFWXsTs5GgKaVWC1hB__V_DtC9Zdgecr379/exec',
             
             // Конфигурация Яндекс.Диска
             YANDEX: {
@@ -3481,14 +3477,10 @@
             const managementPanel = UIState.getDomById('inspectorManagementPanel');
             const workDaySection = UIState.getDomById('workDaySection');
             const inspectorMessagesSection = UIState.getDomById('inspectorMessagesSection');
-            const labStudyAdminButton = UIState.getDomById('labStudyAdminMenuBtn');
             if (adminSection) adminSection.style.display = hideAdmin ? 'none' : '';
             if (managementPanel && hideAdmin) managementPanel.classList.add('hidden');
             if (workDaySection) workDaySection.style.display = hideAdmin ? '' : 'none';
             if (inspectorMessagesSection) inspectorMessagesSection.style.display = hideAdmin ? '' : 'none';
-            if (labStudyAdminButton) {
-                labStudyAdminButton.classList.toggle('hidden', !isLaboratoryAdminClient_());
-            }
             renderInspectorMessages_();
         }
 
@@ -3549,7 +3541,7 @@
                         archiveCompletedObjects();
                         break;
                     case 'open-lab-study-admin':
-                        openLaboratoryStudyAdminModal_();
+                        openLaboratoryStudyAdminModal_(actionNode.dataset.objectId || '');
                         break;
                     case 'close-lab-study-admin':
                         closeLaboratoryStudyAdminModal_();
@@ -8129,13 +8121,13 @@
             overlay.classList.add('hidden');
         }
 
-        function openLaboratoryStudyAdminModal_() {
+        function openLaboratoryStudyAdminModal_(objectIdOverride = '') {
             if (!isLaboratoryAdminClient_()) {
                 showNotification('❌ Доступно только для администратора Лаборатории', 'error');
                 return;
             }
 
-            const objectId = UIState.getCurrentOpenObjectId() || UIState.getSelectedObjectId();
+            const objectId = String(objectIdOverride || '').trim() || UIState.getCurrentOpenObjectId() || UIState.getSelectedObjectId();
             const object = DataState.findObjectById(objectId);
             if (!object) {
                 showNotification('ℹ️ Сначала выбери точку на карте', 'info');
@@ -8544,6 +8536,10 @@
         function renderActionButtons(obj, { isNew, isActive }) {
             const objectIdAttr = Utils.escapeAttr(obj.id);
             const buttons = [];
+
+            if (isLaboratoryAdminClient_() && isLaboratoryObject_(obj)) {
+                buttons.push(`<button class="object-card__button" data-action="open-lab-study-admin" data-object-id="${objectIdAttr}">${renderActionLabel_('🧪', 'Исследование')}</button>`);
+            }
 
             if (isNew) {
                 buttons.push(`<button class="object-card__button" data-action="mark-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('➡️', 'Вход')}</button>`);

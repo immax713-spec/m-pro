@@ -1439,9 +1439,9 @@ function buildLaboratoryRouteLink_(startCoordsRaw, studyCoordsRaw, finishCoordsR
   if (!start || !study || !finish) return '';
 
   const points = [
-    { coords: start, preset: 'pm2rdm' },
-    { coords: study, preset: 'pm2ylm' },
-    { coords: finish, preset: 'pm2blm' }
+    { coords: start, preset: 'pm2blm1' },
+    { coords: study, preset: 'pm2rdm' },
+    { coords: finish, preset: 'pm2blm2' }
   ];
 
   const placemarks = points.map(item => (
