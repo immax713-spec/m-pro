@@ -70,7 +70,7 @@ const OBJECT_HEADERS = {
   STUDY_WIDTH: 'Width',
   STUDY_COORDINATE: 'Study_coordinate',
   STUDY_TYPE: 'Study_type',
-  STUDY_COMPLETED: 'Completed',
+  STUDY_COMPLETED: ['Study_result', 'Completed'],
   STUDY_INSPECTOR_COMMENT: 'Ispector_comment',
   STUDY_ROUTE_LINK: 'Route_link'
 };
@@ -138,20 +138,34 @@ function getHeadersForSource_(source) {
 function getColumnIndices_(sheet, expectedHeaders) {
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const indices = {};
-  
+
   for (const key in expectedHeaders) {
-    const headerName = expectedHeaders[key];
-    for (let i = 0; i < headers.length; i++) {
-      if (String(headers[i]).trim().toLowerCase() === headerName.toLowerCase()) {
-        indices[key] = i;
-        break;
+    const headerValue = expectedHeaders[key];
+    const headerCandidates = Array.isArray(headerValue) ? headerValue : [headerValue];
+
+    for (let candidateIndex = 0; candidateIndex < headerCandidates.length; candidateIndex++) {
+      const headerName = String(headerCandidates[candidateIndex] || '').trim();
+      if (!headerName) continue;
+
+      for (let i = 0; i < headers.length; i++) {
+        if (String(headers[i]).trim().toLowerCase() === headerName.toLowerCase()) {
+          indices[key] = i;
+          break;
+        }
       }
+
+      if (indices[key] !== undefined) break;
     }
+
     if (indices[key] === undefined) {
-      Logger.log('⚠️ Заголовок не найден: ' + headerName);
+      const fallbackLabel = headerCandidates
+        .map(item => String(item || '').trim())
+        .filter(Boolean)
+        .join(' | ');
+      Logger.log('Header not found: ' + fallbackLabel);
     }
   }
-  
+
   return indices;
 }
 
@@ -2226,11 +2240,15 @@ function completeLaboratoryStudy_(p) {
   if (String(ctx.source || '') !== 'Laboratory') {
     return { success: false, error: 'Study completion is available only for Laboratory source' };
   }
-  if (!isLaboratoryInspector_(ctx.requestUser)) {
+  if (!isLaboratoryInspector_(ctx.requestUser) && !isLaboratoryAdmin_(ctx.requestUser)) {
     return { success: false, error: 'Forbidden for current user' };
   }
   if (!hasLaboratoryGeneratedValues_(ctx.rowData, ctx.indices)) {
     return { success: false, error: 'Исследование еще не сгенерировано для этой точки' };
+  }
+
+  if (!hasOpenEntryState_(ctx.rowData, ctx.indices)) {
+    return { success: false, error: 'Study is not started for this point' };
   }
 
   const status = String(p.studyStatus || p.status || '').trim().toLowerCase();
@@ -2242,6 +2260,7 @@ function completeLaboratoryStudy_(p) {
 
   const completedMarker = isCompleted ? '✅' : '❌';
   const comment = String(p.studyInspectorComment || p.comment || '').trim();
+  const finishedAt = new Date();
   const routeLink = buildLaboratoryRouteLink_(
     ctx.indices.STUDY_COORDINATE_1 !== undefined ? ctx.rowData[ctx.indices.STUDY_COORDINATE_1] : '',
     ctx.indices.STUDY_COORDINATE !== undefined ? ctx.rowData[ctx.indices.STUDY_COORDINATE] : '',
@@ -2257,12 +2276,23 @@ function completeLaboratoryStudy_(p) {
   if (ctx.indices.STUDY_ROUTE_LINK !== undefined) {
     ctx.sheet.getRange(ctx.rowNumber, ctx.indices.STUDY_ROUTE_LINK + 1).setValue(routeLink);
   }
+  if (ctx.indices.EXIT_TIME !== undefined) {
+    ctx.sheet.getRange(ctx.rowNumber, ctx.indices.EXIT_TIME + 1).setValue(finishedAt);
+  }
+  if (ctx.indices.TIME_SPENT !== undefined && ctx.indices.ENTRY_TIME !== undefined && ctx.indices.EXIT_TIME !== undefined) {
+    const entryColLetter = columnIndexToLetter_(ctx.indices.ENTRY_TIME);
+    const exitColLetter = columnIndexToLetter_(ctx.indices.EXIT_TIME);
+    const timeSpentCol = ctx.indices.TIME_SPENT + 1;
+    const formula = `=IF(AND(${exitColLetter}${ctx.rowNumber}<>"";${entryColLetter}${ctx.rowNumber}<>"");${exitColLetter}${ctx.rowNumber}-${entryColLetter}${ctx.rowNumber};"")`;
+    ctx.sheet.getRange(ctx.rowNumber, timeSpentCol).setFormula(formula);
+  }
 
   SpreadsheetApp.flush();
   return {
     success: true,
     updated: true,
     row: ctx.rowNumber,
+    exitTime: finishedAt.toISOString(),
     studyCompleted: completedMarker,
     studyInspectorComment: comment,
     studyRouteLink: routeLink
@@ -2275,6 +2305,9 @@ function completeLaboratoryStudy_(p) {
 function cancelEntry_(p) {
   const ctx = getObjectActionContext_(p);
   if (ctx.error) return { success: false, error: ctx.error };
+  if (ctx.requestUser && ctx.requestUser.isInspector) {
+    return { success: false, error: 'Forbidden for inspector role' };
+  }
 
   if (ctx.indices.ENTRY_TIME !== undefined) {
     ctx.sheet.getRange(ctx.rowNumber, ctx.indices.ENTRY_TIME + 1).clearContent();

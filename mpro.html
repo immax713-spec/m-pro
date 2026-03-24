@@ -2093,6 +2093,10 @@
             width: min(560px, 100%);
         }
 
+        .lab-study-modal__card--wide {
+            width: min(920px, 100%);
+        }
+
         .lab-study-modal__close {
             position: absolute;
             top: 16px;
@@ -2233,6 +2237,101 @@
             flex-direction: column;
         }
 
+        .lab-study-scheme__map {
+            width: 100%;
+            height: min(58dvh, 520px);
+            min-height: 320px;
+            border-radius: 18px;
+            overflow: hidden;
+            border: 1px solid #d4e2ee;
+            background: linear-gradient(180deg, #eef6fc 0%, #dcebf7 100%);
+        }
+
+        .lab-study-scheme__legend {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .lab-study-scheme__legend-item {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            padding: 12px;
+            border-radius: 16px;
+            background: #f5f9fc;
+            border: 1px solid #d8e4ee;
+            min-width: 0;
+        }
+
+        .lab-study-scheme__legend-marker {
+            width: 28px;
+            height: 28px;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 28px;
+            font-size: 13px;
+            font-weight: 800;
+            color: #fff;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+        }
+
+        .lab-study-scheme__legend-marker--start {
+            background: #2f6ef2;
+        }
+
+        .lab-study-scheme__legend-marker--study {
+            background: #ef4444;
+        }
+
+        .lab-study-scheme__legend-marker--finish {
+            background: #0f766e;
+        }
+
+        .lab-study-scheme__legend-text {
+            min-width: 0;
+        }
+
+        .lab-study-scheme__legend-title {
+            font-size: 13px;
+            font-weight: 800;
+            color: #173a58;
+            line-height: 1.35;
+        }
+
+        .lab-study-scheme__legend-coords {
+            margin-top: 4px;
+            font-size: 12px;
+            color: #587086;
+            word-break: break-word;
+        }
+
+        .lab-study-scheme__marker-content {
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            font-weight: 800;
+            color: #fff;
+            text-shadow: 0 1px 2px rgba(15, 23, 42, 0.28);
+        }
+
+        @media (max-width: 720px) {
+            .lab-study-scheme__legend {
+                grid-template-columns: 1fr;
+            }
+
+            .lab-study-scheme__map {
+                height: min(50dvh, 420px);
+                min-height: 260px;
+            }
+        }
+
 
     </style>
 </head>
@@ -2313,6 +2412,17 @@
                 <button class="lab-study-modal__primary" type="button" data-action="submit-lab-study-finish" data-study-status="completed">✅ Завершено</button>
                 <button class="lab-study-modal__secondary" type="button" data-action="submit-lab-study-finish" data-study-status="not_completed">❌ Не завершено</button>
             </div>
+        </div>
+    </div>
+
+    <div class="lab-study-modal hidden" id="labStudySchemeOverlay">
+        <div class="lab-study-modal__backdrop" data-action="close-lab-study-scheme"></div>
+        <div class="lab-study-modal__card lab-study-modal__card--wide" role="dialog" aria-modal="true">
+            <button class="lab-study-modal__close" type="button" data-action="close-lab-study-scheme">✕</button>
+            <div class="lab-study-modal__title">Схема исследования</div>
+            <div class="lab-study-modal__subtitle" id="labStudySchemeSubtitle"></div>
+            <div class="lab-study-scheme__map" id="labStudySchemeMap"></div>
+            <div class="lab-study-scheme__legend" id="labStudySchemeLegend"></div>
         </div>
     </div>
 
@@ -2667,7 +2777,7 @@
             },
             
             // Адрес Google Apps Script
-            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxYoxVi5I4Z3P-ymMjqgzKP4B2Ki-O7OVFWXsTs5GgKaVWC1hB__V_DtC9Zdgecr379/exec',
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwuFRmzkP6ZXVVW7HweB_qkm5oSEftYm8zZ40DXJR2dbQRZUFjTgaBjq6FJgRd6cMcB/exec',
             
             // Конфигурация Яндекс.Диска
             YANDEX: {
@@ -2855,6 +2965,7 @@
                 laboratoryStudy: {
                     adminObjectId: null,
                     finishObjectId: null,
+                    schemeObjectId: null,
                     mapPickField: '',
                     adminDraft: null
                 },
@@ -3179,6 +3290,7 @@
                 AppState.runtime.laboratoryStudy = {
                     adminObjectId: null,
                     finishObjectId: null,
+                    schemeObjectId: null,
                     mapPickField: '',
                     adminDraft: null
                 };
@@ -3464,6 +3576,10 @@
             return isInspectorRole_() && getCurrentUserDivisionNorms_().includes('Лаборатория');
         }
 
+        function isLaboratoryStudyOperatorClient_() {
+            return isLaboratoryAdminClient_() || isLaboratoryInspectorClient_();
+        }
+
         function isActionAllowedForCurrentRole_(action, channel = 'click') {
             if (!action) return false;
             if (!isInspectorRole_()) return true;
@@ -3560,6 +3676,12 @@
                         break;
                     case 'close-lab-study-finish':
                         closeLaboratoryStudyFinishModal_();
+                        break;
+                    case 'open-lab-study-scheme':
+                        if (actionNode.dataset.objectId) openLaboratoryStudySchemeModal_(actionNode.dataset.objectId);
+                        break;
+                    case 'close-lab-study-scheme':
+                        closeLaboratoryStudySchemeModal_();
                         break;
                     case 'submit-lab-study-finish':
                         submitLaboratoryStudyFinish_(actionNode.dataset.studyStatus || '');
@@ -4109,6 +4231,7 @@
                     setMapInlineSearchOpen_(false);
                     closeLaboratoryStudyAdminModal_();
                     closeLaboratoryStudyFinishModal_();
+                    closeLaboratoryStudySchemeModal_();
                 }
                 if (event.key === 'Enter' && event.target && event.target.id === 'mapInlineSearchInput') {
                     event.preventDefault();
@@ -4427,6 +4550,7 @@
             closeObjectDetails();
             closeLaboratoryStudyAdminModal_({ keepDraft: false });
             closeLaboratoryStudyFinishModal_();
+            closeLaboratoryStudySchemeModal_();
 
             DataState.clearObjectsData();
             DataState.clearInspectorsList();
@@ -7986,19 +8110,83 @@
             const marker = getLaboratoryStudyCompletedMarker_(obj);
             if (marker === '✅') return '✅ Завершено';
             if (marker === '❌') return '❌ Не завершено';
+            if (obj?.entryTime && !obj?.exitTime) return 'В работе';
             if (hasLaboratoryStudyGenerated_(obj)) return 'Не приступали';
             return 'Не создано';
         }
 
-        function getLaboratoryStudyRouteLinkUrl_(obj) {
-            return Utils.sanitizeUrl(String(obj?.studyRouteLink || '').trim());
+        function getLaboratoryStudyCenterCoords_(obj) {
+            const studyCoords = parseCoordsPair_(obj?.studyCoordinate);
+            if (studyCoords) return studyCoords;
+
+            const lat = Number(obj?.latitude);
+            const lon = Number(obj?.longitude);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+            return { lat, lon };
+        }
+
+        function getLaboratoryStudySchemePayload_(obj) {
+            if (!isLaboratoryObject_(obj)) return null;
+
+            const start = parseCoordsPair_(obj?.studyCoordinate1);
+            const study = getLaboratoryStudyCenterCoords_(obj);
+            const finish = parseCoordsPair_(obj?.studyCoordinate2);
+            if (!start || !study || !finish) return null;
+
+            return {
+                points: [
+                    {
+                        key: 'start',
+                        title: 'Начало объекта',
+                        markerLabel: '1',
+                        coords: start,
+                        coordsText: formatCoordsFixed6_(start.lat, start.lon)
+                    },
+                    {
+                        key: 'study',
+                        title: 'Точка исследования',
+                        markerLabel: '',
+                        coords: study,
+                        coordsText: formatCoordsFixed6_(study.lat, study.lon)
+                    },
+                    {
+                        key: 'finish',
+                        title: 'Конец объекта',
+                        markerLabel: '2',
+                        coords: finish,
+                        coordsText: formatCoordsFixed6_(finish.lat, finish.lon)
+                    }
+                ]
+            };
+        }
+
+        function canOpenLaboratoryStudyScheme_(obj) {
+            return !!getLaboratoryStudySchemePayload_(obj);
         }
 
         function canOpenLaboratoryStudyFinish_(obj) {
-            return isLaboratoryInspectorClient_() &&
+            return isLaboratoryStudyOperatorClient_() &&
                 isLaboratoryObject_(obj) &&
+                !!obj?.entryTime &&
+                !obj?.exitTime &&
                 hasLaboratoryStudyGenerated_(obj) &&
                 !isLaboratoryStudyResolved_(obj);
+        }
+
+        function canStartLaboratoryStudy_(obj) {
+            return isLaboratoryStudyOperatorClient_() &&
+                isLaboratoryObject_(obj) &&
+                !obj?.entryTime &&
+                !obj?.exitTime &&
+                hasLaboratoryStudyGenerated_(obj) &&
+                !isLaboratoryStudyResolved_(obj);
+        }
+
+        function canCancelLaboratoryStudy_(obj) {
+            return isLaboratoryAdminClient_() &&
+                isLaboratoryObject_(obj) &&
+                !!obj?.entryTime &&
+                !obj?.exitTime;
         }
 
         function formatLaboratoryStudyMetric_(value) {
@@ -8365,8 +8553,8 @@
         }
 
         function openLaboratoryStudyFinishModal_(objectId) {
-            if (!isLaboratoryInspectorClient_()) {
-                showNotification('❌ Доступно только для инспектора Лаборатории', 'error');
+            if (!isLaboratoryStudyOperatorClient_()) {
+                showNotification('❌ Доступно только для Лаборатории', 'error');
                 return;
             }
 
@@ -8383,6 +8571,10 @@
                 showNotification('ℹ️ Исследование для этой точки уже завершено', 'info');
                 return;
             }
+            if (!object.entryTime || object.exitTime) {
+                showNotification('ℹ️ Сначала начни исследование', 'info');
+                return;
+            }
 
             closeObjectDetails();
             RuntimeState.patchLaboratoryStudy({ finishObjectId: object.id });
@@ -8397,9 +8589,174 @@
             RuntimeState.patchLaboratoryStudy({ finishObjectId: null });
         }
 
+        let laboratoryStudySchemeMap_ = null;
+        let laboratoryStudySchemeLayer_ = null;
+        let laboratoryStudySchemeContentLayout_ = null;
+        let laboratoryStudySchemePinCache_ = {};
+
+        function getLaboratoryStudySchemePinHref_(color) {
+            const key = String(color || '').trim().toLowerCase() || '#2f6ef2';
+            if (laboratoryStudySchemePinCache_[key]) return laboratoryStudySchemePinCache_[key];
+
+            const svg = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="34" height="46" viewBox="0 0 34 46" fill="none">
+                    <path d="M17 1C8.163 1 1 8.163 1 17c0 11.782 12.537 25.251 15.001 27.777a1.4 1.4 0 0 0 1.998 0C20.463 42.251 33 28.782 33 17 33 8.163 25.837 1 17 1Z" fill="${key}" stroke="white" stroke-width="2"/>
+                    <circle cx="17" cy="17" r="10" fill="white" fill-opacity="0.16"/>
+                </svg>
+            `.trim();
+            const href = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+            laboratoryStudySchemePinCache_[key] = href;
+            return href;
+        }
+
+        function getLaboratoryStudySchemeContentLayout_() {
+            if (laboratoryStudySchemeContentLayout_) return laboratoryStudySchemeContentLayout_;
+            laboratoryStudySchemeContentLayout_ = ymaps.templateLayoutFactory.createClass(
+                '<div class="lab-study-scheme__marker-content">$[properties.iconContent]</div>'
+            );
+            return laboratoryStudySchemeContentLayout_;
+        }
+
+        function ensureLaboratoryStudySchemeMap_() {
+            if (laboratoryStudySchemeMap_) return laboratoryStudySchemeMap_;
+            const root = UIState.getDomById('labStudySchemeMap');
+            if (!root || typeof ymaps === 'undefined') return null;
+
+            laboratoryStudySchemeMap_ = new ymaps.Map('labStudySchemeMap', {
+                center: [55.751244, 37.618423],
+                zoom: 16,
+                controls: ['zoomControl']
+            }, {
+                suppressMapOpenBlock: true
+            });
+
+            laboratoryStudySchemeLayer_ = new ymaps.GeoObjectCollection();
+            laboratoryStudySchemeMap_.geoObjects.add(laboratoryStudySchemeLayer_);
+            return laboratoryStudySchemeMap_;
+        }
+
+        function syncLaboratoryStudySchemeLegend_(object) {
+            const subtitle = UIState.getDomById('labStudySchemeSubtitle');
+            const legend = UIState.getDomById('labStudySchemeLegend');
+            if (subtitle) subtitle.textContent = buildLaboratoryStudyObjectSubtitle_(object);
+            if (!legend) return;
+
+            const payload = getLaboratoryStudySchemePayload_(object);
+            if (!payload) {
+                legend.innerHTML = `
+                    <div class="lab-study-scheme__legend-item">
+                        <div class="lab-study-scheme__legend-text">
+                            <div class="lab-study-scheme__legend-title">Схема исследования пока не настроена</div>
+                            <div class="lab-study-scheme__legend-coords">Нужны начальная точка, точка исследования и конечная точка.</div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            legend.innerHTML = payload.points.map(point => `
+                <div class="lab-study-scheme__legend-item">
+                    <span class="lab-study-scheme__legend-marker lab-study-scheme__legend-marker--${Utils.escapeAttr(point.key)}">${Utils.escapeHtml(point.markerLabel || '•')}</span>
+                    <div class="lab-study-scheme__legend-text">
+                        <div class="lab-study-scheme__legend-title">${Utils.escapeHtml(point.title)}</div>
+                        <div class="lab-study-scheme__legend-coords">${Utils.escapeHtml(point.coordsText)}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderLaboratoryStudySchemeMap_(object) {
+            const payload = getLaboratoryStudySchemePayload_(object);
+            if (!payload || typeof ymaps === 'undefined') return;
+
+            const map = ensureLaboratoryStudySchemeMap_();
+            if (!map || !laboratoryStudySchemeLayer_) return;
+
+            const lineCoords = payload.points.map(point => [point.coords.lat, point.coords.lon]);
+            laboratoryStudySchemeLayer_.removeAll();
+            laboratoryStudySchemeLayer_.add(new ymaps.Polyline(lineCoords, {}, {
+                strokeColor: '#6f8ba7',
+                strokeWidth: 4,
+                strokeOpacity: 0.55
+            }));
+
+            payload.points.forEach(point => {
+                const color = point.key === 'study'
+                    ? '#ef4444'
+                    : point.key === 'finish'
+                        ? '#0f766e'
+                        : '#2f6ef2';
+                const placemark = new ymaps.Placemark(
+                    [point.coords.lat, point.coords.lon],
+                    {
+                        iconContent: point.markerLabel,
+                        hintContent: point.title,
+                        balloonContent: `${point.title}<br>${point.coordsText}`
+                    },
+                    {
+                        iconLayout: 'default#imageWithContent',
+                        iconImageHref: getLaboratoryStudySchemePinHref_(color),
+                        iconImageSize: [34, 46],
+                        iconImageOffset: [-17, -46],
+                        iconContentOffset: [0, 0],
+                        iconContentLayout: getLaboratoryStudySchemeContentLayout_(),
+                        hideIconOnBalloonOpen: false
+                    }
+                );
+                laboratoryStudySchemeLayer_.add(placemark);
+            });
+
+            const bounds = laboratoryStudySchemeLayer_.getBounds();
+            if (bounds) {
+                map.setBounds(bounds, {
+                    checkZoomRange: true,
+                    zoomMargin: [40, 40, 40, 40]
+                });
+            }
+            map.container.fitToViewport();
+        }
+
+        function openLaboratoryStudySchemeModal_(objectId) {
+            const object = DataState.findObjectById(objectId);
+            if (!object || !isLaboratoryObject_(object)) {
+                showNotification('❌ Схема исследования недоступна для этой точки', 'error');
+                return;
+            }
+            if (!canOpenLaboratoryStudyScheme_(object)) {
+                showNotification('ℹ️ Схема исследования пока не настроена', 'info');
+                return;
+            }
+            if (typeof ymaps === 'undefined' || typeof ymaps.ready !== 'function') {
+                showNotification('❌ Карта еще не готова', 'error');
+                return;
+            }
+
+            closeObjectDetails();
+            RuntimeState.patchLaboratoryStudy({ schemeObjectId: object.id });
+            syncLaboratoryStudySchemeLegend_(object);
+
+            const overlay = UIState.getDomById('labStudySchemeOverlay');
+            if (!overlay) return;
+            overlay.classList.remove('hidden');
+
+            requestAnimationFrame(() => {
+                ymaps.ready(() => {
+                    const currentObject = DataState.findObjectById(RuntimeState.getLaboratoryStudy()?.schemeObjectId);
+                    if (!currentObject) return;
+                    renderLaboratoryStudySchemeMap_(currentObject);
+                });
+            });
+        }
+
+        function closeLaboratoryStudySchemeModal_() {
+            const overlay = UIState.getDomById('labStudySchemeOverlay');
+            if (overlay) overlay.classList.add('hidden');
+            RuntimeState.patchLaboratoryStudy({ schemeObjectId: null });
+        }
+
         async function submitLaboratoryStudyFinish_(studyStatus) {
-            if (!isLaboratoryInspectorClient_()) {
-                showNotification('❌ Доступно только для инспектора Лаборатории', 'error');
+            if (!isLaboratoryStudyOperatorClient_()) {
+                showNotification('❌ Доступно только для Лаборатории', 'error');
                 return;
             }
 
@@ -8438,11 +8795,14 @@
                     return;
                 }
 
+                const finishedAtIso = new Date().toISOString();
                 applyLaboratoryStudyLocalUpdate_(object.id, {
+                    exitTime: response.exitTime || finishedAtIso,
                     studyCompleted: response.studyCompleted || (status === 'completed' ? '✅' : '❌'),
                     studyInspectorComment: response.studyInspectorComment ?? comment,
                     studyRouteLink: response.studyRouteLink || object.studyRouteLink || ''
                 });
+                markCompletedTemporarilyVisible_(object.id);
                 notifyRealtimeSync_('object:completeLaboratoryStudy');
                 scheduleBackgroundReloadAfterObjectAction_();
                 closeLaboratoryStudyFinishModal_();
@@ -8537,8 +8897,21 @@
             const objectIdAttr = Utils.escapeAttr(obj.id);
             const buttons = [];
 
-            if (isLaboratoryAdminClient_() && isLaboratoryObject_(obj)) {
-                buttons.push(`<button class="object-card__button" data-action="open-lab-study-admin" data-object-id="${objectIdAttr}">${renderActionLabel_('🧪', 'Исследование')}</button>`);
+            if (isLaboratoryObject_(obj)) {
+                if (isLaboratoryAdminClient_()) {
+                    buttons.push(`<button class="object-card__button" data-action="open-lab-study-admin" data-object-id="${objectIdAttr}">${renderActionLabel_('🧪', 'Исследование')}</button>`);
+                }
+                if (isNew && canStartLaboratoryStudy_(obj)) {
+                    buttons.push(`<button class="object-card__button" data-action="mark-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('➡️', 'Начать исследование')}</button>`);
+                }
+                if (isActive && canOpenLaboratoryStudyFinish_(obj)) {
+                    buttons.push(`<button class="object-card__button" data-action="open-lab-study-finish" data-object-id="${objectIdAttr}">${renderActionLabel_('🏁', 'Завершить исследование')}</button>`);
+                }
+                if (isActive && canCancelLaboratoryStudy_(obj)) {
+                    buttons.push(`<button class="object-card__button" data-action="cancel-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('↩️', 'Отменить исследование')}</button>`);
+                }
+                if (!buttons.length) return '';
+                return `<div class="object-card__actions" style="margin-top: 12px;">${buttons.join('')}</div>`;
             }
 
             if (isNew) {
@@ -8552,13 +8925,7 @@
                     buttons.push(`<button class="object-card__button" data-action="cancel-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('↩️', 'Отменить вход')}</button>`);
                 }
                 buttons.push(`<button class="object-card__button" data-action="mark-denied" data-object-id="${objectIdAttr}">${renderActionLabel_('🚫', 'Отказано')}</button>`);
-                if (!isLaboratoryObject_(obj)) {
-                    buttons.push(`<button class="object-card__button" data-action="call-laboratory" data-object-id="${objectIdAttr}">${renderActionLabel_('🔬', 'Лаборатория')}</button>`);
-                }
-            }
-
-            if (canOpenLaboratoryStudyFinish_(obj)) {
-                buttons.push(`<button class="object-card__button" data-action="open-lab-study-finish" data-object-id="${objectIdAttr}">${renderActionLabel_('', 'Завершить исследование')}</button>`);
+                buttons.push(`<button class="object-card__button" data-action="call-laboratory" data-object-id="${objectIdAttr}">${renderActionLabel_('🔬', 'Лаборатория')}</button>`);
             }
 
             if (!buttons.length) return '';
@@ -8742,6 +9109,8 @@
         }
 
         function renderObjectCardInfoHtml_(obj, vm) {
+            const entryLabel = isLaboratoryObject_(obj) ? 'Начало исследования' : 'Вход';
+            const exitLabel = isLaboratoryObject_(obj) ? 'Завершение исследования' : 'Выход';
             return `
                 <div class="object-card__row">
                     <span class="object-card__label">Адрес</span>
@@ -8753,13 +9122,13 @@
                 </div>
                 ${obj.entryTime ? `
                 <div class="object-card__row">
-                    <span class="object-card__label">Вход</span>
+                    <span class="object-card__label">${entryLabel}</span>
                     <span class="object-card__value">${vm.entryLabel}</span>
                 </div>
                 ` : ''}
                 ${obj.exitTime && obj.exitTime !== 'нет' ? `
                 <div class="object-card__row">
-                    <span class="object-card__label">Выход</span>
+                    <span class="object-card__label">${exitLabel}</span>
                     <span class="object-card__value">${vm.exitLabel}</span>
                 </div>
                 ` : ''}
@@ -8779,17 +9148,21 @@
             `;
         }
 
-        function renderLaboratoryStudyRouteActionHtml_(obj) {
-            const routeLink = getLaboratoryStudyRouteLinkUrl_(obj);
-            if (!routeLink) return '';
-            return `<a href="${Utils.escapeAttr(routeLink)}" target="_blank" rel="noopener noreferrer" class="object-card__button">${renderActionLabel_('🗺️', 'Открыть точки на карте')}</a>`;
+        function renderLaboratoryStudySchemeActionHtml_(obj) {
+            if (!canOpenLaboratoryStudyScheme_(obj)) return '';
+            return `<button class="object-card__button" data-action="open-lab-study-scheme" data-object-id="${Utils.escapeAttr(obj.id)}">${renderActionLabel_('🗺️', 'Схема исследования')}</button>`;
         }
 
         function renderObjectCardPrimaryActionsHtml_(obj, vm) {
+            if (isLaboratoryObject_(obj)) {
+                return `
+                    ${renderLaboratoryStudySchemeActionHtml_(obj)}
+                `;
+            }
             return `
                 ${vm.googleLink ? `<a href="${Utils.escapeAttr(vm.googleLink)}" target="_blank" rel="noopener noreferrer" class="object-card__button">${renderActionLabel_('📝', 'Чек-лист')}</a>` : ''}
                 ${renderYandexButton(obj, vm.status.isActive)}
-                ${renderLaboratoryStudyRouteActionHtml_(obj)}
+                ${renderLaboratoryStudySchemeActionHtml_(obj)}
                 <button class="object-card__button" data-action="copy-coordinates" data-coordinates="${vm.coordinates}">${renderActionLabel_('🧭', 'Координаты')}</button>
             `;
         }
@@ -8907,7 +9280,11 @@
          * @param {string|number} objectId - ID объекта
          */
         function cancelEntry(objectId) {
-            if (!confirm('Отменить вход? Точка вернётся в статус "Новая".')) return;
+            const object = DataState.findObjectById(objectId);
+            const confirmMessage = isLaboratoryObject_(object)
+                ? 'Отменить исследование? Точка вернётся в статус "Не приступали".'
+                : 'Отменить вход? Точка вернётся в статус "Новая".';
+            if (!confirm(confirmMessage)) return;
             executeObjectAction_(objectId, 'cancelEntry', {});
         }
         
@@ -9368,8 +9745,8 @@
                         notifyRealtimeSync_(`object:${action}`);
                         showNotification('✅ ' + (response.message || 'Действие выполнено'), 'success');
                         // Для большинства действий держим UI быстрым за счет оптимистичного обновления.
-                        // Тяжелую синхронизацию всей модели делаем только для entry/exit и в фоне.
-                        if (action === 'entry' || action === 'exit') {
+                        // Тяжелую синхронизацию всей модели делаем для критичных переходов статуса.
+                        if (action === 'entry' || action === 'exit' || action === 'cancelEntry') {
                             if (isInspectorRole_()) {
                                 syncWorkDayStateFromServer_({ force: true, silent: true }).catch(() => null);
                             }
@@ -9417,6 +9794,8 @@
                     break;
                 case 'cancelEntry':
                     object.entryTime = null;
+                    object.exitTime = null;
+                    object.timeSpent = '';
                     break;
                 case 'denyAccess':
                     object.exitTime = 'нет';
