@@ -8111,6 +8111,7 @@
             if (marker === '✅') return '✅ Завершено';
             if (marker === '❌') return '❌ Не завершено';
             if (obj?.entryTime && !obj?.exitTime) return 'В работе';
+            if (obj?.exitTime && obj?.exitTime !== 'нет') return '✅ Завершено';
             if (hasLaboratoryStudyGenerated_(obj)) return 'Не приступали';
             return 'Не создано';
         }
@@ -8178,8 +8179,15 @@
                 isLaboratoryObject_(obj) &&
                 !obj?.entryTime &&
                 !obj?.exitTime &&
-                hasLaboratoryStudyGenerated_(obj) &&
                 !isLaboratoryStudyResolved_(obj);
+        }
+
+        function canFinishLaboratoryStudyAsExit_(obj) {
+            return isLaboratoryStudyOperatorClient_() &&
+                isLaboratoryObject_(obj) &&
+                !!obj?.entryTime &&
+                !obj?.exitTime &&
+                !hasLaboratoryStudyGenerated_(obj);
         }
 
         function canCancelLaboratoryStudy_(obj) {
@@ -8906,6 +8914,8 @@
                 }
                 if (isActive && canOpenLaboratoryStudyFinish_(obj)) {
                     buttons.push(`<button class="object-card__button" data-action="open-lab-study-finish" data-object-id="${objectIdAttr}">${renderActionLabel_('🏁', 'Завершить исследование')}</button>`);
+                } else if (isActive && canFinishLaboratoryStudyAsExit_(obj)) {
+                    buttons.push(`<button class="object-card__button" data-action="mark-exit" data-object-id="${objectIdAttr}">${renderActionLabel_('🏁', 'Завершить исследование')}</button>`);
                 }
                 if (isActive && canCancelLaboratoryStudy_(obj)) {
                     buttons.push(`<button class="object-card__button" data-action="cancel-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('↩️', 'Отменить исследование')}</button>`);
