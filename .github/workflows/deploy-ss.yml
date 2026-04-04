@@ -1,0 +1,87 @@
+name: Deploy mpro7.ru /ss
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - mpro_ss.html
+      - .github/workflows/deploy-ss.yml
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-mpro7-ss
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
+
+      - name: Normalize deploy vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          host='${{ secrets.SERVER_HOST }}'
+          user='${{ secrets.SERVER_USER }}'
+          port='${{ secrets.SERVER_PORT }}'
+          path='${{ secrets.SERVER_PATH }}'
+
+          host="$(echo "$host" | tr -d '\r' | xargs)"
+          user="$(echo "$user" | tr -d '\r' | xargs)"
+          port="$(echo "$port" | tr -d '\r' | xargs)"
+          path="$(echo "$path" | tr -d '\r' | xargs)"
+
+          if [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]]; then
+            echo "SERVER_PORT is invalid, fallback to 22"
+            port="22"
+          fi
+
+          if [[ -z "$path" ]]; then
+            path="/var/www/mpro7.ru"
+          elif [[ "$path" != /* ]]; then
+            path="/var/www/$path"
+          fi
+
+          echo "DEPLOY_HOST=$host" >> "$GITHUB_ENV"
+          echo "DEPLOY_USER=$user" >> "$GITHUB_ENV"
+          echo "DEPLOY_PORT=$port" >> "$GITHUB_ENV"
+          echo "DEPLOY_PATH=$path" >> "$GITHUB_ENV"
+
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Ensure target directory exists
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
+            set -e
+            mkdir -p "'"$DEPLOY_PATH"'/ss"
+          '
+
+      - name: Upload new file
+        run: |
+          scp -P "$DEPLOY_PORT" \
+            ./mpro_ss.html \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/ss/index.html.new"
+
+      - name: Atomic replace + backup
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
+            set -e
+            mkdir -p "'"$DEPLOY_PATH"'/ss"
+            if [ -f "'"$DEPLOY_PATH"'/ss/index.html" ]; then
+              cp "'"$DEPLOY_PATH"'/ss/index.html" "'"$DEPLOY_PATH"'/ss/index.html.bak"
+            fi
+            mv "'"$DEPLOY_PATH"'/ss/index.html.new" "'"$DEPLOY_PATH"'/ss/index.html"
+            chmod 644 "'"$DEPLOY_PATH"'/ss/index.html"
+          '
