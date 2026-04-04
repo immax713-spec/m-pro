@@ -87,6 +87,7 @@
     .registry-columns-title span{font-size:11px;line-height:1.3;color:var(--muted)}
     .registry-columns-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .registry-columns-actions button{min-height:30px;padding:0 10px;font-size:12px}
+    .registry-columns-close-button{min-width:30px;width:30px;height:30px;padding:0!important;font-size:18px!important;line-height:1}
     .registry-columns-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
     .registry-column-option{display:grid;grid-template-columns:16px minmax(0,1fr);align-items:start;width:100%;min-height:48px;padding:10px;border-radius:14px;border:1px solid rgba(215,221,213,.96);background:rgba(242,244,240,.96);color:var(--ink);box-shadow:none;text-align:left;font-size:12px;font-weight:600;gap:8px}
     .registry-column-option:hover{transform:none;box-shadow:none;background:rgba(246,248,245,.98);border-color:rgba(202,210,204,.96)}
@@ -6600,7 +6601,10 @@ function toggleRegistryColumnVisibility_(key) {
     }
 
 function resetRegistryVisibleColumns_() {
-      state.registryVisibleColumnKeys = buildDefaultRegistryVisibleColumnKeys_();
+      state.registryVisibleColumnKeys = REGISTRY_COLUMN_DEFS
+        .filter(def => def && def.required)
+        .map(def => String(def.key || '').trim())
+        .filter(Boolean);
       if (syncHiddenRegistryFacetFilters_()) {
         applyObjectFilters_();
         ensureObjectSelection_();
@@ -6634,6 +6638,7 @@ function renderRegistryColumnsPanel_() {
           `</div>` +
           `<div class="registry-columns-actions">` +
             `<button class="ghost" type="button" data-registry-columns-reset="1">Сбросить все</button>` +
+            `<button class="ghost icon-button registry-columns-close-button" type="button" data-registry-columns-close="1" aria-label="Закрыть настройки полей" title="Закрыть настройки полей">×</button>` +
           `</div>` +
         `</div>` +
         `<div class="registry-columns-list">` +
@@ -6666,6 +6671,13 @@ function renderRegistryColumnsPanel_() {
         resetButton.addEventListener('click', evt => {
           evt.stopPropagation();
           resetRegistryVisibleColumns_();
+        });
+      }
+      const closeButton = panel.querySelector('[data-registry-columns-close]');
+      if (closeButton) {
+        closeButton.addEventListener('click', evt => {
+          evt.stopPropagation();
+          closeRegistryColumnsPanel_();
         });
       }
     }
