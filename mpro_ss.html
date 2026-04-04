@@ -720,6 +720,8 @@
     const LEGACY_AUTH_PASSWORD_STORAGE_KEY = 'smart_filter_shell_auth_password';
     const AUTH_REMEMBER_STORAGE_KEY = 'smart_filter_shell_auth_remember';
     const REGISTRY_SESSION_STORAGE_KEY = 'smart_filter_shell_registry_session';
+    const REGISTRY_COLUMNS_LAYOUT_VERSION_STORAGE_KEY = 'smart_filter_shell_registry_columns_layout_version';
+    const REGISTRY_COLUMNS_LAYOUT_VERSION = '1';
     const REGISTRY_PERSONAL_SELECTIONS_STORAGE_KEY = 'smart_filter_shell_registry_personal_selections';
     const LEGACY_REGISTRY_SELECTIONS_STORAGE_KEY = 'smart_filter_shell_registry_selections';
     const REGISTRY_SELECTION_PROGRESS_STORAGE_PREFIX = 'smart_filter_shell_registry_progress:';
@@ -2165,6 +2167,14 @@ function persistRegistrySessionState_() {
 
 function loadRegistrySessionState_() {
       try {
+        let shouldUseStoredRegistryColumns = false;
+        try {
+          const storedLayoutVersion = String(window.localStorage.getItem(REGISTRY_COLUMNS_LAYOUT_VERSION_STORAGE_KEY) || '').trim();
+          shouldUseStoredRegistryColumns = storedLayoutVersion === REGISTRY_COLUMNS_LAYOUT_VERSION;
+          if (!shouldUseStoredRegistryColumns) {
+            window.localStorage.setItem(REGISTRY_COLUMNS_LAYOUT_VERSION_STORAGE_KEY, REGISTRY_COLUMNS_LAYOUT_VERSION);
+          }
+        } catch (e) {}
         const raw = window.localStorage.getItem(REGISTRY_SESSION_STORAGE_KEY);
         const parsed = JSON.parse(raw || '{}');
         return {
@@ -2173,7 +2183,9 @@ function loadRegistrySessionState_() {
           objectQuery: String(parsed && parsed.objectQuery || ''),
           bulkUinText: String(parsed && parsed.bulkUinText || ''),
           registryBulkOpen: !!(parsed && parsed.registryBulkOpen),
-          registryVisibleColumnKeys: normalizeStoredRegistryVisibleColumnKeys_(parsed && parsed.registryVisibleColumnKeys),
+          registryVisibleColumnKeys: shouldUseStoredRegistryColumns
+            ? normalizeStoredRegistryVisibleColumnKeys_(parsed && parsed.registryVisibleColumnKeys)
+            : buildDefaultRegistryVisibleColumnKeys_(),
           currentView: String(parsed && parsed.currentView || '') === 'object' ? 'object' : 'registry',
           selectedRowIndex: Number.isFinite(Number(parsed && parsed.selectedRowIndex)) && Number(parsed && parsed.selectedRowIndex) >= 0
             ? Math.floor(Number(parsed.selectedRowIndex))
@@ -6621,7 +6633,7 @@ function renderRegistryColumnsPanel_() {
             `<span>Оставьте только нужные поля. Дополнительные позиции из сводной можно включать по мере необходимости, выбор сохраняется на этом устройстве.</span>` +
           `</div>` +
           `<div class="registry-columns-actions">` +
-            `<button class="ghost" type="button" data-registry-columns-reset="1">Стандартный вид</button>` +
+            `<button class="ghost" type="button" data-registry-columns-reset="1">Сбросить все</button>` +
           `</div>` +
         `</div>` +
         `<div class="registry-columns-list">` +
