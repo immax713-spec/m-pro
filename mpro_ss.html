@@ -2885,12 +2885,25 @@ function toggleSavedSelectionsPanel_() {
       renderSavedSelectionsPanel_();
     }
 
-function toggleSavedSelectionGroup_(groupKey) {
+function toggleSavedSelectionGroup_(groupKey, triggerNode) {
       const key = normalizeRegistrySelectionScope_(groupKey);
       const groups = normalizeSavedSelectionGroupsOpen_(state.savedSelectionGroupsOpen);
       groups[key] = !groups[key];
       state.savedSelectionGroupsOpen = groups;
       persistRegistrySessionState_();
+      const nextOpen = !!groups[key];
+      const toggleNode = triggerNode && typeof triggerNode.setAttribute === 'function'
+        ? triggerNode
+        : null;
+      const groupNode = toggleNode && typeof toggleNode.closest === 'function'
+        ? toggleNode.closest('.saved-selection-group')
+        : null;
+      const stackNode = groupNode ? groupNode.querySelector('.saved-selection-stack') : null;
+      if (toggleNode) toggleNode.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+      if (stackNode) {
+        stackNode.classList.toggle('hidden', !nextOpen);
+        return;
+      }
       renderSavedSelectionsPanel_();
     }
 
@@ -6458,7 +6471,10 @@ function renderSavedSelectionsPanel_() {
       }
 
       list.querySelectorAll('[data-toggle-selection-group]').forEach(button => {
-        button.addEventListener('click', () => toggleSavedSelectionGroup_(String(button.getAttribute('data-toggle-selection-group') || '')));
+        button.addEventListener('click', () => toggleSavedSelectionGroup_(
+          String(button.getAttribute('data-toggle-selection-group') || ''),
+          button
+        ));
       });
       list.querySelectorAll('[data-toggle-selection-expand]').forEach(input => {
         input.addEventListener('change', () => {
