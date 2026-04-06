@@ -767,6 +767,10 @@
       date: 'ksg_12_3',
       number: 'ksg_12_4'
     });
+    const SECTION_FIELD_LABEL_OVERRIDES = Object.freeze({
+      ksg_12_3: 'Дата РВ',
+      ksg_12_4: '№РВ'
+    });
     const PASSPORT_ITEM_DEFS = [
       { type: 'field', title: 'ГРБС', spec: PINNED_FIELDS[1] },
       { type: 'field', title: 'Заказчик', spec: PINNED_FIELDS[2] },
@@ -935,8 +939,6 @@
         sourceKey: '__ksg__',
         excludePinned: false,
         defaultOption: 'empty',
-        inDevelopment: true,
-        inDevelopmentMessage: 'Раздел КСГ в разработке.',
         options: [
           { key: 'empty', dropdownLabel: 'Незаполненные', title: 'КСГ · Незаполненные поля', subtitle: 'Незаполненные поля блока КСГ', mode: 'empty' },
           { key: 'all', dropdownLabel: 'Все поля', title: 'КСГ', subtitle: 'Все поля блока КСГ', mode: 'all' }
@@ -7445,15 +7447,27 @@ function renderStatusDoneRvValueHtml_(rowIndex, item) {
       return renderCopyableTextHtml_(text, 'pinned-value', escapeHtml_(text), { title: 'Нажмите, чтобы скопировать РВ' });
     }
 
-function buildStatusDoneRvText_(rowIndex, item) {
+    function buildStatusDoneRvText_(rowIndex, item) {
       const dateColumn = findColumnByFieldId_(item && item.dateFieldId);
       const numberColumn = findColumnByFieldId_(item && item.numberFieldId);
       const dateValue = dateColumn ? String(getCellValue_(rowIndex, dateColumn.index) || '').trim() : '';
       const numberValue = numberColumn ? String(getCellValue_(rowIndex, numberColumn.index) || '').trim() : '';
+      return buildRvDisplayText_(dateValue, numberValue);
+    }
+
+    function buildRvDisplayText_(dateValue, numberValue) {
       if (!dateValue && !numberValue) return '';
       if (dateValue && numberValue) return `${dateValue} (№ ${numberValue})`;
       if (dateValue) return `${dateValue} (№ не заполнен)`;
       return `№ ${numberValue}`;
+    }
+
+    function getSectionFieldDisplayLabel_(field) {
+      const fieldId = normalizeText_(field && field.fieldId || '');
+      if (fieldId && Object.prototype.hasOwnProperty.call(SECTION_FIELD_LABEL_OVERRIDES, fieldId)) {
+        return SECTION_FIELD_LABEL_OVERRIDES[fieldId];
+      }
+      return String(field && field.label || '').trim();
     }
 
 function readCurrentValueBySpec_(rowIndex, spec) {
@@ -7793,17 +7807,18 @@ function renderSectionRowHtml_(items, rowIndex, editing) {
       );
     }
 
-function renderSectionFieldItemHtml_(field, rowIndex, editing) {
+    function renderSectionFieldItemHtml_(field, rowIndex, editing) {
       const value = getCellValue_(rowIndex, field.index);
       const changed = hasEditedValue_(rowIndex, field.index) ? ' changed' : '';
-      const multiline = shouldUseTextareaForField_(field && field.label, value);
+      const fieldLabel = getSectionFieldDisplayLabel_(field) || `Поле ${field.index + 1}`;
+      const multiline = shouldUseTextareaForField_(fieldLabel, value);
       const linkKind = getFieldLinkKind_(field);
       const inputId = `field_${rowIndex}_${field.index}`;
-      const stacked = linkKind ? false : shouldUseStackedFieldDisplay_(field.label, value);
+      const stacked = linkKind ? false : shouldUseStackedFieldDisplay_(fieldLabel, value);
       const inlineLink = !editing && linkKind && isHttpUrl_(value);
       return (
         `<article class="section-item${stacked ? ' stacked' : ''}${inlineLink ? ' link-inline' : ''}${changed}${editing ? ' is-editing' : ''}">` +
-          `<div class="section-item-label">${escapeHtml_(field.label || `Поле ${field.index + 1}`)}</div>` +
+          `<div class="section-item-label">${escapeHtml_(fieldLabel)}</div>` +
           (
             editing
               ? renderSectionFieldEditorHtml_(field, value, multiline, inputId, linkKind, rowIndex, field.index)
@@ -7848,11 +7863,39 @@ function renderSectionLinkedFieldItemHtml_(item, rowIndex) {
       );
     }
 
-function renderSectionItemHtml_(item, rowIndex, editing) {
+    function renderSectionItemHtml_(item, rowIndex, editing) {
       if (!item) return '';
       if (item.type === 'group') return renderSectionGroupHtml_(item, rowIndex, editing);
+      if (item.type === 'rv-field') return renderSectionRvFieldItemHtml_(item, rowIndex);
       if (item.type === 'linked-field') return renderSectionLinkedFieldItemHtml_(item, rowIndex);
       return renderSectionFieldItemHtml_(item.field, rowIndex, editing);
+    }
+
+    function renderSectionRvFieldItemHtml_(item, rowIndex) {
+      const dateField = item && item.dateField;
+      const numberField = item && item.numberField;
+      const changed = (
+        (dateField && hasEditedValue_(rowIndex, dateField.index)) ||
+        (numberField && hasEditedValue_(rowIndex, numberField.index))
+      ) ? ' changed' : '';
+      const text = buildRvDisplayText_(
+        dateField ? String(getCellValue_(rowIndex, dateField.index) || '').trim() : '',
+        numberField ? String(getCellValue_(rowIndex, numberField.index) || '').trim() : ''
+      );
+      return (
+        `<article class="section-item${changed}">` +
+          `<div class="section-item-label">${escapeHtml_(String(item && item.title || 'РВ'))}</div>` +
+          `<div class="section-item-main">` +
+            `<div class="section-item-display">` +
+              (
+                text
+                  ? renderCopyableTextHtml_(text, 'field-display-text', escapeHtml_(text), { title: 'Нажмите, чтобы скопировать РВ' })
+                  : `<div class="field-display-placeholder">Пока пусто</div>`
+              ) +
+            `</div>` +
+          `</div>` +
+        `</article>`
+      );
     }
 
 function renderSectionGroupHtml_(group, rowIndex, editing) {
@@ -7897,10 +7940,11 @@ function shouldUseStackedGroupSubitemDisplay_(item, value) {
       return shouldUseStackedFieldDisplay_(item && item.shortLabel || '', value);
     }
 
-function renderSectionFieldEditorHtml_(field, value, multiline, inputId, linkKind, rowIndex, colIndex) {
+    function renderSectionFieldEditorHtml_(field, value, multiline, inputId, linkKind, rowIndex, colIndex) {
       const editKey = fieldEditKey_(rowIndex, colIndex);
       const useTextarea = multiline && !linkKind;
-      const textAssistAttrs = buildTextAssistAttrs_(shouldEnableTextAssist_(field && field.label, {
+      const fieldLabel = getSectionFieldDisplayLabel_(field);
+      const textAssistAttrs = buildTextAssistAttrs_(shouldEnableTextAssist_(fieldLabel || (field && field.label), {
         multiline: useTextarea,
         linkKind
       }), useTextarea);
@@ -8004,7 +8048,13 @@ function buildSectionRenderItems_(fields, section, editing) {
         const compoundItem = compoundMap.get(field.index);
         if (compoundItem) {
           out.push(compoundItem);
-          consumedIndexes.add(field.index);
+          const compoundIndexes = Array.isArray(compoundItem.fieldIndexes)
+            ? compoundItem.fieldIndexes
+            : [field.index];
+          compoundIndexes.forEach(index => {
+            const normalizedIndex = Number(index);
+            if (Number.isFinite(normalizedIndex)) consumedIndexes.add(normalizedIndex);
+          });
           if (compoundItem.linkField) consumedIndexes.add(compoundItem.linkField.index);
           return;
         }
@@ -8057,19 +8107,40 @@ function sortSectionGroupItems_(items) {
       });
     }
 
-function buildSpecialSectionCompoundMap_(fields, section, editing) {
+    function buildSpecialSectionCompoundMap_(fields, section, editing) {
       const map = new Map();
-      if (editing || !section || String(section.sourceKey || '').trim() !== '__objects__') return map;
+      if (editing || !section) return map;
       const list = Array.isArray(fields) ? fields : [];
-      const anoField = list.find(field => normalizeText_(field && field.fieldId || '') === 'sm_1_1') || null;
-      const checklistField = list.find(field => normalizeText_(field && field.fieldId || '') === 'sm_1_2') || null;
-      if (anoField && checklistField) {
-        map.set(anoField.index, {
-          type: 'linked-field',
-          field: anoField,
-          linkField: checklistField,
-          linkKind: 'checklist'
-        });
+      const sourceKey = String(section.sourceKey || '').trim();
+      if (sourceKey === '__objects__') {
+        const anoField = list.find(field => normalizeText_(field && field.fieldId || '') === 'sm_1_1') || null;
+        const checklistField = list.find(field => normalizeText_(field && field.fieldId || '') === 'sm_1_2') || null;
+        if (anoField && checklistField) {
+          map.set(anoField.index, {
+            type: 'linked-field',
+            field: anoField,
+            linkField: checklistField,
+            linkKind: 'checklist'
+          });
+        }
+      }
+      if (sourceKey === '__ksg__') {
+        const dateField = list.find(field => normalizeText_(field && field.fieldId || '') === 'ksg_12_3') || null;
+        const numberField = list.find(field => normalizeText_(field && field.fieldId || '') === 'ksg_12_4') || null;
+        const fieldIndexes = [dateField && dateField.index, numberField && numberField.index]
+          .map(value => Number(value))
+          .filter(value => Number.isFinite(value));
+        if (fieldIndexes.length) {
+          const rvItem = {
+            type: 'rv-field',
+            title: 'РВ',
+            field: dateField || numberField,
+            dateField,
+            numberField,
+            fieldIndexes
+          };
+          fieldIndexes.forEach(index => map.set(index, rvItem));
+        }
       }
       return map;
     }
