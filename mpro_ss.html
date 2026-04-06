@@ -691,7 +691,7 @@
     const DATE_RANGE_FACET_BOUNDS_CACHE = new Map();
     const DATE_RANGE_FACET_BOUNDS_CACHE_LIMIT = 128;
     const REGISTRY_FACET_VALUES_CACHE_LIMIT = 96;
-    const API_BASE_URL = 'https://script.google.com/macros/s/AKfycbxdLRd-KJespWwS2GA3UsD-uuG6llDbpP2q0kA85E1_mpZuEO3nZ7zH6n1cBBCoBj-D/exec';
+    const API_BASE_URL = 'https://script.google.com/macros/s/AKfycbzwM_oEhAxd2wRpzlREj76Ni6db87LlRA63_mZ_Q2vd17z7b5CoabKJB2h3dRxlRQigqQ/exec';
     const DEFAULT_SPREADSHEET_ID = '1-cghMU6Ftyzq6Y-vhRiLeTaf7ALZEZl7xB4xps8t3oQ';
     const DEFAULT_SHEET_NAME = 'Сводная';
     const DEFAULT_HEADER_ROW = 3;
@@ -714,10 +714,7 @@
       'saveSmartFilterShellEdits'
     ]);
     const AUTH_FREE_SERVER_METHODS = new Set(['authNonce', 'auth']);
-    const POST_MESSAGE_SERVER_METHODS = new Set([
-      // Keep postMessage only for potentially large payloads.
-      'saveSmartFilterShellSharedSelection'
-    ]);
+    const POST_MESSAGE_SERVER_METHODS = new Set();
     const ALLOWED_API_BASES = new Set([normalizeApiBaseUrl_(API_BASE_URL)]);
     const SHELL_SESSION_STORAGE_KEY = 'smart_filter_shell_session';
     const SHELL_SESSION_PERSIST_STORAGE_KEY = 'smart_filter_shell_session_persist';
