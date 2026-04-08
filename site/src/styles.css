@@ -282,7 +282,7 @@
     .saved-selection-meta{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:1.3;color:rgba(237,245,242,.5)}
     .saved-selection.active .saved-selection-name{color:#63d6c4}
     .saved-selection.active .saved-selection-meta{color:rgba(237,245,242,.72)}
-    .saved-selection-actions{position:absolute;right:0;top:5px;z-index:1;display:flex;align-items:center;gap:10px;padding-top:0}
+    .saved-selection-actions{position:absolute;right:0;top:5px;z-index:1;display:flex;align-items:center;gap:5px;padding-top:0}
     .saved-selection-actions:empty{display:none}
     .saved-selection-action-button{position:relative;display:inline-grid;place-items:center;min-width:26px!important;min-height:26px!important;width:26px;height:26px;padding:0!important;border:none;background:transparent!important;box-shadow:none!important;flex:0 0 26px;font-size:0;line-height:0;color:rgba(237,245,242,.84);overflow:hidden}
     .saved-selection-action-button:hover{transform:none;box-shadow:none!important;background:transparent!important;color:#fff}
@@ -626,7 +626,7 @@
     #sidebarProjectsPanel .saved-selection.active .saved-selection-main{padding-right:84px}
     #sidebarProjectsPanel .saved-selection.active .saved-selection-main.is-loading{padding-right:98px}
     #sidebarProjectsPanel .saved-selection.active .saved-selection-main.is-loading::before{right:84px}
-    #sidebarProjectsPanel .saved-selection-actions{top:4px;gap:10px}
+    #sidebarProjectsPanel .saved-selection-actions{top:4px;gap:5px}
     #sidebarProjectsPanel .saved-selection-action-button{min-width:28px!important;min-height:28px!important;width:28px;height:28px;flex:0 0 28px}
     #sidebarProjectsPanel .saved-selection-action-icon-svg{width:18px;height:18px}
     #sidebarProjectsPanel .saved-selection-panel-controls{display:flex;align-items:center;justify-content:space-between;gap:10px}
