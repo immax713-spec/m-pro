@@ -1,0 +1,440 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>mpro ss</title>
+  <link rel="stylesheet" href="./src/styles.css?v=20260408h">
+</head>
+<body>
+  <div id="authOverlay" class="auth-overlay hidden">
+    <section class="surface auth-card" aria-modal="true" role="dialog" aria-label="Авторизация">
+      <div class="auth-brand">m-pro</div>
+      <div class="auth-form">
+        <input id="authPassword" class="auth-input" type="password" placeholder="Пароль" autocomplete="current-password" maxlength="100">
+        <button id="btnAuthLogin" class="primary auth-submit" type="button">
+          <span class="auth-submit-text">Войти</span>
+          <span class="auth-submit-spinner" aria-hidden="true"></span>
+        </button>
+        <div id="authError" class="auth-error hidden"></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="appShell" class="app sidebar-expanded">
+    <aside id="appSidebar" class="sidebar is-expanded">
+      <div class="sidebar-shell">
+        <section class="sidebar-top">
+          <div class="sidebar-brand-row">
+            <button id="btnSidebarToggle" class="ghost sidebar-brand-toggle" type="button" title="Раскрыть меню" aria-label="Раскрыть меню">
+              <svg id="brandLogoSvg" class="brand-logo-svg" viewBox="0 0 709 374" aria-hidden="true" focusable="false">
+                <defs>
+                  <linearGradient id="brandLogoGradient" x1="52" y1="18" x2="650" y2="334" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stop-color="#9AF2E2"></stop>
+                    <stop offset="100%" stop-color="#73D8C8"></stop>
+                  </linearGradient>
+                </defs>
+                <path
+                  id="brandLogoPath"
+                  class="brand-logo-path"
+                  d="M306.398 198.634 L85.3982 346.634 C33.7982 367.034 20.3264 329.8 20.0406 308.632 C51.8615 204.965 69.7022 146.843 101.523 43.175 C106.898 24.1342 127.398 7.6342 161.51 32.9058 L624.412 347.142 C656.898 363.134 694.898 347.142 687.398 313.767 L607.398 43.175 C607.398 43.175 590.898 9.63419 567.398 24.1342 L400.898 129.134"
+                ></path>
+              </svg>
+            </button>
+          </div>
+          <div id="userSessionCard" class="user-session hidden">
+            <div class="user-session-meta">
+              <div id="userSessionName" class="user-session-name"></div>
+              <div id="userSessionRole" class="user-session-role"></div>
+            </div>
+          </div>
+        </section>
+
+        <nav class="sidebar-nav" aria-label="Навигация">
+          <div class="nav-item">
+            <button id="btnNavRegistry" class="nav-button is-active" type="button" title="Реестр" aria-label="Реестр">
+              <span class="nav-button-icon" aria-hidden="true">
+                <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
+                  <path d="M6 4.75h8a1 1 0 0 1 1 1v8.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8.5a1 1 0 0 1 1-1Z"></path>
+                  <path d="M7.75 8h4.5"></path>
+                  <path d="M7.75 10.5h4.5"></path>
+                  <path d="M7.75 13h3"></path>
+                </svg>
+              </span>
+              <span class="nav-button-label">Реестр</span>
+            </button>
+          </div>
+
+          <div class="nav-item nav-item-has-panel">
+            <button id="btnNavCategories" class="nav-button nav-button-expandable" type="button" title="Категории" aria-label="Категории" aria-expanded="false">
+              <span class="nav-button-icon" aria-hidden="true">
+                <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
+                  <path d="M10 4.5 15 7 10 9.5 5 7 10 4.5Z"></path>
+                  <path d="M5 10l5 2.5 5-2.5"></path>
+                  <path d="M5 13l5 2.5 5-2.5"></path>
+                </svg>
+              </span>
+              <span class="nav-button-label">Категории</span>
+              <span class="nav-button-caret" aria-hidden="true"></span>
+            </button>
+            <div id="sidebarCategoriesPanel" class="nav-item-panel hidden">
+              <section id="selectedSectionsPanel" class="sidebar-section sidebar-selected-section hidden">
+                <div class="section-head">
+                  <div>
+                    <h3>Активные категории</h3>
+                  </div>
+                  <button id="btnResetSections" class="ghost sidebar-reset-icon" type="button" title="Сбросить выбранные категории" aria-label="Сбросить выбранные категории">&times;</button>
+                </div>
+                <div id="sectionChips" class="section-chips"></div>
+              </section>
+
+              <section id="presetSection" class="sidebar-group sidebar-inline-group">
+                <div class="quick-preset-grid">
+                  <div class="preset-row">
+                    <button class="quick-preset" type="button" data-quick-preset="manual_all" aria-expanded="false">
+                      <span class="preset-trigger-main">
+                        <span class="preset-trigger-title">Строительный мониторинг</span>
+                      </span>
+                      <span class="preset-trigger-arrow" aria-hidden="true"></span>
+                    </button>
+                    <div class="preset-menu hidden" data-preset-menu="manual_all"></div>
+                  </div>
+                  <div class="preset-row">
+                    <button class="quick-preset" type="button" data-quick-preset="ksg_empty" aria-expanded="false">
+                      <span class="preset-trigger-main">
+                        <span class="preset-trigger-title">КСГ</span>
+                      </span>
+                      <span class="preset-trigger-arrow" aria-hidden="true"></span>
+                    </button>
+                    <div class="preset-menu hidden" data-preset-menu="ksg_empty"></div>
+                  </div>
+                  <div class="preset-row">
+                    <button class="quick-preset" type="button" data-quick-preset="suid_all" aria-expanded="false">
+                      <span class="preset-trigger-main">
+                        <span class="preset-trigger-title">СУИД</span>
+                      </span>
+                      <span class="preset-trigger-arrow" aria-hidden="true"></span>
+                    </button>
+                    <div class="preset-menu hidden" data-preset-menu="suid_all"></div>
+                  </div>
+                  <div class="preset-row">
+                    <button class="quick-preset" type="button" data-quick-preset="lab_all" aria-expanded="false">
+                      <span class="preset-trigger-main">
+                        <span class="preset-trigger-title">Лаборатория</span>
+                      </span>
+                      <span class="preset-trigger-arrow" aria-hidden="true"></span>
+                    </button>
+                    <div class="preset-menu hidden" data-preset-menu="lab_all"></div>
+                  </div>
+                  <div class="preset-row">
+                    <button class="quick-preset" type="button" data-quick-preset="ppr_all" aria-expanded="false">
+                      <span class="preset-trigger-main">
+                        <span class="preset-trigger-title">Проблематика, прогноз и риски</span>
+                      </span>
+                      <span class="preset-trigger-arrow" aria-hidden="true"></span>
+                    </button>
+                    <div class="preset-menu hidden" data-preset-menu="ppr_all"></div>
+                  </div>
+                  <div class="preset-row">
+                    <button class="quick-preset" type="button" data-quick-preset="mgz_all" aria-expanded="false">
+                      <span class="preset-trigger-main">
+                        <span class="preset-trigger-title">МГЗ</span>
+                      </span>
+                      <span class="preset-trigger-arrow" aria-hidden="true"></span>
+                    </button>
+                    <div class="preset-menu hidden" data-preset-menu="mgz_all"></div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="nav-item nav-item-has-panel">
+            <button id="btnNavAnalytics" class="nav-button nav-button-expandable" type="button" title="Аналитика" aria-label="Аналитика" aria-expanded="false">
+              <span class="nav-button-icon" aria-hidden="true">
+                <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
+                  <path d="M5 15.5h10"></path>
+                  <path d="M6 12.75 8.75 10l2.5 1.75 3-4"></path>
+                  <path d="M14.25 5.75H16v1.75"></path>
+                </svg>
+              </span>
+              <span class="nav-button-label">Аналитика</span>
+              <span class="nav-button-caret" aria-hidden="true"></span>
+            </button>
+            <div id="sidebarAnalyticsPanel" class="nav-item-panel hidden">
+              <div class="sidebar-inline-note">Пока в разработке</div>
+            </div>
+          </div>
+
+          <div class="nav-item nav-item-has-panel">
+            <button id="btnNavProjects" class="nav-button nav-button-expandable" type="button" title="Проекты" aria-label="Проекты" aria-expanded="false">
+              <span class="nav-button-icon" aria-hidden="true">
+                <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
+                  <path d="M4.5 7.25h4l1.25 1.5h5.75v5.75a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V7.25Z"></path>
+                  <path d="M4.5 8.25h11"></path>
+                </svg>
+              </span>
+              <span class="nav-button-label">Проекты</span>
+              <span class="nav-button-caret" aria-hidden="true"></span>
+            </button>
+            <div id="sidebarProjectsPanel" class="nav-item-panel hidden">
+              <section id="savedSelectionPanel" class="sidebar-section saved-selection-panel">
+                <div class="saved-selection-panel-head">
+                  <div class="saved-selection-panel-head-row saved-selection-panel-controls">
+                    <div class="saved-selection-panel-head-spacer" aria-hidden="true"></div>
+                    <span class="saved-selection-panel-title">Проекты</span>
+                    <button id="btnOpenSelectionComposer" class="saved-selection-head-button" type="button" title="Новый проект" aria-label="Новый проект">Новый проект</button>
+                    <div id="projectPanelGlobalActions" class="saved-selection-panel-global-actions hidden">
+                      <button id="btnEditActiveSelection" class="saved-selection-panel-action-button" type="button" title="Редактировать проект" aria-label="Редактировать проект">
+                        <svg class="saved-selection-action-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                          <path d="M4.25 15.75l2.85-.72 7.37-7.37-2.13-2.13-7.37 7.37-.72 2.85Z"></path>
+                          <path d="M11.85 5.55l2.13 2.13"></path>
+                        </svg>
+                      </button>
+                      <button id="btnRemoveActiveSelection" class="saved-selection-panel-action-button saved-selection-danger" type="button" title="Удалить проект" aria-label="Удалить проект">
+                        <svg class="saved-selection-action-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                          <path d="M6.5 6.5h7"></path>
+                          <path d="M8 6.5V5.2c0-.44.36-.8.8-.8h2.4c.44 0 .8.36.8.8v1.3"></path>
+                          <path d="M6.9 6.5l.55 8.1c.03.51.46.9.97.9h3.16c.51 0 .94-.39.97-.9l.55-8.1"></path>
+                          <path d="M9.1 8.8v4.5"></path>
+                          <path d="M10.9 8.8v4.5"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <span id="savedSelectionPanelSummary" class="saved-selection-panel-meta"></span>
+                </div>
+                <div id="savedSelectionPanelBody" class="saved-selection-panel-body">
+                  <div id="selectionCompose" class="saved-selection-compose hidden">
+                    <div class="saved-selection-compose-head">
+                      <div id="selectionComposerTitle" class="saved-selection-compose-title">Новый проект</div>
+                      <div id="selectionComposerSummary" class="saved-selection-compose-summary"></div>
+                    </div>
+                    <div class="saved-selection-compose-row">
+                      <input id="selectionNameInput" type="text" placeholder="Название проекта" maxlength="120">
+                      <button id="btnConfirmSelectionComposer" class="primary saved-selection-compose-icon-button saved-selection-submit" type="button" title="Сохранить проект" aria-label="Сохранить проект">
+                        <svg class="saved-selection-compose-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                          <path d="M4 10.5l4 4 8-10"></path>
+                        </svg>
+                      </button>
+                    </div>
+                    <div class="saved-selection-scope saved-selection-scope-list">
+                      <button id="btnSelectionScopePersonal" class="active" type="button">
+                        <span class="saved-selection-scope-mark" aria-hidden="true"></span>
+                        <span class="saved-selection-scope-label">Личная</span>
+                      </button>
+                      <button id="btnSelectionScopeDivision" type="button">
+                        <span class="saved-selection-scope-mark" aria-hidden="true"></span>
+                        <span class="saved-selection-scope-label">Блок</span>
+                      </button>
+                      <button id="btnSelectionScopeShared" type="button">
+                        <span class="saved-selection-scope-mark" aria-hidden="true"></span>
+                        <span class="saved-selection-scope-label">Общая</span>
+                      </button>
+                    </div>
+                    <div class="saved-selection-compose-actions">
+                      <button id="btnAppendSelectionComposer" class="ghost hidden" type="button">Добавить текущие</button>
+                      <div class="saved-selection-compose-icon-row">
+                        <button id="btnSelectionComposerClose" class="ghost saved-selection-compose-icon-button hidden" type="button" title="Закрыть редактор проекта" aria-label="Закрыть редактор проекта">
+                          <svg class="saved-selection-compose-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                            <path d="M5 5l10 10"></path>
+                            <path d="M15 5L5 15"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div id="savedSelectionList" class="saved-selection-list"></div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="nav-item nav-item-has-panel">
+            <button id="btnNavData" class="nav-button nav-button-expandable" type="button" title="Данные" aria-label="Данные" aria-expanded="false">
+              <span class="nav-button-icon" aria-hidden="true">
+                <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
+                  <path d="M10 4.5v7"></path>
+                  <path d="M6.75 8.75 10 12l3.25-3.25"></path>
+                  <path d="M5.25 14.5h9.5"></path>
+                </svg>
+              </span>
+              <span class="nav-button-label">Данные</span>
+              <span class="nav-button-caret" aria-hidden="true"></span>
+            </button>
+            <div id="sidebarDataPanel" class="nav-item-panel hidden">
+              <section class="sidebar-section sidebar-data-panel">
+                <div class="sidebar-data-actions">
+                  <button id="btnExportSummaryCsv" class="ghost sidebar-data-action hidden" type="button" title="Экспортировать актуальную сводную в CSV" aria-label="Экспортировать актуальную сводную в CSV">
+                    <span class="sidebar-data-action-title">Экспорт CSV</span>
+                  </button>
+                  <button id="btnSyncGoogleSheet" class="ghost sidebar-data-action hidden" type="button" title="sync Google" aria-label="sync Google">
+                    <span class="sidebar-data-action-row">
+                      <span class="sidebar-data-action-title">sync Google</span>
+                      <span id="syncGoogleStatus" class="sidebar-data-action-meta hidden"></span>
+                    </span>
+                  </button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </nav>
+
+        <div class="sidebar-footer">
+          <button id="btnLogout" class="ghost sidebar-footer-button user-session-logout hidden" type="button" title="Выйти" aria-label="Выйти">
+            <svg class="sidebar-icon-svg user-session-logout-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+              <path d="M8 5.25H5.75a1.25 1.25 0 0 0-1.25 1.25v7a1.25 1.25 0 0 0 1.25 1.25H8"></path>
+              <path d="M10.5 6.5 14 10l-3.5 3.5"></path>
+              <path d="M13.5 10H8"></path>
+            </svg>
+            <span class="sidebar-footer-button-label user-session-logout-label">Выйти</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <div id="runtimeErrorBanner" class="runtime-error-banner hidden" role="alert"></div>
+      <div id="copyToast" class="copy-toast" aria-live="polite" aria-atomic="true"></div>
+      <section id="workspaceTabs" class="surface workspace-tabs hidden" aria-label="Открытые карточки">
+        <div class="workspace-tabs-bar">
+          <div id="workspaceTabsList" class="workspace-tabs-list"></div>
+          <button id="btnCloseAllWorkspaceTabs" class="ghost workspace-tabs-clear-button" type="button" title="Закрыть все вкладки" aria-label="Закрыть все вкладки">
+            <svg class="workspace-tabs-action-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+              <path d="M6.5 6.5h7"></path>
+              <path d="M8 6.5V5.2c0-.44.36-.8.8-.8h2.4c.44 0 .8.36.8.8v1.3"></path>
+              <path d="M6.9 6.5l.55 8.1c.03.51.46.9.97.9h3.16c.51 0 .94-.39.97-.9l.55-8.1"></path>
+              <path d="M9.1 8.8v4.5"></path>
+              <path d="M10.9 8.8v4.5"></path>
+            </svg>
+          </button>
+        </div>
+      </section>
+      <section id="registryView" class="surface registry-view">
+        <div class="registry-top">
+          <h2>Реестр объектов</h2>
+        </div>
+
+        <div id="registryToolbar" class="registry-toolbar">
+          <div class="registry-search-shell">
+            <input id="registrySearchInput" class="registry-search-input" type="text" placeholder="Поиск по УИН, коду ДС, коду АНО СМГ и названию">
+            <textarea id="registryBulkUinInput" class="registry-bulk-search hidden" placeholder="Вставьте УИНы списком: по одному в строке, через запятую или точку с запятой"></textarea>
+          </div>
+          <div class="registry-toolbar-actions">
+            <button id="btnRegistryFilterToggle" class="ghost icon-button registry-filter-button" type="button" title="Фильтр" aria-label="Фильтр">
+              <span class="registry-filter-icon" aria-hidden="true"></span>
+            </button>
+          </div>
+        </div>
+
+        <div id="registryColumnsPanel" class="registry-columns-panel hidden"></div>
+
+        <div id="registryBulkActions" class="registry-bulk-actions hidden">
+          <button id="btnApplyRegistryBulkUin" class="ghost" type="button">Применить список</button>
+          <button id="btnClearRegistryBulkUin" class="ghost" type="button">Очистить список</button>
+          <div id="registryBulkUinMeta" class="record-sub hidden"></div>
+        </div>
+
+        <div class="registry-meta">
+          <div class="registry-meta-main">
+            <span id="objectCountBadge" class="badge">0 объектов</span>
+            <div class="registry-refresh-group">
+              <span id="registryRefreshNote" class="registry-refresh-note hidden" aria-live="polite"></span>
+              <button id="btnReload" class="ghost registry-refresh-button" type="button" title="Обновить данные" aria-label="Обновить данные">
+                <svg class="registry-refresh-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M4 4v5h5"></path>
+                  <path d="M20 20v-5h-5"></path>
+                  <path d="M20 11a8 8 0 0 0-13.66-5.66L4 9"></path>
+                  <path d="M4 13a8 8 0 0 0 13.66 5.66L20 15"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="registry-meta-actions">
+            <button id="btnAdminRegistryEditMode" class="ghost registry-admin-mode-button hidden" type="button">Режим редактирования</button>
+            <button id="btnAdminRegistryAdd" class="ghost icon-button registry-admin-action-button registry-admin-add-button hidden" type="button" title="Добавить объект" aria-label="Добавить объект">+</button>
+            <button id="btnAdminRegistryDelete" class="ghost icon-button registry-admin-action-button registry-admin-delete-button hidden" type="button" title="Удалить выбранные строки" aria-label="Удалить выбранные строки">&#128465;</button>
+            <div id="registrySharedWorkInlineActions" class="registry-shared-work-inline hidden"></div>
+            <button id="btnToggleRegistryColumns" class="ghost icon-button registry-columns-toggle-button" type="button" title="Настроить вид реестра" aria-label="Настроить вид реестра">
+              <svg class="edit-badge-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                <path d="M4.25 15.75l2.85-.72 7.37-7.37-2.13-2.13-7.37 7.37-.72 2.85Z"></path>
+                <path d="M11.85 5.55l2.13 2.13"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div id="registrySelectionEditBar" class="registry-selection-edit hidden"></div>
+        <div id="adminRegistryEditBar" class="registry-admin-edit hidden"></div>
+
+        <div class="registry-table-wrap">
+          <table class="registry-table">
+            <colgroup id="registryTableColgroup"></colgroup>
+            <thead id="registryTableHead"></thead>
+            <tbody id="registryTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+      <div id="registryFloatingMenu" class="registry-floating-menu" role="listbox" aria-hidden="true"></div>
+      <div id="adminRegistryDialog" class="admin-registry-overlay hidden" aria-hidden="true"></div>
+
+      <section id="objectView" class="record-shell hidden">
+        <section class="surface record-summary">
+          <div class="record-head">
+            <div class="record-head-main">
+              <h2 id="recordTitle">Выберите объект</h2>
+            </div>
+            <button id="btnHeaderEdit" class="ghost icon-button header-edit-button hidden" type="button" title="Редактировать шапку" aria-label="Редактировать шапку">
+              <svg class="edit-badge-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                <path d="M4.25 15.75l2.85-.72 7.37-7.37-2.13-2.13-7.37 7.37-.72 2.85Z"></path>
+                <path d="M11.85 5.55l2.13 2.13"></path>
+              </svg>
+            </button>
+          </div>
+          <div id="recordTitleMetaLine" class="record-title-meta hidden"></div>
+          <div id="pinnedGrid" class="pinned-grid"></div>
+          <div class="object-save-dock">
+            <div class="object-save-bar">
+              <div class="object-save-meta">
+                <div id="objectSelectionIndex" class="object-selection-index hidden">Объект 0 из 0</div>
+                <div id="objectWorkStatusBadge" class="object-work-badge hidden"></div>
+              </div>
+              <div class="object-save-actions">
+                <button id="btnPrevUndoneObject" class="ghost object-workflow-button object-nav-button hidden" type="button" aria-label="Предыдущий невыполненный объект" title="Предыдущий невыполненный объект">
+                  <svg class="object-nav-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                    <path d="M11.75 5.5 7 10l4.75 4.5"></path>
+                    <path d="M7.5 10h6"></path>
+                  </svg>
+                </button>
+                <button id="btnNextUndoneObject" class="ghost object-workflow-button object-nav-button hidden" type="button" aria-label="Следующий невыполненный объект" title="Следующий невыполненный объект">
+                  <svg class="object-nav-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                    <path d="M8.25 5.5 13 10l-4.75 4.5"></path>
+                    <path d="M12.5 10h-6"></path>
+                  </svg>
+                </button>
+                <button id="btnTakeObjectWork" class="ghost object-workflow-button object-take-button hidden" type="button">Взять себе</button>
+                <button id="btnReleaseObjectWork" class="ghost object-workflow-button object-release-button hidden" type="button">Вернуть в работу</button>
+                <div id="objectSaveStatus" class="object-save-status idle">0 изм.</div>
+                <button id="btnSaveObject" class="primary object-save-button" type="button" disabled>
+                  <span class="object-save-button-text">Сохранить</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="passportSection" class="surface passport-card"></section>
+
+        <section id="sectionStack" class="section-stack"></section>
+
+        <section id="objectHistorySection" class="surface object-history-card hidden"></section>
+      </section>
+    </main>
+  </div>
+
+  <script src="./src/vendor/supabase.js?v=20260407e"></script>
+  <script src="./src/config.js?v=20260407e"></script>
+  <script src="./src/source-catalog.js?v=20260407g"></script>
+  <script src="./src/supabase-shell-api.js?v=20260408h"></script>
+  <script src="./src/app.js?v=20260408h"></script>
+</body>
+</html>

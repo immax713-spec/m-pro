@@ -1,0 +1,336 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
+
+type RowMap = Record<string, string>;
+type SnapshotPayload = {
+  sourceKey?: string;
+  fieldIdRow?: number;
+  blockRow?: number;
+  labelRow?: number;
+  dataStartRow?: number;
+  rows?: string[][];
+};
+
+const TABLE_PREFIXES: Record<string, string> = {
+  ro_: 'objects',
+  sm_: 'sm',
+  ppr_: 'ppr',
+  suid_: 'suid',
+  lb_: 'lb',
+  mgz_: 'mgz',
+  ksg_: 'ksg',
+};
+
+const SHEET_SYNC_SM_FIELDS = new Set(['sm_1_5', 'sm_1_10', 'sm_1_6', 'sm_1_7']);
+
+function json(data: unknown, init: ResponseInit = {}) {
+  return new Response(JSON.stringify(data), {
+    ...init,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      ...(init.headers || {}),
+    },
+  });
+}
+
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name || 'Error',
+    };
+  }
+  if (error && typeof error === 'object') {
+    return error;
+  }
+  return { message: String(error ?? 'Unknown error') };
+}
+
+function normalizeText(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+function isMissingUin(value: unknown): boolean {
+  const text = normalizeText(value).toLowerCase();
+  return !text || text === 'н/д' || text === 'n/a' || text === 'na' || text === 'рќ/р”';
+}
+
+function tableForField(fieldId: string): string {
+  for (const [prefix, tableName] of Object.entries(TABLE_PREFIXES)) {
+    if (fieldId.startsWith(prefix)) return tableName;
+  }
+  return '';
+}
+
+function isFieldAllowedFromSheet(fieldId: string): boolean {
+  if (!fieldId) return false;
+  if (fieldId === 'ro_1_3') return true;
+  if (fieldId.startsWith('suid_')) return true;
+  if (fieldId.startsWith('ksg_')) return true;
+  if (SHEET_SYNC_SM_FIELDS.has(fieldId)) return true;
+  return false;
+}
+
+function parsePayload(payload: SnapshotPayload) {
+  const rows = Array.isArray(payload.rows) ? payload.rows : [];
+  const fieldIdRow = Math.max(1, Number(payload.fieldIdRow) || 1);
+  const dataStartRow = Math.max(fieldIdRow + 1, Number(payload.dataStartRow) || 4);
+
+  if (rows.length < dataStartRow) {
+    throw new Error('Payload does not contain enough rows.');
+  }
+
+  const fieldIds = rows[fieldIdRow - 1] || [];
+  const parsedRows: RowMap[] = [];
+  const ignoredColumns: Array<{ columnIndex: number; label: string; reason: string }> = [];
+
+  fieldIds.forEach((rawFieldId, index) => {
+    const fieldId = normalizeText(rawFieldId);
+    if (fieldId || !normalizeText(rows[Math.max(0, dataStartRow - 2)]?.[index])) return;
+    ignoredColumns.push({
+      columnIndex: index + 1,
+      label: normalizeText(rows[Math.max(0, dataStartRow - 2)]?.[index]),
+      reason: 'missing_field_id',
+    });
+  });
+
+  for (let rowIndex = dataStartRow - 1; rowIndex < rows.length; rowIndex += 1) {
+    const values = rows[rowIndex] || [];
+    const rowMap: RowMap = {};
+    fieldIds.forEach((rawFieldId, columnIndex) => {
+      const fieldId = normalizeText(rawFieldId);
+      if (!fieldId || fieldId === 'id_DB' || !isFieldAllowedFromSheet(fieldId)) return;
+      rowMap[fieldId] = normalizeText(values[columnIndex]);
+    });
+    parsedRows.push(rowMap);
+  }
+
+  return { parsedRows, ignoredColumns };
+}
+
+async function fetchObjectMap(
+  supabase: ReturnType<typeof createClient>,
+  uins: string[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  for (let index = 0; index < uins.length; index += 500) {
+    const batch = uins.slice(index, index + 500);
+    if (!batch.length) continue;
+    const { data, error } = await supabase
+      .from('objects')
+      .select('object_id, ro_1_3')
+      .in('ro_1_3', batch);
+    if (error) throw error;
+    (data || []).forEach((row) => {
+      const uin = normalizeText((row as Record<string, unknown>).ro_1_3);
+      const objectId = Number((row as Record<string, unknown>).object_id || 0);
+      if (uin && objectId > 1) out.set(uin, objectId);
+    });
+  }
+  return out;
+}
+
+async function nextObjectId(supabase: ReturnType<typeof createClient>): Promise<number> {
+  const { data, error } = await supabase
+    .from('objects')
+    .select('object_id')
+    .order('object_id', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return Math.max(2, Number(data?.object_id || 1) + 1);
+}
+
+function buildTablePayloads(rows: Array<{ objectId: number; rowMap: RowMap }>) {
+  const objects = new Map<number, Record<string, string | number>>();
+  const sm = new Map<number, Record<string, string | number>>();
+  const ppr = new Map<number, Record<string, string | number>>();
+  const suid = new Map<number, Record<string, string | number>>();
+  const lb = new Map<number, Record<string, string | number>>();
+  const mgz = new Map<number, Record<string, string | number>>();
+  const ksg = new Map<string, { object_id: number; ksg_group: number; ksg_index: number; value: string }>();
+
+  const tableMaps: Record<string, Map<number, Record<string, string | number>>> = {
+    objects,
+    sm,
+    ppr,
+    suid,
+    lb,
+    mgz,
+  };
+
+  rows.forEach(({ objectId, rowMap }) => {
+    const objectRow = objects.get(objectId) || { object_id: objectId };
+    objectRow.ro_1_3 = normalizeText(rowMap.ro_1_3);
+    objects.set(objectId, objectRow);
+
+    Object.entries(rowMap).forEach(([fieldId, value]) => {
+      const tableName = tableForField(fieldId);
+      if (!tableName) return;
+      if (tableName === 'ksg') {
+        const [, groupText, indexText] = fieldId.split('_');
+        const group = Number(groupText);
+        const index = Number(indexText);
+        if (!Number.isFinite(group) || !Number.isFinite(index) || !value) return;
+        ksg.set(`${objectId}:${group}:${index}`, {
+          object_id: objectId,
+          ksg_group: group,
+          ksg_index: index,
+          value: normalizeText(value),
+        });
+        return;
+      }
+
+      const target = tableMaps[tableName];
+      if (!target) return;
+      const payload = target.get(objectId) || { object_id: objectId };
+      payload[fieldId] = normalizeText(value);
+      target.set(objectId, payload);
+    });
+  });
+
+  return {
+    objects: Array.from(objects.values()),
+    sm: Array.from(sm.values()),
+    ppr: Array.from(ppr.values()),
+    suid: Array.from(suid.values()),
+    lb: Array.from(lb.values()),
+    mgz: Array.from(mgz.values()),
+    ksg: Array.from(ksg.values()),
+  };
+}
+
+async function upsertTable(
+  supabase: ReturnType<typeof createClient>,
+  tableName: string,
+  rows: Record<string, unknown>[],
+) {
+  if (!rows.length) return;
+  const chunkSize = tableName === 'objects' ? 200 : 300;
+  for (let index = 0; index < rows.length; index += chunkSize) {
+    const chunk = rows.slice(index, index + chunkSize);
+    const { error } = await supabase.from(tableName).upsert(chunk, { onConflict: 'object_id' });
+    if (error) {
+      throw {
+        stage: 'upsert_table',
+        tableName,
+        chunkStart: index,
+        chunkSize: chunk.length,
+        error,
+      };
+    }
+  }
+}
+
+async function upsertKsg(
+  supabase: ReturnType<typeof createClient>,
+  rows: Array<{ object_id: number; ksg_group: number; ksg_index: number; value: string }>,
+) {
+  if (!rows.length) return;
+  const chunkSize = 500;
+  for (let index = 0; index < rows.length; index += chunkSize) {
+    const chunk = rows.slice(index, index + chunkSize);
+    const { error } = await supabase
+      .from('ksg')
+      .upsert(chunk, { onConflict: 'object_id,ksg_group,ksg_index' });
+    if (error) {
+      throw {
+        stage: 'upsert_ksg',
+        tableName: 'ksg',
+        chunkStart: index,
+        chunkSize: chunk.length,
+        error,
+      };
+    }
+  }
+}
+
+Deno.serve(async (request) => {
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed' }, { status: 405 });
+  }
+
+  const expectedSecret = normalizeText(Deno.env.get('GOOGLE_SHEET_WEBHOOK_SECRET'));
+  const receivedSecret = normalizeText(request.headers.get('x-webhook-secret'));
+  if (!expectedSecret || expectedSecret !== receivedSecret) {
+    return json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  const supabaseUrl = normalizeText(Deno.env.get('SUPABASE_URL'));
+  const serviceRoleKey = normalizeText(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+  if (!supabaseUrl || !serviceRoleKey) {
+    return json({ error: 'Supabase environment is not configured' }, { status: 500 });
+  }
+
+  try {
+    const payload = (await request.json()) as SnapshotPayload;
+    const { parsedRows, ignoredColumns } = parsePayload(payload);
+
+    const uins = Array.from(
+      new Set(
+        parsedRows
+          .map((row) => normalizeText(row.ro_1_3))
+          .filter((uin) => !!uin && uin !== 'Н/Д'),
+      ),
+    );
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const existingObjectMap = await fetchObjectMap(supabase, uins);
+    let currentObjectId = await nextObjectId(supabase);
+    const rowsToApply: Array<{ objectId: number; rowMap: RowMap }> = [];
+    let skippedRows = 0;
+
+    parsedRows.forEach((rowMap) => {
+      const uin = normalizeText(rowMap.ro_1_3);
+      if (!uin || uin === 'Н/Д') {
+        skippedRows += 1;
+        return;
+      }
+      if (!existingObjectMap.has(uin)) {
+        existingObjectMap.set(uin, currentObjectId);
+        currentObjectId += 1;
+      }
+      rowsToApply.push({
+        objectId: existingObjectMap.get(uin) as number,
+        rowMap,
+      });
+    });
+
+    const tablePayloads = buildTablePayloads(rowsToApply);
+
+    await upsertTable(supabase, 'objects', tablePayloads.objects);
+    await upsertTable(supabase, 'sm', tablePayloads.sm);
+    await upsertTable(supabase, 'ppr', tablePayloads.ppr);
+    await upsertTable(supabase, 'suid', tablePayloads.suid);
+    await upsertTable(supabase, 'lb', tablePayloads.lb);
+    await upsertTable(supabase, 'mgz', tablePayloads.mgz);
+    await upsertKsg(supabase, tablePayloads.ksg);
+
+    return json({
+      ok: true,
+      sourceKey: normalizeText(payload.sourceKey),
+      parsedRows: parsedRows.length,
+      appliedRows: rowsToApply.length,
+      skippedRows,
+      syncScope: {
+        objects: ['ro_1_3'],
+        sm: Array.from(SHEET_SYNC_SM_FIELDS),
+        suid: ['suid_*'],
+        ksg: ['ksg_*'],
+      },
+      ignoredColumns,
+      tableCounts: Object.fromEntries(
+        Object.entries(tablePayloads).map(([tableName, values]) => [tableName, values.length]),
+      ),
+    });
+  } catch (error) {
+    return json(
+      {
+        error: serializeError(error),
+      },
+      { status: 400 },
+    );
+  }
+});

@@ -1,0 +1,99 @@
+name: Deploy mpro7.ru /77
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - site/**
+      - .github/workflows/deploy-77.yml
+      - README.md
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-mpro7-77
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
+
+      - name: Normalize deploy vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          host='${{ secrets.SERVER_HOST }}'
+          user='${{ secrets.SERVER_USER }}'
+          port='${{ secrets.SERVER_PORT }}'
+          path='${{ secrets.SERVER_PATH }}'
+
+          host="$(echo "$host" | tr -d '\r' | xargs)"
+          user="$(echo "$user" | tr -d '\r' | xargs)"
+          port="$(echo "$port" | tr -d '\r' | xargs)"
+          path="$(echo "$path" | tr -d '\r' | xargs)"
+
+          if [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]]; then
+            echo "SERVER_PORT is invalid, fallback to 22"
+            port="22"
+          fi
+
+          if [[ -z "$path" ]]; then
+            path="/var/www/mpro7.ru"
+          elif [[ "$path" != /* ]]; then
+            path="/var/www/$path"
+          fi
+
+          echo "DEPLOY_HOST=$host" >> "$GITHUB_ENV"
+          echo "DEPLOY_USER=$user" >> "$GITHUB_ENV"
+          echo "DEPLOY_PORT=$port" >> "$GITHUB_ENV"
+          echo "DEPLOY_PATH=$path" >> "$GITHUB_ENV"
+          echo "DEPLOY_SITE_PATH=$path/77" >> "$GITHUB_ENV"
+
+      - name: Add server to known_hosts
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Ensure target directory exists
+        shell: bash
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
+            set -e
+            mkdir -p "'"$DEPLOY_SITE_PATH"'"
+          '
+
+      - name: Sync site bundle to /77
+        shell: bash
+        run: |
+          rsync -az --delete \
+            --exclude 'serve.ps1' \
+            -e "ssh -p $DEPLOY_PORT" \
+            ./site/ \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_SITE_PATH/"
+
+      - name: Fix permissions
+        shell: bash
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
+            set -e
+            find "'"$DEPLOY_SITE_PATH"'" -type d -exec chmod 755 {} \;
+            find "'"$DEPLOY_SITE_PATH"'" -type f -exec chmod 644 {} \;
+          '
+
+      - name: Verify deployed entrypoint
+        shell: bash
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
+            set -e
+            test -f "'"$DEPLOY_SITE_PATH"'/index.html"
+          '

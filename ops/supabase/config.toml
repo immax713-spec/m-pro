@@ -1,0 +1,2 @@
+[functions.google-sheet-webhook]
+verify_jwt = false
