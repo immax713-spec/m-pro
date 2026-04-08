@@ -2324,8 +2324,7 @@ function syncSavedSelectionsPanelChrome_() {
       if (composerToggleButton) {
         composerToggleButton.disabled = isComposerBusy;
         composerToggleButton.classList.toggle('is-active', !!state.selectionComposerOpen);
-        composerToggleButton.textContent = 'Новый проект';
-        composerToggleButton.title = state.selectionComposerOpen ? 'Скрыть форму проекта' : 'Новый проект';
+        composerToggleButton.title = state.selectionComposerOpen ? 'Скрыть форму проекта' : 'Создать проект';
         composerToggleButton.setAttribute('aria-label', composerToggleButton.title);
       }
     }

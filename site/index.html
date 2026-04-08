@@ -198,24 +198,28 @@
             </div>
           </div>
 
-          <div class="nav-item nav-item-has-panel">
-            <button id="btnNavProjects" class="nav-button nav-button-expandable" type="button" title="Проекты" aria-label="Проекты" aria-expanded="false">
-              <span class="nav-button-icon" aria-hidden="true">
-                <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
-                  <path d="M4.5 7.25h4l1.25 1.5h5.75v5.75a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V7.25Z"></path>
-                  <path d="M4.5 8.25h11"></path>
-                </svg>
-              </span>
-              <span class="nav-button-label">Проекты</span>
-              <span class="nav-button-caret" aria-hidden="true"></span>
-            </button>
+          <div class="nav-item nav-item-has-panel nav-item-projects">
+            <div class="nav-item-head">
+              <button id="btnNavProjects" class="nav-button nav-button-expandable" type="button" title="Проекты" aria-label="Проекты" aria-expanded="false">
+                <span class="nav-button-icon" aria-hidden="true">
+                  <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
+                    <path d="M4.5 7.25h4l1.25 1.5h5.75v5.75a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V7.25Z"></path>
+                    <path d="M4.5 8.25h11"></path>
+                  </svg>
+                </span>
+                <span class="nav-button-label">Проекты</span>
+                <span class="nav-button-caret" aria-hidden="true"></span>
+              </button>
+              <button id="btnOpenSelectionComposer" class="ghost nav-inline-action nav-inline-action-plus" type="button" title="Новый проект" aria-label="Новый проект">
+                <span class="nav-inline-action-glyph" aria-hidden="true">+</span>
+              </button>
+            </div>
             <div id="sidebarProjectsPanel" class="nav-item-panel hidden">
               <section id="savedSelectionPanel" class="sidebar-section saved-selection-panel">
                 <div class="saved-selection-panel-head">
                   <div class="saved-selection-panel-head-row saved-selection-panel-controls">
                     <div class="saved-selection-panel-head-spacer" aria-hidden="true"></div>
                     <span class="saved-selection-panel-title">Проекты</span>
-                    <button id="btnOpenSelectionComposer" class="saved-selection-head-button" type="button" title="Новый проект" aria-label="Новый проект">Новый проект</button>
                   </div>
                   <span id="savedSelectionPanelSummary" class="saved-selection-panel-meta"></span>
                 </div>
