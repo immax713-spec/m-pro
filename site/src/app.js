@@ -7554,7 +7554,7 @@ function renderSectionRowHtml_(items, rowIndex, editing) {
       );
     }
 
-function renderSectionLinkedFieldItemHtml_(item, rowIndex) {
+    function renderSectionLinkedFieldItemHtml_(item, rowIndex, editing) {
       const field = item && item.field;
       const linkField = item && item.linkField;
       if (!field || !linkField) return '';
@@ -7562,12 +7562,23 @@ function renderSectionLinkedFieldItemHtml_(item, rowIndex) {
       const href = getCellValue_(rowIndex, linkField.index);
       const changed = (hasEditedValue_(rowIndex, field.index) || hasEditedValue_(rowIndex, linkField.index)) ? ' changed' : '';
       if (String(item && item.linkKind || '') === 'checklist') {
+        if (editing) {
+          return (
+            `<article class="section-item${changed} is-editing">` +
+              `<div class="section-item-label">${escapeHtml_(getSectionFieldDisplayLabel_(field) || field.label || `Поле ${field.index + 1}`)}</div>` +
+              `${renderSectionLinkedChecklistEditorHtml_(field, linkField, rowIndex)}` +
+            `</article>`
+          );
+        }
         return (
           `<article class="section-item${changed}">` +
-            `<div class="section-item-label">${escapeHtml_(field.label || `РџРѕР»Рµ ${field.index + 1}`)}</div>` +
+            `<div class="section-item-label">${escapeHtml_(getSectionFieldDisplayLabel_(field) || field.label || `Поле ${field.index + 1}`)}</div>` +
             `<div class="section-item-main">` +
-              `<div class="section-item-display">` +
-                `${renderSectionLinkedValueHtml_(value, href, item && item.linkKind)}` +
+              `<div class="section-item-link-stack">` +
+                `<div class="section-item-display">` +
+                  `${renderSectionLinkedValueHtml_(value, href, item && item.linkKind)}` +
+                `</div>` +
+                `${renderFieldLinkActionHtml_(href, item && item.linkKind)}` +
               `</div>` +
             `</div>` +
           `</article>`
@@ -7593,7 +7604,7 @@ function renderSectionLinkedFieldItemHtml_(item, rowIndex) {
       if (!item) return '';
       if (item.type === 'group') return renderSectionGroupHtml_(item, rowIndex, editing);
       if (item.type === 'rv-field') return renderSectionRvFieldItemHtml_(item, rowIndex);
-      if (item.type === 'linked-field') return renderSectionLinkedFieldItemHtml_(item, rowIndex);
+      if (item.type === 'linked-field') return renderSectionLinkedFieldItemHtml_(item, rowIndex, editing);
       return renderSectionFieldItemHtml_(item.field, rowIndex, editing);
     }
 
@@ -7690,6 +7701,40 @@ function shouldUseStackedGroupSubitemDisplay_(item, value) {
               : `<input id="${escapeHtml_(inputId)}" class="field-input"${textAssistAttrs} data-role="field-input" data-field-index="${colIndex}" data-link-kind="${escapeHtml_(linkKind)}" data-edit-key="${escapeHtml_(editKey)}" value="${escapeHtml_(value || '')}">`
           ) +
           `${linkKind ? renderFieldLinkActionHtml_(value, linkKind) : ''}` +
+        `</div>`
+      );
+    }
+
+    function renderSectionLinkedChecklistEditorHtml_(field, linkField, rowIndex) {
+      const fieldLabel = getSectionFieldDisplayLabel_(field) || String(field && field.label || `Поле ${Number(field && field.index) + 1}`).trim();
+      const linkLabel = getSectionFieldDisplayLabel_(linkField) || String(linkField && linkField.label || `Поле ${Number(linkField && linkField.index) + 1}`).trim();
+      const value = getCellValue_(rowIndex, field.index);
+      const href = getCellValue_(rowIndex, linkField.index);
+      const fieldInputId = `field_${rowIndex}_${field.index}`;
+      const linkInputId = `field_${rowIndex}_${linkField.index}`;
+      const fieldEditKey = fieldEditKey_(rowIndex, field.index);
+      const linkEditKey = fieldEditKey_(rowIndex, linkField.index);
+      const fieldTextAssistAttrs = buildTextAssistAttrs_(
+        shouldEnableTextAssist_(fieldLabel, { multiline: false, linkKind: '' }),
+        false
+      );
+      const linkTextAssistAttrs = buildTextAssistAttrs_(
+        shouldEnableTextAssist_(linkLabel, { multiline: false, linkKind: 'checklist' }),
+        false
+      );
+      return (
+        `<div class="section-item-main section-linked-editor">` +
+          `<label class="section-linked-editor-row">` +
+            `<span class="section-linked-editor-label">${escapeHtml_(fieldLabel)}</span>` +
+            `<input id="${escapeHtml_(fieldInputId)}" class="field-input"${fieldTextAssistAttrs} data-role="field-input" data-field-index="${field.index}" data-link-kind="" data-edit-key="${escapeHtml_(fieldEditKey)}" value="${escapeHtml_(value || '')}">` +
+          `</label>` +
+          `<div class="section-linked-editor-row">` +
+            `<label class="section-linked-editor-input">` +
+              `<span class="section-linked-editor-label">${escapeHtml_(linkLabel)}</span>` +
+              `<input id="${escapeHtml_(linkInputId)}" class="field-input"${linkTextAssistAttrs} data-role="field-input" data-field-index="${linkField.index}" data-link-kind="checklist" data-edit-key="${escapeHtml_(linkEditKey)}" value="${escapeHtml_(href || '')}">` +
+            `</label>` +
+            `${renderFieldLinkActionHtml_(href, 'checklist')}` +
+          `</div>` +
         `</div>`
       );
     }
@@ -7835,7 +7880,7 @@ function sortSectionGroupItems_(items) {
 
     function buildSpecialSectionCompoundMap_(fields, section, editing) {
       const map = new Map();
-      if (editing || !section) return map;
+      if (!section) return map;
       const list = Array.isArray(fields) ? fields : [];
       const sourceKey = String(section.sourceKey || '').trim();
       if (sourceKey === '__objects__') {
@@ -7871,12 +7916,12 @@ function sortSectionGroupItems_(items) {
       return map;
     }
 
-function renderSectionLinkedValueHtml_(value, href, linkKind) {
+    function renderSectionLinkedValueHtml_(value, href, linkKind) {
       const text = normalizeInlineDisplayText_(value);
       const url = String(href == null ? '' : href).trim();
       if (isHttpUrl_(url)) {
         if (String(linkKind || '') === 'checklist') {
-          return `<a class="field-link-text" data-role="field-link" href="${escapeHtml_(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml_(text || 'РџСѓСЃС‚Рѕ')}</a>`;
+          return `<a class="field-link-text" data-role="field-link" href="${escapeHtml_(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml_(text || 'Пусто')}</a>`;
         }
         return '';
       }

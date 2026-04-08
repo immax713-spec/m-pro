@@ -413,6 +413,11 @@
     .section-item-link-stack{display:grid;justify-items:start;align-items:start;gap:4px;min-width:0}
     .section-item-link-stack .inline-action-group{justify-self:start}
     .section-item-link-stack .field-display-placeholder{display:block;justify-self:start;align-self:start;width:100%;margin:0;text-align:left}
+    .section-linked-editor{display:grid;gap:8px}
+    .section-linked-editor-row{display:grid;gap:5px;min-width:0}
+    .section-linked-editor-input{display:grid;gap:5px;min-width:0}
+    .section-linked-editor-label{font-size:10px;line-height:1.1;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+    .section-linked-editor .inline-action-group{justify-self:start}
     .section-item.link-inline,.section-subitem.link-inline{align-items:baseline}
     .section-item.link-inline .section-item-main,.section-subitem.link-inline .section-item-main{display:contents}
     .section-item.link-inline .section-item-link-stack,.section-subitem.link-inline .section-item-link-stack{display:contents}
