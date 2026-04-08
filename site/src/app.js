@@ -673,8 +673,6 @@
       });
       el('btnReload').addEventListener('click', () => loadData_(buildCurrentDataRefreshOptions_()));
       el('btnOpenSelectionComposer').addEventListener('click', () => toggleRegistrySelectionComposer_());
-      el('btnEditActiveSelection').addEventListener('click', () => editActiveRegistrySelectionOrPrompt_());
-      el('btnRemoveActiveSelection').addEventListener('click', () => removeActiveRegistrySelectionOrPrompt_());
       el('btnAppendSelectionComposer').addEventListener('click', () => saveCurrentRegistrySelection_('append'));
       el('btnConfirmSelectionComposer').addEventListener('click', () => saveCurrentRegistrySelection_());
       el('btnSelectionComposerClose').addEventListener('click', () => closeRegistrySelectionComposer_());
@@ -2319,16 +2317,7 @@ function syncSavedSelectionsPanelChrome_() {
       const panelBody = el('savedSelectionPanelBody');
       const summaryNode = el('savedSelectionPanelSummary');
       const composerToggleButton = el('btnOpenSelectionComposer');
-      const panelActions = el('projectPanelGlobalActions');
-      const editButton = el('btnEditActiveSelection');
-      const removeButton = el('btnRemoveActiveSelection');
       const isComposerBusy = !!String(state.selectionComposerBusyState || '').trim();
-      const allSelections = getAllSavedRegistrySelections_();
-      const activeSelection = getActiveRegistrySelection_();
-      const activeSelectionId = String(activeSelection && activeSelection.id || '').trim();
-      const selectionLoadingId = String(state.selectionLoadingId || '').trim();
-      const selectionRemovingId = String(state.selectionRemovingId || '').trim();
-      const hasAnySelections = allSelections.length > 0;
 
       if (panelBody) panelBody.classList.remove('hidden');
       if (summaryNode) summaryNode.textContent = '';
@@ -2338,23 +2327,6 @@ function syncSavedSelectionsPanelChrome_() {
         composerToggleButton.textContent = 'Новый проект';
         composerToggleButton.title = state.selectionComposerOpen ? 'Скрыть форму проекта' : 'Новый проект';
         composerToggleButton.setAttribute('aria-label', composerToggleButton.title);
-      }
-      if (panelActions) panelActions.classList.toggle('hidden', !hasAnySelections);
-      if (editButton) {
-        editButton.disabled = isComposerBusy || (selectionLoadingId === activeSelectionId && !!activeSelectionId);
-        editButton.classList.toggle('is-loading', selectionLoadingId === activeSelectionId && !!activeSelectionId);
-        editButton.title = activeSelection
-          ? 'Редактировать открытый проект'
-          : 'Выберите проект из списка для редактирования';
-        editButton.setAttribute('aria-label', editButton.title);
-      }
-      if (removeButton) {
-        removeButton.disabled = isComposerBusy || (selectionRemovingId === activeSelectionId && !!activeSelectionId);
-        removeButton.classList.toggle('is-loading', selectionRemovingId === activeSelectionId && !!activeSelectionId);
-        removeButton.title = activeSelection
-          ? 'Удалить открытый проект'
-          : 'Выберите проект из списка для удаления';
-        removeButton.setAttribute('aria-label', removeButton.title);
       }
     }
 
@@ -4598,37 +4570,24 @@ function hasActiveSavedSelection_() {
       return !!getActiveRegistrySelection_();
     }
 
-function promptRegistrySelectionChoice_(message) {
-      state.sidebarExpanded = true;
-      state.sidebarActivePanel = 'projects';
-      renderAll_();
-      showCopyToast_(message || 'Выберите проект из списка', false);
-    }
-
-function editActiveRegistrySelectionOrPrompt_() {
-      const active = getActiveRegistrySelection_();
-      if (!active) {
-        promptRegistrySelectionChoice_('Выберите проект из списка для редактирования');
-        return;
-      }
-      if (!canEditSavedSelection_(active)) {
+function editRegistrySelectionById_(selectionId) {
+      const item = findSavedRegistrySelectionById_(selectionId);
+      if (!item) return;
+      if (!canEditSavedSelection_(item)) {
         showCopyToast_('Этот проект нельзя редактировать', true);
         return;
       }
-      openRegistrySelectionComposer_(active.id);
+      openRegistrySelectionComposer_(item.id);
     }
 
-function removeActiveRegistrySelectionOrPrompt_() {
-      const active = getActiveRegistrySelection_();
-      if (!active) {
-        promptRegistrySelectionChoice_('Выберите проект из списка для удаления');
-        return;
-      }
-      if (!canRemoveSavedSelection_(active)) {
+function removeRegistrySelectionById_(selectionId) {
+      const item = findSavedRegistrySelectionById_(selectionId);
+      if (!item) return;
+      if (!canRemoveSavedSelection_(item)) {
         showCopyToast_('Этот проект нельзя удалить', true);
         return;
       }
-      removeSavedRegistrySelection_(active.id);
+      removeSavedRegistrySelection_(item.id);
     }
 
 function getActiveSelectionObjectPosition_(rowIndex) {
@@ -6209,6 +6168,18 @@ function renderSavedSelectionsPanel_() {
       list.querySelectorAll('[data-load-selection]').forEach(button => {
         button.addEventListener('click', () => applySavedRegistrySelection_(String(button.getAttribute('data-load-selection') || '')));
       });
+      list.querySelectorAll('[data-edit-selection]').forEach(button => {
+        button.addEventListener('click', evt => {
+          evt.stopPropagation();
+          editRegistrySelectionById_(String(button.getAttribute('data-edit-selection') || ''));
+        });
+      });
+      list.querySelectorAll('[data-remove-selection]').forEach(button => {
+        button.addEventListener('click', evt => {
+          evt.stopPropagation();
+          removeRegistrySelectionById_(String(button.getAttribute('data-remove-selection') || ''));
+        });
+      });
       syncSavedSelectionsPanelChrome_();
       if (state.selectionComposerOpen) syncRegistrySelectionComposerUi_();
     }
@@ -6255,10 +6226,37 @@ function buildSavedSelectionMetaLine_(item) {
       return parts.join(' · ');
     }
 
+function renderSavedSelectionActionsHtml_(item, active, busy) {
+      if (!active || !item) return '';
+      const canEdit = canEditSavedSelection_(item);
+      const canRemove = canRemoveSavedSelection_(item);
+      if (!canEdit && !canRemove) return '';
+      const itemId = String(item.id || '').trim();
+      const loadingId = String(state.selectionLoadingId || '').trim();
+      const removingId = String(state.selectionRemovingId || '').trim();
+      const editLoading = canEdit && loadingId === itemId;
+      const removeLoading = canRemove && removingId === itemId;
+      return (
+        `<div class="saved-selection-actions">` +
+          (
+            canEdit
+              ? `<button class="saved-selection-action-button${editLoading ? ' is-loading' : ''}" type="button" data-edit-selection="${escapeHtml_(itemId)}"${busy || editLoading ? ' disabled' : ''} title="Редактировать проект" aria-label="Редактировать проект">${getEditBadgeSvgHtml_('saved-selection-action-icon-svg')}</button>`
+              : ''
+          ) +
+          (
+            canRemove
+              ? `<button class="saved-selection-action-button saved-selection-danger${removeLoading ? ' is-loading' : ''}" type="button" data-remove-selection="${escapeHtml_(itemId)}"${busy || removeLoading ? ' disabled' : ''} title="Удалить проект" aria-label="Удалить проект">${getTrashIconSvgHtml_('saved-selection-action-icon-svg')}</button>`
+              : ''
+          ) +
+        `</div>`
+      );
+    }
+
 function renderSavedSelectionItemHtml_(item) {
       const active = String(state.activeRegistrySelectionId || '') === String(item && item.id || '');
       const loading = String(state.selectionLoadingId || '') === String(item && item.id || '');
-      const busy = loading;
+      const removing = String(state.selectionRemovingId || '') === String(item && item.id || '');
+      const busy = loading || removing;
       const name = String(item && item.name || 'Проект').trim() || 'Проект';
       const metaLine = buildSavedSelectionMetaLine_(item);
       return (
@@ -6267,6 +6265,7 @@ function renderSavedSelectionItemHtml_(item) {
             `<span class="saved-selection-name" title="${escapeHtml_(name)}">${escapeHtml_(name)}</span>` +
             `<span class="saved-selection-meta" title="${escapeHtml_(metaLine)}">${escapeHtml_(metaLine)}</span>` +
           `</button>` +
+          `${renderSavedSelectionActionsHtml_(item, active, busy)}` +
         `</div>`
       );
     }
