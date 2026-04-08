@@ -522,9 +522,8 @@
     .brand-logo-path{fill:none;stroke:url(#brandLogoGradient);stroke-width:32;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 2px rgba(154,242,226,.14)) drop-shadow(0 0 5px rgba(115,216,200,.1));transition:filter .16s ease;will-change:stroke-dashoffset}
     .sidebar-brand-toggle:hover .brand-logo-path{filter:drop-shadow(0 0 5px rgba(154,242,226,.32)) drop-shadow(0 0 12px rgba(115,216,200,.22)) drop-shadow(0 0 18px rgba(115,216,200,.14))}
     .brand-logo-svg.is-replaying .brand-logo-path{filter:none}
-    .user-session{grid-template-columns:auto minmax(0,1fr);padding:6px 0 0 6px;gap:10px;align-items:center}
-    .user-session-icon-shell{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:999px;border:1px solid rgba(154,242,226,.12);background:linear-gradient(180deg,rgba(255,255,255,.05) 0%,rgba(255,255,255,.02) 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
-    .user-session-icon{width:18px;height:18px;stroke:var(--sidebar-accent-strong);stroke-width:1.7;opacity:.96}
+    .user-session{grid-template-columns:36px minmax(0,1fr);padding:10px 0 0 6px;gap:8px;align-items:center}
+    .user-session-icon{display:inline-grid;place-self:center;width:30px;height:30px;stroke:rgba(158,189,181,.92);stroke-width:1.6;opacity:.96}
     .user-session-meta{padding-left:0;gap:4px}
     .user-session-name{font-size:12px}
     .user-session-role{font-size:11px;color:var(--sidebar-text-muted);font-weight:600}
@@ -648,7 +647,7 @@
     .sidebar.is-collapsed .sidebar-brand-toggle{min-width:0;width:100%;max-width:46px;height:auto;justify-content:center}
     .sidebar.is-collapsed .brand-logo-svg{max-width:30px}
     .sidebar.is-collapsed .sidebar-collapse-toggle{display:none}
-    .sidebar.is-collapsed .user-session{grid-template-columns:1fr;justify-items:center;padding-top:8px;padding-left:0}
+    .sidebar.is-collapsed .user-session{grid-template-columns:1fr;justify-items:center;padding-top:10px;padding-left:0}
     .sidebar.is-collapsed .user-session-meta{display:none}
     .sidebar.is-collapsed .sidebar-nav{align-items:center;gap:3px;padding-top:4px;padding-bottom:8px}
     .sidebar.is-collapsed .nav-button{grid-template-columns:1fr;justify-items:center;width:36px;min-width:36px;min-height:36px;padding:0}
