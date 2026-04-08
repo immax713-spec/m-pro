@@ -502,8 +502,8 @@
     .sidebar-collapse-toggle:hover{transform:none;box-shadow:none!important;background:rgba(255,255,255,.08)!important;color:rgba(237,245,242,.74)!important;opacity:1}
     .sidebar-collapse-toggle-glyph{position:relative;display:block;width:10px;height:10px;transition:transform .22s cubic-bezier(.33,1,.68,1)}
     .sidebar-collapse-toggle-glyph::before,.sidebar-collapse-toggle-glyph::after{content:'';position:absolute;left:50%;width:6px;height:1.5px;border-radius:999px;background:currentColor;transform-origin:center}
-    .sidebar-collapse-toggle-glyph::before{top:3px;transform:translateX(-50%) rotate(-40deg)}
-    .sidebar-collapse-toggle-glyph::after{top:6px;transform:translateX(-50%) rotate(40deg)}
+    .sidebar-collapse-toggle-glyph::before{top:3px;transform:translateX(-50%) rotate(40deg)}
+    .sidebar-collapse-toggle-glyph::after{top:6px;transform:translateX(-50%) rotate(-40deg)}
     .sidebar-collapse-toggle.is-expanded .sidebar-collapse-toggle-glyph{transform:rotate(180deg)}
     .sidebar-brand-toggle{display:flex;align-items:center;justify-content:center;min-width:0;width:100%;max-width:112px;height:auto;margin:0 auto;padding:0!important;border:none!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
     .sidebar-brand-toggle:hover{transform:none;box-shadow:none!important;background:transparent!important}
