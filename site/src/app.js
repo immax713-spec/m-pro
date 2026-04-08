@@ -489,6 +489,8 @@
       editsByRow: new Map(),
       registryRowSummaryCache: new Map(),
       registryFacetValuesCache: new Map(),
+      registryTableStructureSignature: '',
+      registryRowsSignature: '',
       pendingFocusFieldKey: '',
       objectSaveMessage: '',
       objectSaveError: '',
@@ -527,6 +529,9 @@
     const REGISTRY_PROGRESSIVE_RENDER_BATCH = 180;
     const REGISTRY_INITIAL_RENDER_BATCH_DURING_LOGO_REPLAY = 24;
     const REGISTRY_PROGRESSIVE_RENDER_BATCH_DURING_LOGO_REPLAY = 72;
+    const REGISTRY_LAZY_RENDER_MIN_ROWS = 60;
+    const REGISTRY_LAZY_RENDER_BUFFER_ROWS = 24;
+    const REGISTRY_LAZY_RENDER_BATCH = 120;
 
 // ===== Transport/API =====
 
@@ -697,6 +702,7 @@
         button.addEventListener('click', () => handleSidebarNavigation_(panelKey));
       });
       bindRegistryTableEvents_(el('registryTableBody'));
+      bindRegistryTableWrapEvents_(getRegistryTableWrap_());
       document.addEventListener('click', evt => {
         if (evt.target.closest('.registry-floating-menu')) return;
         const filterTrigger = evt.target.closest('[data-registry-filter-trigger]');
@@ -854,31 +860,34 @@
     }
 
     function toggleSidebarExpanded_() {
-      const sidebar = el('appSidebar');
-      const nextExpanded = !state.sidebarExpanded;
-      if (sidebar && sidebar.__sidebarShellTimer) {
-        clearTimeout(sidebar.__sidebarShellTimer);
-        sidebar.__sidebarShellTimer = 0;
-      }
-      if (!nextExpanded) {
-        if (sidebar) sidebar.classList.add('is-shell-collapsing');
-        closeQuickPresetMenus_();
-        closeRegistryFilterMenus_();
-        closeRegistryColumnsPanel_();
-      } else if (sidebar) {
-        sidebar.classList.add('is-shell-expanding');
-      }
-      state.sidebarExpanded = nextExpanded;
-      renderNavState_();
-      persistRegistrySessionState_();
-      if (sidebar) {
-        sidebar.__sidebarShellTimer = window.setTimeout(() => {
+        const sidebar = el('appSidebar');
+        if (sidebar && sidebar.__sidebarShellTimer) {
+          clearTimeout(sidebar.__sidebarShellTimer);
+          sidebar.__sidebarShellTimer = 0;
+        }
+        if (sidebar) {
           sidebar.classList.remove('is-shell-collapsing');
           sidebar.classList.remove('is-shell-expanding');
-          sidebar.__sidebarShellTimer = 0;
-        }, nextExpanded ? 120 : 90);
+        }
+        const nextExpanded = !state.sidebarExpanded;
+        if (!nextExpanded) {
+          closeQuickPresetMenus_();
+          closeRegistryFilterMenus_();
+          closeRegistryColumnsPanel_();
+        }
+        state.sidebarExpanded = nextExpanded;
+        renderNavState_();
+        persistRegistrySessionState_();
+        if (sidebar && !prefersReducedMotion_()) {
+          const animationClass = nextExpanded ? 'is-shell-expanding' : 'is-shell-collapsing';
+          sidebar.classList.add(animationClass);
+          sidebar.__sidebarShellTimer = window.setTimeout(() => {
+            sidebar.classList.remove('is-shell-collapsing');
+            sidebar.classList.remove('is-shell-expanding');
+            sidebar.__sidebarShellTimer = 0;
+          }, nextExpanded ? 150 : 130);
+        }
       }
-    }
 
     function prefersReducedMotion_() {
       try {
@@ -910,10 +919,16 @@
       const hiddenClass = String(settings.hiddenClass || 'hidden');
       const duration = Math.max(120, Number(settings.duration) || 180);
       const translateY = Math.max(0, Number(settings.translateY) || 8);
+      const requestedMode = String(settings.mode || 'auto').trim().toLowerCase();
       const isHidden = node.classList.contains(hiddenClass);
       const currentState = String(node.dataset.collapsibleState || '');
 
       if (prefersReducedMotion_()) {
+        finishCollapsibleAnimation_(node, !!shouldOpen, hiddenClass);
+        return;
+      }
+
+      if (requestedMode === 'instant') {
         finishCollapsibleAnimation_(node, !!shouldOpen, hiddenClass);
         return;
       }
@@ -933,7 +948,6 @@
         node.__collapsibleTimer = 0;
       }
 
-      const requestedMode = String(settings.mode || 'auto').trim().toLowerCase();
       const scrollHeight = Math.max(node.scrollHeight || 0, 0);
       const mode = requestedMode === 'fade'
         ? 'fade'
@@ -5226,6 +5240,8 @@ function setEditedValue_(rowIndex, colIndex, value, options) {
 
 function invalidateRegistryDerivedCaches_(rowIndex) {
       state.registryFacetValuesCache.clear();
+      state.registryTableStructureSignature = '';
+      state.registryRowsSignature = '';
       if (Number.isFinite(rowIndex) && rowIndex >= 0) {
         state.registryRowSummaryCache.delete(Number(rowIndex));
       } else {
@@ -6063,7 +6079,7 @@ function renderNavState_() {
         Object.keys(panelMap).forEach(key => {
           const panel = panelMap[key];
           if (!panel) return;
-          setCollapsibleOpenState_(panel, key === activePanel, { duration: 140, translateY: 4, mode: 'size' });
+          setCollapsibleOpenState_(panel, key === activePanel, { mode: 'fade', duration: 180, translateY: 8 });
         });
       }
 
@@ -6418,6 +6434,8 @@ function cancelRegistryRowsRender_() {
         window.cancelAnimationFrame(registryRowsRenderFrame);
         registryRowsRenderFrame = 0;
       }
+      const body = el('registryTableBody');
+      if (body) body.__registryLoadingMore = false;
     }
 
 function formatRegistryColumnsButtonText_() {
@@ -6569,6 +6587,141 @@ function renderRegistryTableStructure_() {
       if (head) {
         head.innerHTML = `<tr>${visibleDefs.map(def => `<th>${buildRegistryColumnHeaderHtml_(def)}</th>`).join('')}</tr>`;
       }
+    }
+
+function buildRegistryTableStructureSignature_(visibleDefs) {
+      return (Array.isArray(visibleDefs) ? visibleDefs : [])
+        .map(def => [String(def && def.key || ''), String(def && def.width || ''), String(def && def.summaryKey || '')].join(':'))
+        .join('|');
+    }
+
+function buildRegistryRowsRenderSignature_(rowIndexes, viewState) {
+      const context = viewState || {};
+      const visibleDefs = Array.isArray(context.visibleColumnDefs) ? context.visibleColumnDefs : [];
+      const adminSelected = context.adminSelectionSet
+        ? Array.from(context.adminSelectionSet).sort((a, b) => a - b).join(',')
+        : '';
+      const selectionDraft = context.selectionEditSet
+        ? Array.from(context.selectionEditSet).sort().join('|')
+        : '';
+      const doneKeys = getSelectionDoneRowKeys_(state.activeRegistrySelectionId).join('|');
+      const sharedItems = context.sharedSelectionActive
+        ? Object.values(state.sharedSelectionWorkItemsByKey || {})
+            .map(item => [
+              normalizeText_(item && item.objectKey || ''),
+              String(item && item.status || ''),
+              normalizeText_(item && item.assigneeKey || ''),
+              String(item && item.updatedAt || '')
+            ].join(':'))
+            .sort()
+            .join('|')
+        : '';
+      const sharedPending = context.sharedSelectionActive
+        ? Object.keys(state.sharedSelectionWorkPendingByKey || {})
+            .sort()
+            .map(key => `${key}:${state.sharedSelectionWorkPendingByKey[key]}`)
+            .join('|')
+        : '';
+      const sharedBatch = context.sharedWorkBatchMode
+        ? Object.keys(state.sharedSelectionWorkBatchSelectedByKey || {})
+            .sort()
+            .map(key => {
+              const entry = state.sharedSelectionWorkBatchSelectedByKey[key] || {};
+              return `${key}:${normalizeText_(entry.objectKey || '')}:${normalizeText_(entry.uin || '')}`;
+            })
+            .join('|')
+        : '';
+      return [
+        String(state.lastDataLoadedAt || 0),
+        String(state.selectedRowIndex),
+        String(state.activeRegistrySelectionId || ''),
+        context.hasSavedSelection ? '1' : '0',
+        context.sharedSelectionActive ? '1' : '0',
+        context.isAdminEditing ? '1' : '0',
+        context.isSelectionEditing ? '1' : '0',
+        String(context.sharedWorkBatchMode || ''),
+        visibleDefs.map(def => String(def && def.key || '')).join('|'),
+        (Array.isArray(rowIndexes) ? rowIndexes : []).join(','),
+        adminSelected,
+        selectionDraft,
+        doneKeys,
+        sharedItems,
+        sharedPending,
+        sharedBatch,
+        String(state.sharedSelectionWorkBatchPendingAction || '')
+      ].join('::');
+    }
+
+function getRegistryTableWrap_() {
+      return document.querySelector('.registry-table-wrap');
+    }
+
+function bindRegistryTableWrapEvents_(wrap) {
+      if (!wrap || wrap.dataset.registryLazyBound === '1') return;
+      wrap.dataset.registryLazyBound = '1';
+      wrap.addEventListener('scroll', () => {
+        maybeRenderMoreRegistryRows_(wrap);
+      }, { passive: true });
+    }
+
+function resetRegistryLazyRowsState_(body) {
+      if (!body) return;
+      body.__registryAllRows = [];
+      body.__registryRenderContext = null;
+      body.__registryRenderedCount = 0;
+      body.__registryRenderToken = 0;
+      body.__registryLoadingMore = false;
+    }
+
+function getRegistryInitialRenderLimit_(wrap, totalRows) {
+      const total = Math.max(0, Number(totalRows) || 0);
+      if (!total) return 0;
+      const viewportHeight = wrap ? Math.max(320, Number(wrap.clientHeight) || 0) : 720;
+      const estimatedRowHeight = 48;
+      const visibleRows = Math.max(12, Math.ceil(viewportHeight / estimatedRowHeight));
+      return Math.min(total, Math.max(REGISTRY_LAZY_RENDER_MIN_ROWS, visibleRows + REGISTRY_LAZY_RENDER_BUFFER_ROWS));
+    }
+
+function appendRegistryRowsRange_(body, rows, context, fromIndex, toIndex, replace) {
+      if (!body) return;
+      const safeRows = Array.isArray(rows) ? rows : [];
+      const start = Math.max(0, Number(fromIndex) || 0);
+      const end = Math.max(start, Math.min(Number(toIndex) || 0, safeRows.length));
+      const chunkHtml = safeRows.slice(start, end).map(rowIndex => buildRegistryRowHtml_(rowIndex, context)).join('');
+      if (replace || start === 0) body.innerHTML = chunkHtml;
+      else if (chunkHtml) body.insertAdjacentHTML('beforeend', chunkHtml);
+      body.__registryAllRows = safeRows;
+      body.__registryRenderContext = context || {};
+      body.__registryRenderedCount = end;
+    }
+
+function maybeRenderMoreRegistryRows_(wrap, options) {
+      const container = wrap || getRegistryTableWrap_();
+      const body = el('registryTableBody');
+      if (!container || !body) return;
+      const rows = Array.isArray(body.__registryAllRows) ? body.__registryAllRows : [];
+      const renderedCount = Math.max(0, Number(body.__registryRenderedCount) || 0);
+      if (!rows.length || renderedCount >= rows.length || body.__registryLoadingMore) return;
+      const settings = options && typeof options === 'object' ? options : {};
+      const remainingPixels = container.scrollHeight - (container.scrollTop + container.clientHeight);
+      const needsViewportFill = container.scrollHeight <= (container.clientHeight + 32);
+      const threshold = Math.max(320, Math.round(container.clientHeight * 0.9));
+      if (!settings.force && !needsViewportFill && remainingPixels > threshold) return;
+      const renderToken = Number(body.__registryRenderToken) || 0;
+      body.__registryLoadingMore = true;
+      registryRowsRenderFrame = window.requestAnimationFrame(() => {
+        registryRowsRenderFrame = 0;
+        if (renderToken !== registryRowsRenderToken) {
+          body.__registryLoadingMore = false;
+          return;
+        }
+        const nextCount = Math.min(rows.length, renderedCount + REGISTRY_LAZY_RENDER_BATCH);
+        appendRegistryRowsRange_(body, rows, body.__registryRenderContext || {}, renderedCount, nextCount, false);
+        body.__registryLoadingMore = false;
+        if (nextCount < rows.length && container.scrollHeight <= (container.clientHeight + 32)) {
+          maybeRenderMoreRegistryRows_(container, { force: true });
+        }
+      });
     }
 
 function renderRegistryTextCellHtml_(value, options) {
@@ -6794,13 +6947,20 @@ function buildRegistryRowHtml_(rowIndex, viewState) {
       cancelRegistryRowsRender_();
       if (!body) return;
       if (!rows.length) {
+        resetRegistryLazyRowsState_(body);
         body.innerHTML = '';
         return;
       }
 
+      const wrap = getRegistryTableWrap_();
+      const initialLimit = getRegistryInitialRenderLimit_(wrap, rows.length);
       const renderToken = registryRowsRenderToken;
-      const total = rows.length;
+      const total = Math.min(rows.length, initialLimit);
       let offset = 0;
+      resetRegistryLazyRowsState_(body);
+      body.__registryAllRows = rows;
+      body.__registryRenderContext = context;
+      body.__registryRenderToken = renderToken;
 
       function getRegistryRenderBatchSize_(initial) {
         if (isSidebarBrandLogoReplaying_()) {
@@ -6816,12 +6976,13 @@ function buildRegistryRowHtml_(rowIndex, viewState) {
       function renderChunk_(batchSize, replace) {
         if (renderToken !== registryRowsRenderToken) return;
         const end = Math.min(offset + batchSize, total);
-        const chunkHtml = rows.slice(offset, end).map(rowIndex => buildRegistryRowHtml_(rowIndex, context)).join('');
-        if (replace) body.innerHTML = chunkHtml;
-        else body.insertAdjacentHTML('beforeend', chunkHtml);
+        appendRegistryRowsRange_(body, rows, context, offset, end, replace);
         offset = end;
         const hasMore = offset < total;
-        if (!hasMore) return;
+        if (!hasMore) {
+          maybeRenderMoreRegistryRows_(wrap, { force: true });
+          return;
+        }
         registryRowsRenderFrame = window.requestAnimationFrame(() => {
           registryRowsRenderFrame = 0;
           renderChunk_(getRegistryRenderBatchSize_(false), false);
@@ -6843,7 +7004,7 @@ function buildRegistryRowHtml_(rowIndex, viewState) {
         return;
       }
       renderRegistryColumnsPanel_();
-      renderRegistryTableStructure_();
+      bindRegistryTableWrapEvents_(getRegistryTableWrap_());
       syncRegistryBulkUinUi_();
       populateRegistryFacetFiltersFast_();
       renderRegistrySelectionEditBar_();
@@ -6866,16 +7027,25 @@ function buildRegistryRowHtml_(rowIndex, viewState) {
 
       const body = el('registryTableBody');
       const visibleColumnDefs = getVisibleRegistryColumnDefs_();
+      const structureSignature = buildRegistryTableStructureSignature_(visibleColumnDefs);
       const colCount = Math.max(visibleColumnDefs.length, 1);
+      if (state.registryTableStructureSignature !== structureSignature) {
+        renderRegistryTableStructure_();
+        state.registryTableStructureSignature = structureSignature;
+      }
       if (!state.rows.length) {
         el('objectCountBadge').textContent = '0 объектов';
         cancelRegistryRowsRender_();
+        resetRegistryLazyRowsState_(body);
+        state.registryRowsSignature = 'empty:data';
         body.innerHTML = `<tr><td colspan="${colCount}"><div class="empty-state">Данные еще не загружены.</div></td></tr>`;
         return;
       }
       if (!state.filteredRowIndexes.length) {
         el('objectCountBadge').textContent = '0 объектов';
         cancelRegistryRowsRender_();
+        resetRegistryLazyRowsState_(body);
+        state.registryRowsSignature = 'empty:filters';
         body.innerHTML = `<tr><td colspan="${colCount}"><div class="empty-state">По текущим фильтрам ничего не найдено.</div></td></tr>`;
         return;
       }
@@ -6889,10 +7059,12 @@ function buildRegistryRowHtml_(rowIndex, viewState) {
             ? 'У вас нет объектов для отмены.'
             : 'По текущим фильтрам ничего не найдено.';
         cancelRegistryRowsRender_();
+        resetRegistryLazyRowsState_(body);
+        state.registryRowsSignature = `empty:${sharedWorkBatchMode || 'default'}`;
         body.innerHTML = `<tr><td colspan="${colCount}"><div class="empty-state">${escapeHtml_(emptyMessage)}</div></td></tr>`;
         return;
       }
-      renderRegistryRowsProgressively_(body, visibleRowIndexes, {
+      const renderContext = {
         hasSavedSelection,
         sharedSelectionActive,
         isAdminEditing,
@@ -6901,7 +7073,14 @@ function buildRegistryRowHtml_(rowIndex, viewState) {
         selectionEditSet,
         sharedWorkBatchMode,
         visibleColumnDefs
-      });
+      };
+      const rowsSignature = buildRegistryRowsRenderSignature_(visibleRowIndexes, renderContext);
+      if (state.registryRowsSignature !== rowsSignature) {
+        renderRegistryRowsProgressively_(body, visibleRowIndexes, renderContext);
+        state.registryRowsSignature = rowsSignature;
+      } else {
+        maybeRenderMoreRegistryRows_(getRegistryTableWrap_(), { force: false });
+      }
     }
 
     function renderAdminRegistryUi_() {
