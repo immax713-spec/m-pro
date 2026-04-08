@@ -192,6 +192,8 @@ create unique index if not exists sf_shared_selection_work_unique_idx
 create table if not exists public.sf_edit_logs (
   id bigserial primary key,
   created_at timestamptz not null default now(),
+  source_type text not null default 'app',
+  source_key text not null default '',
   user_name text not null default '',
   role text not null default '',
   division text not null default '',
@@ -201,6 +203,12 @@ create table if not exists public.sf_edit_logs (
   old_value text not null default '',
   new_value text not null default ''
 );
+
+create index if not exists sf_edit_logs_lookup_idx
+  on public.sf_edit_logs(field_id, uin, created_at desc);
+
+create index if not exists sf_edit_logs_source_idx
+  on public.sf_edit_logs(source_type, source_key, created_at desc);
 
 grant select on public.objects, public.sm, public.ppr, public.suid, public.lb, public.mgz, public.ksg
 to anon, authenticated;
@@ -1229,6 +1237,8 @@ begin
 
     insert into public.sf_edit_logs(
       created_at,
+      source_type,
+      source_key,
       user_name,
       role,
       division,
@@ -1240,6 +1250,8 @@ begin
     )
     values (
       now(),
+      'app',
+      '',
       coalesce(v_user.name, ''),
       coalesce(v_user.role, ''),
       coalesce(v_user.division, ''),
