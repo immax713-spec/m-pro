@@ -6188,16 +6188,24 @@ function renderSavedSelectionsPanel_() {
         list.innerHTML = '<div class="empty-state">Пока нет проектов.</div>';
       } else {
         const groups = [];
-        if (personalSelections.length) groups.push(renderSavedSelectionGroupHtml_('personal', 'Личные', personalSelections));
+        if (personalSelections.length) groups.push(renderSavedSelectionGroupHtml_('personal', 'Личная', personalSelections));
         if (divisionSelections.length) groups.push(renderSavedSelectionGroupHtml_(
           'division',
           'Блок',
           divisionSelections
         ));
-        if (sharedSelections.length) groups.push(renderSavedSelectionGroupHtml_('shared', 'Общие', sharedSelections));
+        if (sharedSelections.length) groups.push(renderSavedSelectionGroupHtml_('shared', 'Общая', sharedSelections));
         list.innerHTML = groups.join('');
       }
 
+      list.querySelectorAll('[data-saved-selection-group-toggle]').forEach(button => {
+        button.addEventListener('click', () => {
+          toggleSavedSelectionGroup_(
+            String(button.getAttribute('data-saved-selection-group-toggle') || ''),
+            button
+          );
+        });
+      });
       list.querySelectorAll('[data-load-selection]').forEach(button => {
         button.addEventListener('click', () => applySavedRegistrySelection_(String(button.getAttribute('data-load-selection') || '')));
       });
@@ -6206,11 +6214,19 @@ function renderSavedSelectionsPanel_() {
     }
 
 function renderSavedSelectionGroupHtml_(groupKey, title, items) {
-      const heading = `${String(title || '').trim()} ${items.length}`.trim();
+      const normalizedGroupKey = normalizeRegistrySelectionScope_(groupKey);
+      const heading = String(title || '').trim() || 'Проекты';
+      const isOpen = isSavedSelectionGroupOpen_(normalizedGroupKey);
       return (
         `<div class="saved-selection-group">` +
-          `<div class="saved-selection-group-title">${escapeHtml_(heading)}</div>` +
-          `<div class="saved-selection-stack">${items.map(item => renderSavedSelectionItemHtml_(item)).join('')}</div>` +
+          `<button class="saved-selection-group-toggle" type="button" data-saved-selection-group-toggle="${escapeHtml_(normalizedGroupKey)}" aria-expanded="${isOpen ? 'true' : 'false'}">` +
+            `<span class="saved-selection-group-title-wrap">` +
+              `<span class="saved-selection-group-title">${escapeHtml_(heading)}</span>` +
+              `<span class="saved-selection-group-count">${items.length}</span>` +
+            `</span>` +
+            `<span class="saved-selection-group-arrow" aria-hidden="true"></span>` +
+          `</button>` +
+          `<div class="saved-selection-stack${isOpen ? '' : ' hidden'}">${items.map(item => renderSavedSelectionItemHtml_(item)).join('')}</div>` +
         `</div>`
       );
     }
