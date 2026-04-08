@@ -922,7 +922,15 @@
     function handleSidebarNavigation_(panelKey) {
       const nextPanel = normalizeSidebarPanel_(panelKey);
       const isSamePanel = nextPanel !== 'registry' && nextPanel === normalizeSidebarPanel_(state.sidebarActivePanel);
+      const shouldOnlyExpand = !isCompactSidebarViewport_() && !state.sidebarExpanded;
       state.sidebarExpanded = true;
+      if (shouldOnlyExpand) {
+        state.sidebarActivePanel = nextPanel;
+        if (nextPanel === 'registry') state.currentView = 'registry';
+        renderAll_();
+        if (nextPanel === 'registry') scrollWorkspaceToTop_();
+        return;
+      }
       state.sidebarActivePanel = isSamePanel ? 'registry' : nextPanel;
       if (nextPanel === 'registry' || isSamePanel) state.currentView = 'registry';
       renderAll_();

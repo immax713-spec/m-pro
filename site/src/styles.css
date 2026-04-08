@@ -622,7 +622,7 @@
     .sidebar.is-collapsed .sidebar-brand-row{justify-content:center}
     .sidebar.is-collapsed .sidebar-brand-toggle{min-width:0;width:100%;max-width:46px;height:auto;justify-content:center}
     .sidebar.is-collapsed .brand-logo-svg{max-width:30px}
-    .sidebar.is-collapsed .sidebar-collapse-toggle{right:4px}
+    .sidebar.is-collapsed .sidebar-collapse-toggle{display:none}
     .sidebar.is-collapsed .user-session{grid-template-columns:1fr;justify-items:center}
     .sidebar.is-collapsed .user-session-meta{display:none}
     .sidebar.is-collapsed .sidebar-nav{align-items:center;gap:3px;padding-top:4px;padding-bottom:8px}
