@@ -2280,23 +2280,23 @@ function canUseDivisionRegistrySelectionScope_() {
 
 function getRegistrySelectionScopeChipLabel_(scope) {
       const mode = normalizeRegistrySelectionScope_(scope);
-      if (mode === 'division') return 'Блок';
-      if (mode === 'shared') return 'Общая';
-      return 'Личная';
+      if (mode === 'division') return 'Команда';
+      if (mode === 'shared') return 'Все';
+      return 'Мои';
     }
 
 function getRegistrySelectionScopeTitle_(scope) {
       const mode = normalizeRegistrySelectionScope_(scope);
       if (mode === 'division') {
         const divisionLabel = getCurrentUserDivisionLabel_();
-        return divisionLabel ? `Блок: ${divisionLabel}` : 'Проект блока';
+        return divisionLabel ? `Команда: ${divisionLabel}` : 'Проект команды';
       }
-      return mode === 'shared' ? 'Общий проект' : 'Личный проект';
+      return mode === 'shared' ? 'Проект для всех' : 'Мой проект';
     }
 
 function getCollaborativeSelectionDivisionMessage_(selection) {
       return isDivisionRegistrySelection_(selection)
-        ? 'Для проекта блока укажите блок'
+        ? 'Для проекта команды укажите блок'
         : 'Для общего проекта укажите блок';
     }
 
@@ -2308,8 +2308,8 @@ function buildSavedSelectionsPanelSummary_() {
       const sharedCount = allSelections.filter(item => normalizeRegistrySelectionScope_(item && item.scope) === 'shared').length;
       const parts = [];
       if (personalCount) parts.push(`мои ${personalCount}`);
-      if (divisionCount) parts.push(`блок ${divisionCount}`);
-      if (sharedCount) parts.push(`общие ${sharedCount}`);
+      if (divisionCount) parts.push(`команда ${divisionCount}`);
+      if (sharedCount) parts.push(`все ${sharedCount}`);
       return parts.join(' · ') || `${allSelections.length} проектов`;
     }
 
@@ -2422,7 +2422,7 @@ function buildRegistrySelectionComposerSummary_() {
       if (scope === 'division' && !canUseDivisionRegistrySelectionScope_()) {
         return {
           title,
-          subtitle: 'Для режима "Блок" у пользователя должен быть указан блок.',
+          subtitle: 'Для режима "Команда" у пользователя должен быть указан блок.',
           meta: compactMeta
         };
       }
@@ -2931,7 +2931,7 @@ function saveCurrentRegistrySelection_(mode) {
         return Promise.resolve(null);
       }
       if (scope === 'division' && !canUseDivisionRegistrySelectionScope_()) {
-        reportRuntimeError_('У пользователя не указан блок. Сохранить такую выборку сейчас нельзя.', 'Выборка');
+        reportRuntimeError_('У пользователя не указан блок. Сохранить такой проект команды сейчас нельзя.', 'Проект');
         return Promise.resolve(null);
       }
 
@@ -6146,13 +6146,13 @@ function renderSavedSelectionsPanel_() {
         list.innerHTML = '<div class="empty-state">Пока нет проектов.</div>';
       } else {
         const groups = [];
-        if (personalSelections.length) groups.push(renderSavedSelectionGroupHtml_('personal', 'Личная', personalSelections));
+        if (personalSelections.length) groups.push(renderSavedSelectionGroupHtml_('personal', 'Мои', personalSelections));
         if (divisionSelections.length) groups.push(renderSavedSelectionGroupHtml_(
           'division',
-          'Блок',
+          'Команда',
           divisionSelections
         ));
-        if (sharedSelections.length) groups.push(renderSavedSelectionGroupHtml_('shared', 'Общая', sharedSelections));
+        if (sharedSelections.length) groups.push(renderSavedSelectionGroupHtml_('shared', 'Все', sharedSelections));
         list.innerHTML = groups.join('');
       }
 
