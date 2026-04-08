@@ -497,9 +497,8 @@
 
     /* ===== Sidebar redesign ===== */
     .app{--sidebar-width:54px;--shell-panel-height:calc(100dvh - 20px);grid-template-columns:var(--sidebar-width) minmax(0,1fr);gap:10px;align-items:start;min-height:100dvh}
-    .app.sidebar-expanded{--sidebar-width:54px}
-    .sidebar{width:54px;padding:0;overflow-y:auto;overflow-x:hidden;position:sticky;top:10px;z-index:24;align-self:start;min-height:var(--shell-panel-height);max-height:var(--shell-panel-height);border-radius:18px;border:1px solid rgba(154,242,226,.08);background:radial-gradient(circle at 18% 8%,rgba(115,216,200,.15),transparent 30%),radial-gradient(circle at 100% 0%,rgba(115,216,200,.06),transparent 24%),linear-gradient(180deg,#1a282c 0%,#121b1e 100%);box-shadow:0 24px 48px rgba(12,20,21,.28),inset 0 1px 0 rgba(255,255,255,.03);scrollbar-width:none;-ms-overflow-style:none;transition:width .16s cubic-bezier(.33,1,.68,1),box-shadow .16s ease,background .16s ease;will-change:width}
-    .sidebar.is-expanded{width:304px}
+    .app.sidebar-expanded{--sidebar-width:304px}
+    .sidebar{padding:0;overflow-y:auto;overflow-x:hidden;position:sticky;top:10px;align-self:start;min-height:var(--shell-panel-height);max-height:var(--shell-panel-height);border-radius:18px;border:1px solid rgba(154,242,226,.08);background:radial-gradient(circle at 18% 8%,rgba(115,216,200,.15),transparent 30%),radial-gradient(circle at 100% 0%,rgba(115,216,200,.06),transparent 24%),linear-gradient(180deg,#1a282c 0%,#121b1e 100%);box-shadow:0 24px 48px rgba(12,20,21,.28),inset 0 1px 0 rgba(255,255,255,.03);scrollbar-width:none;-ms-overflow-style:none;transition:box-shadow .16s ease,background .16s ease}
     .sidebar::-webkit-scrollbar{display:none;width:0;height:0}
     .sidebar-shell{display:flex;flex-direction:column;min-height:var(--shell-panel-height);height:100%;overflow:hidden}
     .sidebar-top,.sidebar-nav,.sidebar-content{padding-left:5px;padding-right:5px}
@@ -522,7 +521,7 @@
     .brand-logo-svg.is-replaying .brand-logo-path{filter:drop-shadow(0 0 5px rgba(154,242,226,.26)) drop-shadow(0 0 12px rgba(115,216,200,.18))}
     .user-session{grid-template-columns:36px minmax(0,1fr);padding:10px 0 0 6px;gap:8px;align-items:center}
     .user-session-icon{display:inline-grid;place-self:center;width:30px;height:30px;stroke:rgba(158,189,181,.92);stroke-width:1.6;opacity:.96}
-    .user-session-meta{padding-left:0;gap:4px;max-height:56px;overflow:hidden;transition:opacity .12s ease,transform .14s ease}
+    .user-session-meta{padding-left:0;gap:4px;max-height:56px;overflow:hidden}
     .user-session-name{font-size:12px}
     .user-session-role{font-size:11px;color:var(--sidebar-text-muted);font-weight:600}
     .sidebar-footer{display:grid;justify-items:center;align-items:end;margin-top:auto;padding:0 8px 12px;gap:8px}
@@ -546,7 +545,7 @@
     .nav-button-icon .sidebar-icon-svg{width:32px;height:32px;stroke:rgba(158,189,181,.9);stroke-width:1.6;transition:stroke .16s ease,opacity .16s ease;opacity:.95}
     .nav-button:hover .nav-button-icon .sidebar-icon-svg{stroke:var(--sidebar-text-muted)}
     .nav-button.is-active .nav-button-icon .sidebar-icon-svg{stroke:var(--sidebar-accent-strong);opacity:1}
-    .nav-button-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:opacity .12s ease,transform .14s ease}
+    .nav-button-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .nav-button.is-active .nav-button-label{color:var(--sidebar-text)}
     .nav-button-expandable{grid-template-columns:36px minmax(0,1fr)}
     .nav-inline-action{position:absolute;right:24px;top:50%;z-index:1;display:none;align-items:center;justify-content:center;min-width:22px!important;min-height:22px!important;width:22px;height:22px;margin-top:-11px;padding:0!important;border-radius:var(--square-control-radius)!important;border:1px solid rgba(88,220,194,.26)!important;background:rgba(15,125,112,.04)!important;color:var(--sidebar-accent-strong)!important;box-shadow:none!important;flex:0 0 22px;font-size:0;line-height:0}
@@ -659,7 +658,7 @@
     .sidebar.is-collapsed .sidebar-footer-button-label{display:inline;opacity:0;max-width:0;overflow:hidden;transform:translateX(-4px);pointer-events:none}
     .record-head-main{grid-template-columns:minmax(0,1fr)}
     .record-back-button{display:none!important}
-    .workspace{display:flex;flex-direction:column;position:relative;z-index:1;min-width:0;min-height:0;height:var(--shell-panel-height);max-height:var(--shell-panel-height);overflow:hidden;align-content:stretch}
+    .workspace{display:flex;flex-direction:column;min-width:0;min-height:0;height:var(--shell-panel-height);max-height:var(--shell-panel-height);overflow:hidden;align-content:stretch}
     .workspace-tabs,.runtime-error-banner{flex:0 0 auto}
     .registry-view,.record-shell{flex:1 1 auto;min-height:0;max-height:100%}
     .registry-view{display:flex;flex-direction:column;height:auto;overflow:hidden}
@@ -667,7 +666,7 @@
     .registry-table-wrap{flex:1 1 0%;min-height:0;height:100%;max-height:none}
       @media (max-width:980px){
         .app,.app.sidebar-expanded{--sidebar-width:100%;grid-template-columns:1fr;min-height:100vh;height:auto;overflow:visible}
-        .sidebar,.sidebar.is-expanded{width:auto;position:relative;top:0;min-height:auto}
+        .sidebar{position:relative;top:0;min-height:auto}
       .sidebar-shell{min-height:auto}
       .workspace{display:grid;height:auto;max-height:none;overflow:visible}
       .workspace,.registry-view,.record-shell{min-height:auto;max-height:none}
@@ -688,7 +687,7 @@
       .sidebar-collapse-toggle{display:none}
     }
     @keyframes saveSpin{to{transform:rotate(360deg)}}
-    .sidebar-footer-button-label{transition:opacity .12s ease,transform .14s ease}
+    .sidebar-footer-button-label{transition:none}
     .hidden{display:none!important}
     /* ===== Geometry tightening ===== */
     :root{--square-panel-radius:14px;--square-control-radius:8px;--square-chip-radius:6px}
