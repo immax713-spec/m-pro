@@ -347,7 +347,7 @@
         labels: [option && option.dropdownLabel, option && option.subtitle]
           .map(value => String(value || '').trim())
           .filter(Boolean),
-        collectAllMatches: !!(option && option.collectAllMatches),
+        collectAllMatches: !!(option && option.collectAllMatches) || fieldIds.length > 1,
         matchGroupedTitle: !!(option && option.matchGroupedTitle)
       };
     }
