@@ -654,11 +654,13 @@
       const btnTakeObjectWork = el('btnTakeObjectWork');
       const btnReleaseObjectWork = el('btnReleaseObjectWork');
       const btnPrevUndoneObject = el('btnPrevUndoneObject');
+      const btnMarkObjectDone = el('btnMarkObjectDone');
       const btnNextUndoneObject = el('btnNextUndoneObject');
       if (btnSaveObject) btnSaveObject.addEventListener('click', () => saveCurrentObjectEdits_());
       if (btnTakeObjectWork) btnTakeObjectWork.addEventListener('click', () => takeCurrentObjectWork_());
       if (btnReleaseObjectWork) btnReleaseObjectWork.addEventListener('click', () => releaseCurrentObjectWork_());
       if (btnPrevUndoneObject) btnPrevUndoneObject.addEventListener('click', () => openPrevUndoneObject_());
+      if (btnMarkObjectDone) btnMarkObjectDone.addEventListener('click', () => markCurrentObjectDone_());
       if (btnNextUndoneObject) btnNextUndoneObject.addEventListener('click', () => openNextUndoneObject_());
       el('registryBulkUinInput').addEventListener('keydown', evt => {
         if ((evt.ctrlKey || evt.metaKey) && evt.key === 'Enter') {
@@ -2745,6 +2747,107 @@ function finalizeSharedRegistrySelectionSave_(rawItem) {
       return item;
     }
 
+function deleteCollaborativeRegistrySelectionFromServer_(item) {
+      if (!item || !isCollaborativeRegistrySelection_(item)) return Promise.resolve(false);
+      return runServer_('deleteSmartFilterShellSharedSelection', [{
+        selectionId: item.id,
+        spreadsheetId: state.runtimeOptions.spreadsheetId || DEFAULT_SPREADSHEET_ID
+      }])
+        .then(() => {
+          clearRuntimeError_();
+          return true;
+        })
+        .catch(err => {
+          if (isUnauthorizedError_(err)) {
+            handleUnauthorized_();
+            return false;
+          }
+          return reconcileSharedRegistrySelectionDeleteAfterError_(err, item)
+            .then(removed => {
+              if (removed) {
+                clearRuntimeError_();
+                return true;
+              }
+              reportRuntimeError_(err, 'Ошибка выборки');
+              return false;
+            });
+        });
+    }
+
+function removeSavedRegistrySelectionLocally_(item) {
+      const target = item && typeof item === 'object'
+        ? item
+        : findSavedRegistrySelectionById_(item);
+      if (!target) return false;
+      const targetId = String(target.id || '').trim();
+      if (!targetId) return false;
+      if (state.activeRegistrySelectionId === targetId) clearActiveRegistrySelectionState_();
+      if (String(state.selectionDraftSourceId || '') === targetId) state.selectionDraftSourceId = '';
+      if (String(state.selectionComposerSelectionId || '') === targetId) closeRegistrySelectionComposer_();
+      clearSelectionDoneState_(targetId);
+      if (isCollaborativeRegistrySelection_(target)) {
+        state.sharedRegistrySelections = state.sharedRegistrySelections.filter(entry => String(entry && entry.id || '').trim() !== targetId);
+      } else {
+        state.personalRegistrySelections = state.personalRegistrySelections.filter(entry => String(entry && entry.id || '').trim() !== targetId);
+        persistPersonalRegistrySelections_();
+      }
+      persistRegistrySessionState_();
+      return true;
+    }
+
+function runRegistrySelectionScopeTransitionSaveFlow_(payload, editingItem, input) {
+      const sourceIsCollaborative = isCollaborativeRegistrySelection_(editingItem);
+      const targetIsCollaborative = isCollaborativeRegistrySelectionScope_(payload && payload.scope);
+      if (!editingItem || sourceIsCollaborative === targetIsCollaborative) {
+        if (targetIsCollaborative) {
+          return runSharedRegistrySelectionSaveFlow_(payload, editingItem, input).then(async item => {
+            if (
+              item &&
+              editingItem &&
+              sourceIsCollaborative &&
+              String(item.id || '').trim() &&
+              String(editingItem.id || '').trim() &&
+              String(item.id || '').trim() !== String(editingItem.id || '').trim()
+            ) {
+              const removed = await deleteCollaborativeRegistrySelectionFromServer_(editingItem);
+              if (removed) {
+                removeSavedRegistrySelectionLocally_(editingItem);
+                renderAll_();
+              }
+            }
+            return item;
+          });
+        }
+        const item = upsertPersonalRegistrySelection_(payload, editingItem ? editingItem.id : '');
+        closeRegistrySelectionComposer_();
+        applySavedRegistrySelection_(item.id);
+        syncRegistrySelectionComposerUi_();
+        return Promise.resolve(item);
+      }
+
+      if (!sourceIsCollaborative && targetIsCollaborative) {
+        return runSharedRegistrySelectionSaveFlow_(payload, null, input).then(item => {
+          if (!item) return null;
+          removeSavedRegistrySelectionLocally_(editingItem);
+          renderAll_();
+          return item;
+        });
+      }
+
+      return deleteCollaborativeRegistrySelectionFromServer_(editingItem).then(removed => {
+        if (!removed) {
+          if (input) input.focus();
+          return null;
+        }
+        removeSavedRegistrySelectionLocally_(editingItem);
+        const item = upsertPersonalRegistrySelection_(payload, '');
+        closeRegistrySelectionComposer_();
+        applySavedRegistrySelection_(item.id);
+        syncRegistrySelectionComposerUi_();
+        return item;
+      });
+    }
+
 function matchesCurrentRegistrySelectionState_(item) {
       const editingId = String(state.selectionComposerSelectionId || '').trim();
       const itemId = String(item && item.id || '').trim();
@@ -2842,13 +2945,7 @@ function runSharedRegistrySelectionSaveFlow_(payload, editingItem, input) {
 function saveCurrentRegistrySelection_(mode) {
       const input = el('selectionNameInput');
       const editingItem = findSavedRegistrySelectionById_(state.selectionComposerSelectionId);
-      const scope = normalizeRegistrySelectionScope_(
-        editingItem
-          ? (isCollaborativeRegistrySelection_(editingItem)
-            ? getRegistrySelectionComposerScope_()
-            : String(editingItem.scope || 'personal'))
-          : getRegistrySelectionComposerScope_()
-      );
+      const scope = normalizeRegistrySelectionScope_(getRegistrySelectionComposerScope_());
       const name = String(input && input.value || buildRegistrySelectionLabel_()).trim();
       const saveMode = mode === 'append' ? 'append' : 'replace';
       if (!name) {
@@ -2879,16 +2976,7 @@ function saveCurrentRegistrySelection_(mode) {
       }
       clearRuntimeError_();
       setRegistrySelectionComposerBusyState_('saving');
-
-      if (scope === 'shared' || scope === 'division') {
-        return runSharedRegistrySelectionSaveFlow_(payload, editingItem, input);
-      }
-
-      const item = upsertPersonalRegistrySelection_(payload, editingItem ? editingItem.id : '');
-      closeRegistrySelectionComposer_();
-      applySavedRegistrySelection_(item.id);
-      syncRegistrySelectionComposerUi_();
-      return Promise.resolve(item);
+      return runRegistrySelectionScopeTransitionSaveFlow_(payload, editingItem, input);
     }
 
 function buildRegistrySelectionLabel_() {
@@ -2984,48 +3072,14 @@ function removeSavedRegistrySelection_(id) {
       renderSavedSelectionsPanel_();
 
       const finalizeRemoval = () => {
-        if (state.activeRegistrySelectionId === item.id) {
-          clearActiveRegistrySelectionState_();
-        }
-        if (String(state.selectionDraftSourceId || '') === String(item.id || '')) {
-          state.selectionDraftSourceId = '';
-        }
-        if (String(state.selectionComposerSelectionId || '') === String(item.id || '')) {
-          closeRegistrySelectionComposer_();
-        }
-        clearSelectionDoneState_(item.id);
-        if (isCollaborativeRegistrySelection_(item)) {
-          state.sharedRegistrySelections = state.sharedRegistrySelections.filter(entry => entry.id !== item.id);
-        } else {
-          state.personalRegistrySelections = state.personalRegistrySelections.filter(entry => entry.id !== item.id);
-          persistPersonalRegistrySelections_();
-        }
-        persistRegistrySessionState_();
+        removeSavedRegistrySelectionLocally_(item);
         renderAll_();
         return true;
       };
 
       if (isCollaborativeRegistrySelection_(item)) {
-        return runServer_('deleteSmartFilterShellSharedSelection', [{
-          selectionId: item.id,
-          spreadsheetId: state.runtimeOptions.spreadsheetId || DEFAULT_SPREADSHEET_ID
-        }])
-          .then(() => finalizeRemoval())
-          .catch(err => {
-            if (isUnauthorizedError_(err)) {
-              handleUnauthorized_();
-              return false;
-            }
-            return reconcileSharedRegistrySelectionDeleteAfterError_(err, item)
-              .then(removed => {
-                if (removed) {
-                  clearRuntimeError_();
-                  return finalizeRemoval();
-                }
-                reportRuntimeError_(err, 'Ошибка выборки');
-                return false;
-              });
-          })
+        return deleteCollaborativeRegistrySelectionFromServer_(item)
+          .then(removed => (removed ? finalizeRemoval() : false))
           .finally(() => {
             if (String(state.selectionRemovingId || '') === String(item.id || '')) {
               state.selectionRemovingId = '';
@@ -4057,6 +4111,11 @@ function isSharedRegistrySelection_(item) {
 
 function isDivisionRegistrySelection_(item) {
       return !!(item && normalizeRegistrySelectionScope_(item.scope) === 'division');
+    }
+
+function isCollaborativeRegistrySelectionScope_(scope) {
+      const mode = normalizeRegistrySelectionScope_(scope);
+      return mode === 'shared' || mode === 'division';
     }
 
 function isCollaborativeRegistrySelection_(item) {
@@ -5560,40 +5619,12 @@ function openNextUndoneObject_() {
       openAdjacentUndoneObject_('next');
     }
 
-function canOfferObjectCompletionBeforeNavigate_(rowIndex) {
-      if (!Number.isFinite(rowIndex) || rowIndex < 0 || !hasActiveSavedSelection_()) return false;
-      if (hasActiveSharedSelectionWork_()) {
-        const workState = getRegistryRowWorkState_(rowIndex);
-        const pendingAction = String(workState && workState.pendingAction || '').trim();
-        return !!(workState && !pendingAction && !workState.isDone && (workState.isFree || workState.isMine));
-      }
-      return !isRegistryRowDone_(rowIndex);
-    }
-
-function completeObjectBeforeNavigate_(rowIndex) {
-      if (!Number.isFinite(rowIndex) || rowIndex < 0 || !hasActiveSavedSelection_()) return Promise.resolve(false);
-      if (hasActiveSharedSelectionWork_()) {
-        return saveSharedSelectionWorkStateForRow_(rowIndex, 'done').then(result => !!(result && result.item));
-      }
-      const changed = setRegistryRowDone_(rowIndex, true);
-      if (changed) {
-        renderSavedSelectionsPanel_();
-        renderRegistryView_();
-        renderObjectView_();
-      }
-      return Promise.resolve(changed);
-    }
-
 async function openAdjacentUndoneObject_(direction) {
       const currentRowIndex = Number(state.selectedRowIndex);
       const targetRowIndex = direction === 'prev'
         ? findPrevUndoneRowIndex_(currentRowIndex)
         : findNextUndoneRowIndex_(currentRowIndex);
       if (targetRowIndex < 0) return;
-      if (canOfferObjectCompletionBeforeNavigate_(currentRowIndex)) {
-        const confirmed = window.confirm('Закончить и выполнить текущий объект перед переходом?');
-        if (confirmed) await completeObjectBeforeNavigate_(currentRowIndex);
-      }
       openObjectCard_(targetRowIndex, { addTab: false });
     }
 
@@ -5622,6 +5653,19 @@ function toggleRegistryRowDone_(rowIndex) {
         renderSavedSelectionsPanel_();
         renderRegistryView_();
       }
+    }
+
+function markCurrentObjectDone_() {
+      const rowIndex = Number(state.selectedRowIndex);
+      if (!Number.isFinite(rowIndex) || rowIndex < 0 || !hasActiveSavedSelection_()) return;
+      if (hasActiveSharedSelectionWork_()) {
+        const workState = getRegistryRowWorkState_(rowIndex);
+        const pendingAction = String(workState && workState.pendingAction || '').trim();
+        if (!workState || pendingAction || workState.isDone || !(workState.isFree || workState.isMine)) return;
+        saveSharedSelectionWorkStateForRow_(rowIndex, 'done');
+        return;
+      }
+      toggleRegistryRowDone_(rowIndex);
     }
 
 function takeCurrentObjectWork_() {
@@ -8241,7 +8285,6 @@ function syncRegistrySelectionComposerUi_() {
       const editingId = String(state.selectionComposerSelectionId || '').trim();
       const isEditing = !!editingId;
       const editingItem = isEditing ? findSavedRegistrySelectionById_(editingId) : null;
-      const editingCollaborative = isCollaborativeRegistrySelection_(editingItem);
       const busyState = String(state.selectionComposerBusyState || '').trim();
       const isBusy = !!busyState;
       const compose = el('selectionCompose');
@@ -8281,13 +8324,13 @@ function syncRegistrySelectionComposerUi_() {
         appendButton.classList.remove('is-loading');
       }
       if (personalButton) {
-        personalButton.disabled = isBusy || (isEditing && editingCollaborative);
+        personalButton.disabled = isBusy;
       }
       if (divisionButton) {
-        divisionButton.disabled = isBusy || !canUseDivisionRegistrySelectionScope_() || (isEditing && !!editingItem && !editingCollaborative);
+        divisionButton.disabled = isBusy || !canUseDivisionRegistrySelectionScope_();
       }
       if (sharedButton) {
-        sharedButton.disabled = isBusy || (isEditing && !!editingItem && !editingCollaborative);
+        sharedButton.disabled = isBusy;
       }
       syncSavedSelectionsPanelChrome_();
     }
