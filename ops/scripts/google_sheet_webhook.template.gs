@@ -85,21 +85,24 @@ function doPost(e) {
     const mergedRows = buildDbToGoogleMergedRows_({
       incomingRows: rows,
       existingRows: sheet.getDataRange().getDisplayValues(),
+      existingFormulas: sheet.getDataRange().getFormulas(),
       fieldIdRow: Number(payload.fieldIdRow || SUPABASE_WEBHOOK_CONFIG.fieldIdRow || 1),
       blockRow: Number(payload.blockRow || SUPABASE_WEBHOOK_CONFIG.blockRow || 2),
       labelRow: Number(payload.labelRow || SUPABASE_WEBHOOK_CONFIG.labelRow || 3),
       dataStartRow: Number(payload.dataStartRow || SUPABASE_WEBHOOK_CONFIG.dataStartRow || 4),
     });
 
-    ensureSheetGridSize_(sheet, mergedRows.length, mergedRows[0].length);
+    const requiredRowCount = Math.max(sheet.getLastRow(), mergedRows.length);
+    const requiredColumnCount = Math.max(sheet.getLastColumn(), mergedRows[0].length);
+    ensureSheetGridSize_(sheet, requiredRowCount, requiredColumnCount);
 
-    const clearRows = Math.max(sheet.getLastRow(), mergedRows.length);
-    const clearColumns = Math.max(sheet.getLastColumn(), mergedRows[0].length);
-    if (clearRows > 0 && clearColumns > 0) {
-      sheet.getRange(1, 1, clearRows, clearColumns).clearContent();
-    }
-
-    sheet.getRange(1, 1, mergedRows.length, mergedRows[0].length).setValues(mergedRows);
+    writeMergedRowsPreservingFormulas_(sheet, {
+      rows: mergedRows,
+      existingFormulas: mergedRows.formulaMatrix || [],
+      dataStartRow: Number(payload.dataStartRow || SUPABASE_WEBHOOK_CONFIG.dataStartRow || 4),
+      previousLastRow: Number(mergedRows.previousLastRow || 0),
+      totalColumns: requiredColumnCount,
+    });
     sheet.setFrozenRows(Math.max(0, Number(payload.labelRow || SUPABASE_WEBHOOK_CONFIG.labelRow || 3)));
 
     return jsonOutput_({
@@ -107,6 +110,7 @@ function doPost(e) {
       sheetName: sheet.getName(),
       writtenRows: Math.max(0, mergedRows.length - 3),
       writtenColumns: mergedRows[0].length,
+      preservedFormulaColumns: mergedRows.preservedFormulaColumns || [],
       preservedSyncColumns: [
         'id_DB',
         'sm_1_5',
@@ -173,8 +177,8 @@ function shouldSendFieldToDb_(rawFieldId) {
 function buildDbToGoogleMergedRows_(options) {
   const incomingRows = normalizeMatrix_(options && options.incomingRows);
   const existingRows = normalizeMatrix_(options && options.existingRows);
+  const existingFormulas = normalizeMatrix_(options && options.existingFormulas);
   if (!incomingRows.length || !incomingRows[0].length) return incomingRows;
-  if (!existingRows.length || !existingRows[0].length) return incomingRows;
 
   const fieldIdRow = Math.max(1, Number(options && options.fieldIdRow) || 1);
   const blockRow = Math.max(1, Number(options && options.blockRow) || 2);
@@ -183,7 +187,17 @@ function buildDbToGoogleMergedRows_(options) {
   const headerRowCount = Math.max(fieldIdRow, blockRow, labelRow);
 
   const mergedRows = normalizeMatrix_(incomingRows);
+  mergedRows.previousLastRow = existingRows.length;
+  mergedRows.formulaMatrix = existingFormulas;
   const incomingColumns = buildSheetColumnDescriptors_(mergedRows, fieldIdRow, labelRow);
+  const formulaProtectedIndexes = buildFormulaProtectedColumnIndexes_(existingFormulas, dataStartRow);
+  mergedRows.preservedFormulaColumns = formulaProtectedIndexes
+    .map(index => normalizeSheetCell_((incomingColumns[index] && incomingColumns[index].label) || (incomingColumns[index] && incomingColumns[index].fieldId) || `#${index + 1}`));
+
+  if (!existingRows.length || !existingRows[0].length) {
+    return mergedRows;
+  }
+
   const existingColumns = buildSheetColumnDescriptors_(existingRows, fieldIdRow, labelRow);
   const protectedColumns = incomingColumns
     .map((column) => ({
@@ -216,6 +230,129 @@ function buildDbToGoogleMergedRows_(options) {
   }
 
   return mergedRows;
+}
+
+function buildFormulaProtectedColumnIndexes_(formulaRows, dataStartRow) {
+  const matrix = normalizeMatrix_(formulaRows);
+  if (!matrix.length || !matrix[0].length) return [];
+  const protectedIndexes = new Set();
+  for (let rowIndex = Math.max(0, dataStartRow - 1); rowIndex < matrix.length; rowIndex += 1) {
+    const row = matrix[rowIndex] || [];
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      if (normalizeSheetCell_(row[columnIndex])) {
+        protectedIndexes.add(columnIndex);
+      }
+    }
+  }
+  return Array.from(protectedIndexes).sort((left, right) => left - right);
+}
+
+function getWritableColumnSegments_(columnCount, protectedIndexes) {
+  const protectedSet = new Set(Array.isArray(protectedIndexes) ? protectedIndexes : []);
+  const writableIndexes = [];
+  for (let index = 0; index < Math.max(0, Number(columnCount) || 0); index += 1) {
+    if (!protectedSet.has(index)) writableIndexes.push(index);
+  }
+
+  const segments = [];
+  let segmentStart = -1;
+  let previousIndex = -1;
+  writableIndexes.forEach((index) => {
+    if (segmentStart < 0) {
+      segmentStart = index;
+      previousIndex = index;
+      return;
+    }
+    if (index === previousIndex + 1) {
+      previousIndex = index;
+      return;
+    }
+    segments.push({
+      startIndex: segmentStart,
+      width: previousIndex - segmentStart + 1,
+    });
+    segmentStart = index;
+    previousIndex = index;
+  });
+
+  if (segmentStart >= 0) {
+    segments.push({
+      startIndex: segmentStart,
+      width: previousIndex - segmentStart + 1,
+    });
+  }
+
+  return segments;
+}
+
+function writeMergedRowsPreservingFormulas_(sheet, options) {
+  const rows = normalizeMatrix_(options && options.rows);
+  if (!rows.length || !rows[0].length) return;
+
+  const dataStartRow = Math.max(1, Number(options && options.dataStartRow) || 4);
+  const totalColumns = Math.max(rows[0].length, Number(options && options.totalColumns) || 0);
+  const existingFormulas = normalizeMatrix_(options && options.existingFormulas);
+  const previousLastRow = Math.max(0, Number(options && options.previousLastRow) || 0);
+  const protectedIndexes = buildFormulaProtectedColumnIndexes_(existingFormulas, dataStartRow);
+  const segments = getWritableColumnSegments_(totalColumns, protectedIndexes);
+
+  segments.forEach((segment) => {
+    const values = rows.map((row) => {
+      const cells = row.slice(segment.startIndex, segment.startIndex + segment.width);
+      while (cells.length < segment.width) cells.push('');
+      return cells;
+    });
+    sheet
+      .getRange(1, segment.startIndex + 1, rows.length, segment.width)
+      .setValues(values);
+  });
+
+  const extraRowCount = Math.max(0, previousLastRow - rows.length);
+  if (extraRowCount > 0) {
+    segments.forEach((segment) => {
+      sheet
+        .getRange(rows.length + 1, segment.startIndex + 1, extraRowCount, segment.width)
+        .clearContent();
+    });
+  }
+
+  extendFormulaColumns_(sheet, {
+    protectedIndexes,
+    existingFormulas,
+    dataStartRow,
+    previousLastRow,
+    targetLastRow: rows.length,
+  });
+}
+
+function extendFormulaColumns_(sheet, options) {
+  const protectedIndexes = Array.isArray(options && options.protectedIndexes) ? options.protectedIndexes : [];
+  const existingFormulas = normalizeMatrix_(options && options.existingFormulas);
+  const dataStartRow = Math.max(1, Number(options && options.dataStartRow) || 4);
+  const previousLastRow = Math.max(0, Number(options && options.previousLastRow) || 0);
+  const targetLastRow = Math.max(0, Number(options && options.targetLastRow) || 0);
+  const appendFromRow = Math.max(dataStartRow, previousLastRow + 1);
+  if (!protectedIndexes.length || targetLastRow < appendFromRow) return;
+
+  protectedIndexes.forEach((columnIndex) => {
+    let templateRow = -1;
+    for (let rowIndex = Math.min(previousLastRow, existingFormulas.length) - 1; rowIndex >= dataStartRow - 1; rowIndex -= 1) {
+      if (normalizeSheetCell_((existingFormulas[rowIndex] || [])[columnIndex])) {
+        templateRow = rowIndex + 1;
+        break;
+      }
+    }
+    if (templateRow < dataStartRow) return;
+    const rowsToFill = targetLastRow - appendFromRow + 1;
+    if (rowsToFill <= 0) return;
+    sheet
+      .getRange(templateRow, columnIndex + 1)
+      .copyTo(
+        sheet.getRange(appendFromRow, columnIndex + 1, rowsToFill, 1),
+        SpreadsheetApp.CopyPasteType.PASTE_FORMULA,
+        false
+      );
+  });
 }
 
 function buildSheetColumnDescriptors_(rows, fieldIdRow, labelRow) {
