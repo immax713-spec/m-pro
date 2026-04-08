@@ -880,6 +880,7 @@
       }
       node.style.transition = '';
       node.style.overflow = '';
+      node.style.willChange = '';
       node.style.maxHeight = '';
       node.style.opacity = '';
       node.style.transform = '';
@@ -916,17 +917,36 @@
         node.__collapsibleTimer = 0;
       }
 
+      const requestedMode = String(settings.mode || 'auto').trim().toLowerCase();
+      const scrollHeight = Math.max(node.scrollHeight || 0, 0);
+      const mode = requestedMode === 'fade'
+        ? 'fade'
+        : requestedMode === 'size'
+          ? 'size'
+          : (scrollHeight > 260 ? 'fade' : 'size');
+
       if (shouldOpen) {
         node.classList.remove(hiddenClass);
         node.dataset.collapsibleState = 'opening';
         node.style.transition = 'none';
         node.style.overflow = 'hidden';
-        node.style.maxHeight = '0px';
+        node.style.willChange = mode === 'fade'
+          ? 'opacity, transform'
+          : 'max-height, opacity, transform';
         node.style.opacity = '0';
         node.style.transform = `translateY(-${translateY}px)`;
+        if (mode === 'size') {
+          node.style.maxHeight = '0px';
+        } else {
+          node.style.maxHeight = '';
+        }
         node.getBoundingClientRect();
-        node.style.transition = `max-height ${duration}ms cubic-bezier(.33,1,.68,1), opacity ${Math.min(duration, 170)}ms ease, transform ${duration}ms cubic-bezier(.33,1,.68,1)`;
-        node.style.maxHeight = `${Math.max(node.scrollHeight, 1)}px`;
+        node.style.transition = mode === 'fade'
+          ? `opacity ${Math.min(duration, 160)}ms ease, transform ${duration}ms cubic-bezier(.33,1,.68,1)`
+          : `max-height ${duration}ms cubic-bezier(.33,1,.68,1), opacity ${Math.min(duration, 170)}ms ease, transform ${duration}ms cubic-bezier(.33,1,.68,1)`;
+        if (mode === 'size') {
+          node.style.maxHeight = `${Math.max(scrollHeight, 1)}px`;
+        }
         node.style.opacity = '1';
         node.style.transform = 'translateY(0)';
         node.__collapsibleTimer = window.setTimeout(() => {
@@ -938,12 +958,23 @@
       node.dataset.collapsibleState = 'closing';
       node.style.transition = 'none';
       node.style.overflow = 'hidden';
-      node.style.maxHeight = `${Math.max(node.scrollHeight, 1)}px`;
+      node.style.willChange = mode === 'fade'
+        ? 'opacity, transform'
+        : 'max-height, opacity, transform';
+      if (mode === 'size') {
+        node.style.maxHeight = `${Math.max(scrollHeight, 1)}px`;
+      } else {
+        node.style.maxHeight = '';
+      }
       node.style.opacity = '1';
       node.style.transform = 'translateY(0)';
       node.getBoundingClientRect();
-      node.style.transition = `max-height ${duration}ms cubic-bezier(.33,1,.68,1), opacity ${Math.min(duration, 150)}ms ease, transform ${duration}ms cubic-bezier(.33,1,.68,1)`;
-      node.style.maxHeight = '0px';
+      node.style.transition = mode === 'fade'
+        ? `opacity ${Math.min(duration, 150)}ms ease, transform ${duration}ms cubic-bezier(.33,1,.68,1)`
+        : `max-height ${duration}ms cubic-bezier(.33,1,.68,1), opacity ${Math.min(duration, 150)}ms ease, transform ${duration}ms cubic-bezier(.33,1,.68,1)`;
+      if (mode === 'size') {
+        node.style.maxHeight = '0px';
+      }
       node.style.opacity = '0';
       node.style.transform = `translateY(-${translateY}px)`;
       node.__collapsibleTimer = window.setTimeout(() => {
@@ -2445,14 +2476,14 @@ function toggleSavedSelectionGroup_(groupKey, triggerNode) {
       const groupNode = toggleNode && typeof toggleNode.closest === 'function'
         ? toggleNode.closest('.saved-selection-group')
         : null;
-      const stackNode = groupNode ? groupNode.querySelector('.saved-selection-stack') : null;
-      if (toggleNode) toggleNode.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
-      if (stackNode) {
-        setCollapsibleOpenState_(stackNode, nextOpen, { duration: 180, translateY: 8 });
-        return;
+        const stackNode = groupNode ? groupNode.querySelector('.saved-selection-stack') : null;
+        if (toggleNode) toggleNode.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+        if (stackNode) {
+          setCollapsibleOpenState_(stackNode, nextOpen, { duration: 160, translateY: 6, mode: 'auto' });
+          return;
+        }
+        renderSavedSelectionsPanel_();
       }
-      renderSavedSelectionsPanel_();
-    }
 
 function toggleSavedSelectionExpanded_(selectionId, nextValue) {
       const key = String(selectionId || '').trim();
@@ -6012,13 +6043,13 @@ function renderNavState_() {
         }
         const item = button.closest('.nav-item');
         if (item) item.classList.toggle('is-open', active);
-      });
-      Object.keys(panelMap).forEach(key => {
-        const panel = panelMap[key];
-        if (!panel) return;
-        setCollapsibleOpenState_(panel, key === activePanel, { duration: 190, translateY: 10 });
-      });
-    }
+        });
+        Object.keys(panelMap).forEach(key => {
+          const panel = panelMap[key];
+          if (!panel) return;
+          setCollapsibleOpenState_(panel, key === activePanel, { duration: 150, translateY: 6, mode: 'fade' });
+        });
+      }
 
 function populatePresetMenus_() {
       document.querySelectorAll('[data-preset-menu]').forEach(node => {
