@@ -68,6 +68,8 @@
     const KSG_START_SMR_FACT_SPEC = { ids: ['ksg_5_2'], labels: ['Начало СМР Дата начала план (этал.график)', 'Дата начала план (этал.график)'] };
     const KSG_RV_DATE_SPEC = { ids: ['ksg_12_3'], labels: ['Фактическая дата окончания  (этал.график)'] };
     const KSG_RV_NUMBER_SPEC = { ids: ['ksg_12_4'], labels: ['№ РВ'] };
+    const GOOGLE_OWNED_HTML_FIELD_IDS = new Set(['sm_1_5', 'sm_1_6', 'sm_1_7', 'sm_1_10']);
+    const GOOGLE_OWNED_HTML_FIELD_PREFIXES = ['ksg_', 'suid_'];
     const DIRECTIVE_ENTRY_SPEC = { ids: ['object_directive_entry', 'ro_1_11'], labels: ['Плановый ввод по директивному графику (по дашборду)'] };
     const EVV_ENTRY_SPEC = { ids: ['object_evv_entry', 'ro_1_12'], labels: ['График ВВЕ 26-30'] };
     const CONTACT_OWNER_SPEC = { ids: ['ppr_1_1', 'object_project_lead', 'koo_1_6'], labels: ['ФИО', 'Руководитель проекта (Заказчик)'] };
@@ -1803,7 +1805,11 @@ function clearObjectHistory_(rowIndex) {
 
 function saveCurrentObjectEdits_() {
       const rowIndex = Number(state.selectedRowIndex);
-      const edits = getPendingEditsForRow_(rowIndex);
+      const edits = getPendingEditsForRow_(rowIndex).filter(item => {
+        const column = state.columns[Number(item && item.colIndex)];
+        const fieldId = normalizeText_(column && column.fieldId || '');
+        return !isGoogleOwnedHtmlFieldId_(fieldId);
+      });
       if (!Number.isFinite(rowIndex) || rowIndex < 0 || !hasLoadedRowDetails_(rowIndex) || !edits.length || state.objectSaving) return Promise.resolve();
       const historyEntries = buildObjectChangeHistoryEntries_(rowIndex, edits);
 
@@ -5104,6 +5110,9 @@ function writeEditedValueCore_(rowIndex, colIndex, value) {
 
 function setEditedValue_(rowIndex, colIndex, value, options) {
       const settings = options || {};
+      const column = state.columns[Number(colIndex)];
+      const fieldId = normalizeText_(column && column.fieldId || '');
+      if (isGoogleOwnedHtmlFieldId_(fieldId) && !settings.allowGoogleOwnedTarget) return;
       if (isAutoCalculatedFieldColumn_(colIndex) && !settings.allowAutoCalculatedTarget) return;
       writeEditedValueCore_(rowIndex, colIndex, value);
       if (!settings.skipAutoCalculatedSync && (settings.forceAutoCalculatedSync || shouldSyncAutoCalculatedFieldsForColumn_(colIndex))) {
@@ -7427,10 +7436,30 @@ function getSectionPlaceholderMessage_(section) {
       return String(section && section.stubMessage || '').trim();
     }
 
+function isGoogleOwnedHtmlFieldId_(fieldId) {
+      const normalizedFieldId = normalizeText_(fieldId);
+      if (!normalizedFieldId) return false;
+      if (GOOGLE_OWNED_HTML_FIELD_IDS.has(normalizedFieldId)) return true;
+      return GOOGLE_OWNED_HTML_FIELD_PREFIXES.some(prefix => normalizedFieldId.startsWith(prefix));
+    }
+
+function canEditSectionField_(field) {
+      const fieldId = normalizeText_(field && field.fieldId || '');
+      if (!fieldId) return false;
+      return !isGoogleOwnedHtmlFieldId_(fieldId);
+    }
+
+function sectionHasEditableFields_(section, rowIndex) {
+      const fields = getSectionFields_(section, rowIndex);
+      return fields.some(field => canEditSectionField_(field));
+    }
+
 function canEditSection_(section) {
       if (!section) return false;
       if (getSectionPlaceholderMessage_(section)) return false;
-      return String(section.sourceKey || '').trim() !== '__suid__';
+      const rowIndex = Number.isFinite(state.selectedRowIndex) ? state.selectedRowIndex : -1;
+      if (rowIndex < 0) return false;
+      return sectionHasEditableFields_(section, rowIndex);
     }
 
 function renderSectionStack_() {
@@ -7543,12 +7572,13 @@ function renderSectionRowHtml_(items, rowIndex, editing) {
       const inputId = `field_${rowIndex}_${field.index}`;
       const stacked = linkKind ? false : shouldUseStackedFieldDisplay_(fieldLabel, value);
       const inlineLink = !editing && linkKind && isHttpUrl_(value);
+      const editable = canEditSectionField_(field);
       return (
         `<article class="section-item${stacked ? ' stacked' : ''}${inlineLink ? ' link-inline' : ''}${changed}${editing ? ' is-editing' : ''}">` +
           `<div class="section-item-label">${escapeHtml_(fieldLabel)}</div>` +
           (
             editing
-              ? renderSectionFieldEditorHtml_(field, value, multiline, inputId, linkKind, rowIndex, field.index)
+              ? renderSectionFieldEditorHtml_(field, value, multiline, inputId, linkKind, rowIndex, field.index, editable)
               : renderSectionFieldDisplayHtml_(value, linkKind, stacked)
           ) +
         `</article>`
@@ -7657,12 +7687,13 @@ function renderSectionGroupSubitemHtml_(item, rowIndex, editing) {
       const inputId = `field_${rowIndex}_${field.index}`;
       const stacked = linkKind ? false : shouldUseStackedGroupSubitemDisplay_(item, value);
       const inlineLink = !editing && linkKind && isHttpUrl_(value);
+      const editable = canEditSectionField_(field);
       return (
         `<div class="section-subitem${stacked ? ' stacked' : ''}${inlineLink ? ' link-inline' : ''}${changed}${editing ? ' is-editing' : ''}">` +
           `<div class="section-subitem-label">${escapeHtml_(item.shortLabel)}</div>` +
           (
             editing
-              ? renderSectionFieldEditorHtml_(field, value, multiline, inputId, linkKind, rowIndex, field.index)
+              ? renderSectionFieldEditorHtml_(field, value, multiline, inputId, linkKind, rowIndex, field.index, editable)
               : renderSectionFieldDisplayHtml_(value, linkKind, stacked)
           ) +
         `</div>`
@@ -7678,10 +7709,11 @@ function shouldUseStackedGroupSubitemDisplay_(item, value) {
       return shouldUseStackedFieldDisplay_(item && item.shortLabel || '', value);
     }
 
-    function renderSectionFieldEditorHtml_(field, value, multiline, inputId, linkKind, rowIndex, colIndex) {
+    function renderSectionFieldEditorHtml_(field, value, multiline, inputId, linkKind, rowIndex, colIndex, editable) {
       const editKey = fieldEditKey_(rowIndex, colIndex);
       const useTextarea = multiline && !linkKind;
       const fieldLabel = getSectionFieldDisplayLabel_(field);
+      const canEdit = editable !== false;
       const textAssistAttrs = buildTextAssistAttrs_(shouldEnableTextAssist_(fieldLabel || (field && field.label), {
         multiline: useTextarea,
         linkKind
@@ -7691,6 +7723,18 @@ function shouldUseStackedGroupSubitemDisplay_(item, value) {
         return (
           `<div class="section-item-main">` +
             `<input id="${escapeHtml_(inputId)}" class="field-input field-input-readonly" type="text" value="${escapeHtml_(autoCalculated.value || '')}" readonly tabindex="-1" aria-readonly="true" data-auto-calculated-field-index="${colIndex}" title="Рассчитывается автоматически по формуле Профинансировано x 100 / Сумма контракта">` +
+          `</div>`
+        );
+      }
+      if (!canEdit) {
+        return (
+          `<div class="section-item-main">` +
+            (
+              useTextarea
+                ? `<textarea id="${escapeHtml_(inputId)}" class="field-input field-input-readonly" readonly tabindex="-1" aria-readonly="true" data-google-owned-field-index="${colIndex}" title="Поле обновляется из Google Sheets">${escapeHtml_(value || '')}</textarea>`
+                : `<input id="${escapeHtml_(inputId)}" class="field-input field-input-readonly" type="text" value="${escapeHtml_(value || '')}" readonly tabindex="-1" aria-readonly="true" data-google-owned-field-index="${colIndex}" title="Поле обновляется из Google Sheets">`
+            ) +
+            `<div class="field-display-placeholder">Обновляется из Google</div>` +
           `</div>`
         );
       }
@@ -8560,11 +8604,11 @@ function getSectionEditableColumnIndexes_(section, rowIndex) {
         if (!item) return;
         if (item.type === 'group') {
           (Array.isArray(item.items) ? item.items : []).forEach(groupItem => {
-            if (groupItem && groupItem.field && Number.isFinite(groupItem.field.index)) indexes.push(groupItem.field.index);
+            if (groupItem && groupItem.field && canEditSectionField_(groupItem.field) && Number.isFinite(groupItem.field.index)) indexes.push(groupItem.field.index);
           });
           return;
         }
-        if (item.field && Number.isFinite(item.field.index)) indexes.push(item.field.index);
+        if (item.field && canEditSectionField_(item.field) && Number.isFinite(item.field.index)) indexes.push(item.field.index);
       });
       return Array.from(new Set(indexes));
     }
