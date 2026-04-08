@@ -864,6 +864,93 @@
       persistRegistrySessionState_();
     }
 
+    function prefersReducedMotion_() {
+      try {
+        return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function finishCollapsibleAnimation_(node, keepOpen, hiddenClass) {
+      if (!node) return;
+      if (node.__collapsibleTimer) {
+        clearTimeout(node.__collapsibleTimer);
+        node.__collapsibleTimer = 0;
+      }
+      node.style.transition = '';
+      node.style.overflow = '';
+      node.style.maxHeight = '';
+      node.style.opacity = '';
+      node.style.transform = '';
+      node.dataset.collapsibleState = keepOpen ? 'open' : 'closed';
+      node.classList.toggle(hiddenClass, !keepOpen);
+    }
+
+    function setCollapsibleOpenState_(node, shouldOpen, options) {
+      if (!node) return;
+      const settings = options && typeof options === 'object' ? options : {};
+      const hiddenClass = String(settings.hiddenClass || 'hidden');
+      const duration = Math.max(120, Number(settings.duration) || 180);
+      const translateY = Math.max(0, Number(settings.translateY) || 8);
+      const isHidden = node.classList.contains(hiddenClass);
+      const currentState = String(node.dataset.collapsibleState || '');
+
+      if (prefersReducedMotion_()) {
+        finishCollapsibleAnimation_(node, !!shouldOpen, hiddenClass);
+        return;
+      }
+
+      if (shouldOpen) {
+        if (!isHidden && currentState !== 'closing') {
+          node.dataset.collapsibleState = 'open';
+          return;
+        }
+      } else if (isHidden && currentState !== 'opening') {
+        node.dataset.collapsibleState = 'closed';
+        return;
+      }
+
+      if (node.__collapsibleTimer) {
+        clearTimeout(node.__collapsibleTimer);
+        node.__collapsibleTimer = 0;
+      }
+
+      if (shouldOpen) {
+        node.classList.remove(hiddenClass);
+        node.dataset.collapsibleState = 'opening';
+        node.style.transition = 'none';
+        node.style.overflow = 'hidden';
+        node.style.maxHeight = '0px';
+        node.style.opacity = '0';
+        node.style.transform = `translateY(-${translateY}px)`;
+        node.getBoundingClientRect();
+        node.style.transition = `max-height ${duration}ms cubic-bezier(.33,1,.68,1), opacity ${Math.min(duration, 170)}ms ease, transform ${duration}ms cubic-bezier(.33,1,.68,1)`;
+        node.style.maxHeight = `${Math.max(node.scrollHeight, 1)}px`;
+        node.style.opacity = '1';
+        node.style.transform = 'translateY(0)';
+        node.__collapsibleTimer = window.setTimeout(() => {
+          finishCollapsibleAnimation_(node, true, hiddenClass);
+        }, duration);
+        return;
+      }
+
+      node.dataset.collapsibleState = 'closing';
+      node.style.transition = 'none';
+      node.style.overflow = 'hidden';
+      node.style.maxHeight = `${Math.max(node.scrollHeight, 1)}px`;
+      node.style.opacity = '1';
+      node.style.transform = 'translateY(0)';
+      node.getBoundingClientRect();
+      node.style.transition = `max-height ${duration}ms cubic-bezier(.33,1,.68,1), opacity ${Math.min(duration, 150)}ms ease, transform ${duration}ms cubic-bezier(.33,1,.68,1)`;
+      node.style.maxHeight = '0px';
+      node.style.opacity = '0';
+      node.style.transform = `translateY(-${translateY}px)`;
+      node.__collapsibleTimer = window.setTimeout(() => {
+        finishCollapsibleAnimation_(node, false, hiddenClass);
+      }, duration);
+    }
+
     function initializeSidebarBrandLogo_() {
       const logo = el('brandLogoSvg');
       const path = el('brandLogoPath');
@@ -1988,7 +2075,7 @@ function showOnlyRegistrySelectionDraft_() {
       state.sidebarExpanded = true;
       state.sidebarActivePanel = 'projects';
       state.currentView = 'registry';
-      compose.classList.remove('hidden');
+      setCollapsibleOpenState_(compose, true, { duration: 180, translateY: 8 });
       input.value = editingItem && state.selectionComposerSelectionId
         ? String(editingItem.name || '')
         : buildRegistrySelectionLabel_();
@@ -2008,7 +2095,7 @@ function showOnlyRegistrySelectionDraft_() {
 function closeRegistrySelectionComposer_() {
       const compose = el('selectionCompose');
       const input = el('selectionNameInput');
-      if (compose) compose.classList.add('hidden');
+      setCollapsibleOpenState_(compose, false, { duration: 180, translateY: 8 });
       if (input) input.value = '';
       resetRegistrySelectionComposerTransientState_();
       state.selectionComposerOpen = false;
@@ -2361,7 +2448,7 @@ function toggleSavedSelectionGroup_(groupKey, triggerNode) {
       const stackNode = groupNode ? groupNode.querySelector('.saved-selection-stack') : null;
       if (toggleNode) toggleNode.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
       if (stackNode) {
-        stackNode.classList.toggle('hidden', !nextOpen);
+        setCollapsibleOpenState_(stackNode, nextOpen, { duration: 180, translateY: 8 });
         return;
       }
       renderSavedSelectionsPanel_();
@@ -5868,7 +5955,7 @@ function renderQuickPresetState_() {
       });
       document.querySelectorAll('[data-preset-menu]').forEach(node => {
         const key = String(node.getAttribute('data-preset-menu') || '');
-        node.classList.toggle('hidden', state.openPresetMenuKey !== key);
+        setCollapsibleOpenState_(node, state.openPresetMenuKey === key, { duration: 170, translateY: 6 });
         const active = activePresetByKey.get(key);
         const activeOptionKeys = active && Array.isArray(active.optionKeys)
           ? active.optionKeys
@@ -5929,7 +6016,7 @@ function renderNavState_() {
       Object.keys(panelMap).forEach(key => {
         const panel = panelMap[key];
         if (!panel) return;
-        panel.classList.toggle('hidden', key !== activePanel);
+        setCollapsibleOpenState_(panel, key === activePanel, { duration: 190, translateY: 10 });
       });
     }
 
