@@ -6194,7 +6194,6 @@ function renderSavedSelectionGroupHtml_(groupKey, title, items) {
               `<span class="saved-selection-group-title">${escapeHtml_(heading)}</span>` +
               `<span class="saved-selection-group-count">${items.length}</span>` +
             `</span>` +
-            `<span class="saved-selection-group-arrow" aria-hidden="true"></span>` +
           `</button>` +
           `<div class="saved-selection-stack${isOpen ? '' : ' hidden'}">${items.map(item => renderSavedSelectionItemHtml_(item)).join('')}</div>` +
         `</div>`
@@ -6398,7 +6397,6 @@ function buildRegistryFilterHeaderHtml_(filterKey) {
         `<div class="registry-filter registry-filter--${escapeHtml_(def.key)}" data-registry-filter="${escapeHtml_(def.key)}">` +
           `<button id="${escapeHtml_(def.buttonId)}" class="registry-filter-trigger" type="button" data-registry-filter-trigger="${escapeHtml_(def.key)}" aria-expanded="false" aria-haspopup="listbox">` +
             `<span class="registry-filter-label" data-role="registry-filter-label">${escapeHtml_(def.title)}</span>` +
-            `<span class="registry-filter-arrow" aria-hidden="true"></span>` +
           `</button>` +
           `<div id="${escapeHtml_(def.menuId)}" class="registry-filter-menu" role="listbox" aria-label="${escapeHtml_(`Фильтр по ${def.title}`)}"></div>` +
         `</div>`
