@@ -606,13 +606,16 @@
       el('btnAuthLogin').addEventListener('click', () => doLogin_());
       el('btnLogout').addEventListener('click', () => logout_());
       initializeSidebarBrandLogo_();
-      el('btnSidebarToggle').addEventListener('click', () => {
-        toggleSidebarExpanded_();
+      el('btnSidebarLogo').addEventListener('click', evt => {
+        evt.preventDefault();
         window.requestAnimationFrame(() => {
           window.requestAnimationFrame(() => {
             replaySidebarBrandLogo_();
           });
         });
+      });
+      el('btnSidebarCollapse').addEventListener('click', () => {
+        toggleSidebarExpanded_();
       });
       el('authPassword').addEventListener('keydown', evt => {
         if (evt.key === 'Enter') {
@@ -5852,7 +5855,7 @@ function renderNavState_() {
       const visibleExpanded = expanded || isCompactSidebarViewport_();
       const appShell = el('appShell');
       const sidebar = el('appSidebar');
-      const toggleButton = el('btnSidebarToggle');
+      const toggleButton = el('btnSidebarCollapse');
       const buttonMap = {
         registry: el('btnNavRegistry'),
         categories: el('btnNavCategories'),
