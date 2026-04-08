@@ -516,9 +516,9 @@
     .sidebar-brand-toggle:hover{transform:none;box-shadow:none!important;background:transparent!important}
     .sidebar-icon-svg{display:block;width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
     .brand-logo-svg{display:block;width:100%;max-width:112px;height:auto;overflow:visible}
-    .brand-logo-path{fill:none;stroke:url(#brandLogoGradient);stroke-width:32;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 2px rgba(154,242,226,.14)) drop-shadow(0 0 5px rgba(115,216,200,.1));transition:filter .16s ease;will-change:stroke-dashoffset}
-    .sidebar-brand-toggle:hover .brand-logo-path{filter:drop-shadow(0 0 5px rgba(154,242,226,.32)) drop-shadow(0 0 12px rgba(115,216,200,.22)) drop-shadow(0 0 18px rgba(115,216,200,.14))}
-    .brand-logo-svg.is-replaying .brand-logo-path{filter:none}
+    .brand-logo-path{fill:none;stroke:url(#brandLogoGradient);stroke-width:32;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 3px rgba(154,242,226,.16)) drop-shadow(0 0 8px rgba(115,216,200,.12));transition:filter .18s ease;will-change:stroke-dashoffset,stroke-dasharray,filter}
+    .sidebar-brand-toggle:hover .brand-logo-path{filter:drop-shadow(0 0 8px rgba(154,242,226,.44)) drop-shadow(0 0 18px rgba(115,216,200,.34)) drop-shadow(0 0 28px rgba(115,216,200,.22)) drop-shadow(0 0 40px rgba(154,242,226,.12))}
+    .brand-logo-svg.is-replaying .brand-logo-path{filter:drop-shadow(0 0 5px rgba(154,242,226,.26)) drop-shadow(0 0 12px rgba(115,216,200,.18))}
     .user-session{grid-template-columns:36px minmax(0,1fr);padding:10px 0 0 6px;gap:8px;align-items:center}
     .user-session-icon{display:inline-grid;place-self:center;width:30px;height:30px;stroke:rgba(158,189,181,.92);stroke-width:1.6;opacity:.96}
     .user-session-meta{padding-left:0;gap:4px}

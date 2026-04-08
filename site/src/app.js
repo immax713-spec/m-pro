@@ -595,11 +595,6 @@
       populatePresetMenus_();
       bindEvents_();
       renderNavState_();
-      window.requestAnimationFrame(() => {
-        window.setTimeout(() => {
-          replaySidebarBrandLogo_();
-        }, 220);
-      });
       checkBackendReadiness_();
       initializeAuth_();
     });
@@ -877,8 +872,8 @@
       const length = Number(path.dataset.logoLength) || path.getTotalLength();
       path.dataset.logoLength = String(length);
       path.style.transition = '';
-      path.style.strokeDasharray = '';
-      path.style.strokeDashoffset = '';
+      path.style.strokeDasharray = `${length} ${length}`;
+      path.style.strokeDashoffset = '0';
     }
   
     function replaySidebarBrandLogo_(onComplete) {
@@ -899,21 +894,36 @@
         sidebarBrandLogoToggleTimer = 0;
       }
       if (logo) logo.classList.add('is-replaying');
+      const snakeLength = Math.max(72, Math.round(length * 0.14));
+      const eraseDuration = 520;
+      const drawDuration = 640;
       path.style.transition = 'none';
       path.style.strokeDasharray = `${length} ${length}`;
-      path.style.strokeDashoffset = `${length}`;
+      path.style.strokeDashoffset = '0';
+      path.getBoundingClientRect();
       sidebarBrandLogoReplayTimer = window.setTimeout(() => {
-        path.style.transition = 'stroke-dashoffset .64s cubic-bezier(.33,1,.68,1)';
-        path.style.strokeDashoffset = '0';
+        path.style.transition = `stroke-dasharray ${eraseDuration}ms cubic-bezier(.65,0,.35,1), stroke-dashoffset ${eraseDuration}ms cubic-bezier(.65,0,.35,1)`;
+        path.style.strokeDasharray = `${snakeLength} ${length}`;
+        path.style.strokeDashoffset = `-${Math.max(0, length - snakeLength)}`;
         sidebarBrandLogoReplayTimer = 0;
         sidebarBrandLogoToggleTimer = window.setTimeout(() => {
-          if (logo) logo.classList.remove('is-replaying');
-          path.style.transition = '';
-          path.style.strokeDasharray = '';
-          path.style.strokeDashoffset = '';
-          sidebarBrandLogoToggleTimer = 0;
-          if (typeof onComplete === 'function') onComplete();
-        }, 640);
+          path.style.transition = 'none';
+          path.style.strokeDasharray = `${length} ${length}`;
+          path.style.strokeDashoffset = `${length}`;
+          path.getBoundingClientRect();
+          window.requestAnimationFrame(() => {
+            path.style.transition = `stroke-dashoffset ${drawDuration}ms cubic-bezier(.33,1,.68,1)`;
+            path.style.strokeDashoffset = '0';
+          });
+          sidebarBrandLogoToggleTimer = window.setTimeout(() => {
+            if (logo) logo.classList.remove('is-replaying');
+            path.style.transition = '';
+            path.style.strokeDasharray = `${length} ${length}`;
+            path.style.strokeDashoffset = '0';
+            sidebarBrandLogoToggleTimer = 0;
+            if (typeof onComplete === 'function') onComplete();
+          }, drawDuration);
+        }, eraseDuration);
       }, 16);
     }
 
