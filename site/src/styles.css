@@ -497,8 +497,9 @@
 
     /* ===== Sidebar redesign ===== */
     .app{--sidebar-width:54px;--shell-panel-height:calc(100dvh - 20px);grid-template-columns:var(--sidebar-width) minmax(0,1fr);gap:10px;align-items:start;min-height:100dvh}
-    .app.sidebar-expanded{--sidebar-width:304px}
-    .sidebar{padding:0;overflow-y:auto;overflow-x:hidden;position:sticky;top:10px;align-self:start;min-height:var(--shell-panel-height);max-height:var(--shell-panel-height);border-radius:18px;border:1px solid rgba(154,242,226,.08);background:radial-gradient(circle at 18% 8%,rgba(115,216,200,.15),transparent 30%),radial-gradient(circle at 100% 0%,rgba(115,216,200,.06),transparent 24%),linear-gradient(180deg,#1a282c 0%,#121b1e 100%);box-shadow:0 24px 48px rgba(12,20,21,.28),inset 0 1px 0 rgba(255,255,255,.03);scrollbar-width:none;-ms-overflow-style:none;transition:box-shadow .18s ease,background .18s ease}
+    .app.sidebar-expanded{--sidebar-width:54px}
+    .sidebar{width:54px;padding:0;overflow-y:auto;overflow-x:hidden;position:sticky;top:10px;z-index:24;align-self:start;min-height:var(--shell-panel-height);max-height:var(--shell-panel-height);border-radius:18px;border:1px solid rgba(154,242,226,.08);background:radial-gradient(circle at 18% 8%,rgba(115,216,200,.15),transparent 30%),radial-gradient(circle at 100% 0%,rgba(115,216,200,.06),transparent 24%),linear-gradient(180deg,#1a282c 0%,#121b1e 100%);box-shadow:0 24px 48px rgba(12,20,21,.28),inset 0 1px 0 rgba(255,255,255,.03);scrollbar-width:none;-ms-overflow-style:none;transition:width .16s cubic-bezier(.33,1,.68,1),box-shadow .16s ease,background .16s ease;will-change:width}
+    .sidebar.is-expanded{width:304px}
     .sidebar::-webkit-scrollbar{display:none;width:0;height:0}
     .sidebar-shell{display:flex;flex-direction:column;min-height:var(--shell-panel-height);height:100%;overflow:hidden}
     .sidebar-top,.sidebar-nav,.sidebar-content{padding-left:5px;padding-right:5px}
@@ -658,15 +659,15 @@
     .sidebar.is-collapsed .sidebar-footer-button-label{display:inline;opacity:0;max-width:0;overflow:hidden;transform:translateX(-4px);pointer-events:none}
     .record-head-main{grid-template-columns:minmax(0,1fr)}
     .record-back-button{display:none!important}
-    .workspace{display:flex;flex-direction:column;min-width:0;min-height:0;height:var(--shell-panel-height);max-height:var(--shell-panel-height);overflow:hidden;align-content:stretch}
+    .workspace{display:flex;flex-direction:column;position:relative;z-index:1;min-width:0;min-height:0;height:var(--shell-panel-height);max-height:var(--shell-panel-height);overflow:hidden;align-content:stretch}
     .workspace-tabs,.runtime-error-banner{flex:0 0 auto}
     .registry-view,.record-shell{flex:1 1 auto;min-height:0;max-height:100%}
     .registry-view{display:flex;flex-direction:column;height:auto;overflow:hidden}
     .record-shell{overflow:auto;padding-right:2px}
     .registry-table-wrap{flex:1 1 0%;min-height:0;height:100%;max-height:none}
-    @media (max-width:980px){
-      .app,.app.sidebar-expanded{--sidebar-width:100%;grid-template-columns:1fr;min-height:100vh;height:auto;overflow:visible}
-      .sidebar{position:relative;top:0;min-height:auto}
+      @media (max-width:980px){
+        .app,.app.sidebar-expanded{--sidebar-width:100%;grid-template-columns:1fr;min-height:100vh;height:auto;overflow:visible}
+        .sidebar,.sidebar.is-expanded{width:auto;position:relative;top:0;min-height:auto}
       .sidebar-shell{min-height:auto}
       .workspace{display:grid;height:auto;max-height:none;overflow:visible}
       .workspace,.registry-view,.record-shell{min-height:auto;max-height:none}
