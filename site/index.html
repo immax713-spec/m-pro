@@ -170,6 +170,35 @@
           </div>
 
           <div class="nav-item nav-item-has-panel">
+            <button id="btnNavData" class="nav-button nav-button-expandable" type="button" title="Данные" aria-label="Данные" aria-expanded="false">
+              <span class="nav-button-icon" aria-hidden="true">
+                <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
+                  <path d="M10 4.5v7"></path>
+                  <path d="M6.75 8.75 10 12l3.25-3.25"></path>
+                  <path d="M5.25 14.5h9.5"></path>
+                </svg>
+              </span>
+              <span class="nav-button-label">Данные</span>
+              <span class="nav-button-caret" aria-hidden="true"></span>
+            </button>
+            <div id="sidebarDataPanel" class="nav-item-panel hidden">
+              <section class="sidebar-section sidebar-data-panel">
+                <div class="sidebar-data-actions">
+                  <button id="btnExportSummaryCsv" class="ghost sidebar-data-action hidden" type="button" title="Экспортировать актуальную сводную в CSV" aria-label="Экспортировать актуальную сводную в CSV">
+                    <span class="sidebar-data-action-title">Экспорт CSV</span>
+                  </button>
+                  <button id="btnSyncGoogleSheet" class="ghost sidebar-data-action hidden" type="button" title="sync Google" aria-label="sync Google">
+                    <span class="sidebar-data-action-row">
+                      <span class="sidebar-data-action-title">sync Google</span>
+                      <span id="syncGoogleStatus" class="sidebar-data-action-meta hidden"></span>
+                    </span>
+                  </button>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="nav-item nav-item-has-panel">
             <button id="btnNavProjects" class="nav-button nav-button-expandable" type="button" title="Проекты" aria-label="Проекты" aria-expanded="false">
               <span class="nav-button-icon" aria-hidden="true">
                 <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
@@ -231,35 +260,6 @@
                     </div>
                   </div>
                   <div id="savedSelectionList" class="saved-selection-list"></div>
-                </div>
-              </section>
-            </div>
-          </div>
-
-          <div class="nav-item nav-item-has-panel">
-            <button id="btnNavData" class="nav-button nav-button-expandable" type="button" title="Данные" aria-label="Данные" aria-expanded="false">
-              <span class="nav-button-icon" aria-hidden="true">
-                <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
-                  <path d="M10 4.5v7"></path>
-                  <path d="M6.75 8.75 10 12l3.25-3.25"></path>
-                  <path d="M5.25 14.5h9.5"></path>
-                </svg>
-              </span>
-              <span class="nav-button-label">Данные</span>
-              <span class="nav-button-caret" aria-hidden="true"></span>
-            </button>
-            <div id="sidebarDataPanel" class="nav-item-panel hidden">
-              <section class="sidebar-section sidebar-data-panel">
-                <div class="sidebar-data-actions">
-                  <button id="btnExportSummaryCsv" class="ghost sidebar-data-action hidden" type="button" title="Экспортировать актуальную сводную в CSV" aria-label="Экспортировать актуальную сводную в CSV">
-                    <span class="sidebar-data-action-title">Экспорт CSV</span>
-                  </button>
-                  <button id="btnSyncGoogleSheet" class="ghost sidebar-data-action hidden" type="button" title="sync Google" aria-label="sync Google">
-                    <span class="sidebar-data-action-row">
-                      <span class="sidebar-data-action-title">sync Google</span>
-                      <span id="syncGoogleStatus" class="sidebar-data-action-meta hidden"></span>
-                    </span>
-                  </button>
                 </div>
               </section>
             </div>
