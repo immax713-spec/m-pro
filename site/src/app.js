@@ -854,14 +854,30 @@
     }
 
     function toggleSidebarExpanded_() {
-      state.sidebarExpanded = !state.sidebarExpanded;
-      if (!state.sidebarExpanded) {
+      const sidebar = el('appSidebar');
+      const nextExpanded = !state.sidebarExpanded;
+      if (sidebar && sidebar.__sidebarShellTimer) {
+        clearTimeout(sidebar.__sidebarShellTimer);
+        sidebar.__sidebarShellTimer = 0;
+      }
+      if (!nextExpanded) {
+        if (sidebar) sidebar.classList.add('is-shell-collapsing');
         closeQuickPresetMenus_();
         closeRegistryFilterMenus_();
         closeRegistryColumnsPanel_();
+      } else if (sidebar) {
+        sidebar.classList.add('is-shell-expanding');
       }
+      state.sidebarExpanded = nextExpanded;
       renderNavState_();
       persistRegistrySessionState_();
+      if (sidebar) {
+        sidebar.__sidebarShellTimer = window.setTimeout(() => {
+          sidebar.classList.remove('is-shell-collapsing');
+          sidebar.classList.remove('is-shell-expanding');
+          sidebar.__sidebarShellTimer = 0;
+        }, nextExpanded ? 120 : 90);
+      }
     }
 
     function prefersReducedMotion_() {
@@ -2479,7 +2495,7 @@ function toggleSavedSelectionGroup_(groupKey, triggerNode) {
         const stackNode = groupNode ? groupNode.querySelector('.saved-selection-stack') : null;
         if (toggleNode) toggleNode.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
         if (stackNode) {
-          setCollapsibleOpenState_(stackNode, nextOpen, { duration: 160, translateY: 6, mode: 'auto' });
+          setCollapsibleOpenState_(stackNode, nextOpen, { duration: 150, translateY: 6, mode: 'size' });
           return;
         }
         renderSavedSelectionsPanel_();
@@ -6047,7 +6063,7 @@ function renderNavState_() {
         Object.keys(panelMap).forEach(key => {
           const panel = panelMap[key];
           if (!panel) return;
-          setCollapsibleOpenState_(panel, key === activePanel, { duration: 150, translateY: 6, mode: 'fade' });
+          setCollapsibleOpenState_(panel, key === activePanel, { duration: 140, translateY: 4, mode: 'size' });
         });
       }
 

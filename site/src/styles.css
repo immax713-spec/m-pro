@@ -656,6 +656,16 @@
     .sidebar.is-collapsed .sidebar-footer{padding-left:5px;padding-right:5px;padding-bottom:10px}
     .sidebar.is-collapsed .sidebar-footer-button{width:40px;min-width:40px;min-height:40px;padding:0;border-radius:0}
     .sidebar.is-collapsed .sidebar-footer-button-label{display:inline;opacity:0;max-width:0;overflow:hidden;transform:translateX(-4px);pointer-events:none}
+    .sidebar.is-shell-collapsing .user-session-meta,
+    .sidebar.is-shell-collapsing .nav-button-label,
+    .sidebar.is-shell-collapsing .nav-item-panel,
+    .sidebar.is-shell-collapsing .sidebar-footer-button-label,
+    .sidebar.is-shell-expanding .user-session-meta,
+    .sidebar.is-shell-expanding .nav-button-label,
+    .sidebar.is-shell-expanding .nav-item-panel,
+    .sidebar.is-shell-expanding .sidebar-footer-button-label{opacity:0!important;pointer-events:none!important}
+    .sidebar.is-shell-collapsing .nav-item-panel,
+    .sidebar.is-shell-expanding .nav-item-panel{max-height:0!important;overflow:hidden!important;padding-top:0!important;padding-bottom:0!important}
     .record-head-main{grid-template-columns:minmax(0,1fr)}
     .record-back-button{display:none!important}
     .workspace{display:flex;flex-direction:column;min-width:0;min-height:0;height:var(--shell-panel-height);max-height:var(--shell-panel-height);overflow:hidden;align-content:stretch}
