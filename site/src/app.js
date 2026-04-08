@@ -9,6 +9,7 @@
     const DEFAULT_SPREADSHEET_ID = '1-cghMU6Ftyzq6Y-vhRiLeTaf7ALZEZl7xB4xps8t3oQ';
     const DEFAULT_SHEET_NAME = 'Сводная';
     const DEFAULT_HEADER_ROW = 3;
+    const DEFAULT_DATA_START_ROW = 4;
     const SUMMARY_EXPORT_EXTRA_COLUMNS = Object.freeze([
       { fieldId: '', source: '', label: 'Руководитель группы СК Заказчика (чтобы знать на кого выставлять замечания в  СУИД)' },
       { fieldId: 'id_DB', source: '', label: 'id DB' },
@@ -8884,6 +8885,7 @@ async function handleSyncGoogleSheetClick_() {
           fieldIdRow: 1,
           blockRow: 2,
           labelRow: 3,
+          dataStartRow: DEFAULT_DATA_START_ROW,
           rows: summary.matrix
         });
         persistGoogleSyncLastAt_(

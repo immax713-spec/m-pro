@@ -7,6 +7,7 @@ type SyncRequestPayload = {
   fieldIdRow?: number;
   blockRow?: number;
   labelRow?: number;
+  dataStartRow?: number;
   rows?: unknown[][];
 };
 
@@ -130,6 +131,7 @@ Deno.serve(async (request) => {
       fieldIdRow: normalizeInteger(payload.fieldIdRow, 1),
       blockRow: normalizeInteger(payload.blockRow, 2),
       labelRow: normalizeInteger(payload.labelRow, 3),
+      dataStartRow: normalizeInteger(payload.dataStartRow, 4),
       rows: matrix,
       requestedAt: new Date().toISOString(),
       requestedBy: user,
