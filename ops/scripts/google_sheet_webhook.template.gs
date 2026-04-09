@@ -14,6 +14,16 @@ const SCRIPT_PROPERTY_KEYS = {
 };
 
 const GOOGLE_OWNED_SM_FIELD_IDS = new Set(['sm_1_5', 'sm_1_6', 'sm_1_7', 'sm_1_10']);
+const GOOGLE_FORMULA_LAB_FIELD_IDS = new Set([
+  'lb_1_5',
+  'lb_1_6',
+  'lb_1_7',
+  'lb_1_8',
+  'lb_1_9',
+  'lb_1_10',
+  'lb_1_11',
+  'lb_1_12',
+]);
 
 function pushSheetSnapshotToSupabase() {
   const webhookSecret = requireScriptSecret_(SCRIPT_PROPERTY_KEYS.webhookSecret);
@@ -117,6 +127,7 @@ function doPost(e) {
         'sm_1_6',
         'sm_1_7',
         'sm_1_10',
+        'lb_1_5 ... lb_1_12 (formula)',
         'suid_*',
         'ksg_*',
         '<blank field_id columns>',
@@ -168,6 +179,7 @@ function buildGoogleToDbSnapshotRows_(rows) {
 function shouldSendFieldToDb_(rawFieldId) {
   const fieldId = String(rawFieldId || '').trim();
   if (!fieldId) return false;
+  if (GOOGLE_FORMULA_LAB_FIELD_IDS.has(fieldId)) return false;
   if (fieldId === 'ro_1_3') return true;
   if (fieldId.startsWith('suid_')) return true;
   if (fieldId.startsWith('ksg_')) return true;
@@ -375,6 +387,7 @@ function shouldPreserveSheetColumnFromGoogle_(column) {
   const fieldId = normalizeSheetCell_(column && column.fieldId);
   if (!fieldId) return true;
   if (fieldId === 'id_DB') return true;
+  if (GOOGLE_FORMULA_LAB_FIELD_IDS.has(fieldId)) return true;
   if (fieldId.startsWith('suid_')) return true;
   if (fieldId.startsWith('ksg_')) return true;
   return GOOGLE_OWNED_SM_FIELD_IDS.has(fieldId);

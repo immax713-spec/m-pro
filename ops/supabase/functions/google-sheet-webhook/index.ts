@@ -34,6 +34,16 @@ const TABLE_PREFIXES: Record<string, string> = {
 };
 
 const SHEET_SYNC_SM_FIELDS = new Set(['sm_1_5', 'sm_1_10', 'sm_1_6', 'sm_1_7']);
+const LAB_FORMULA_FIELD_IDS = new Set([
+  'lb_1_5',
+  'lb_1_6',
+  'lb_1_7',
+  'lb_1_8',
+  'lb_1_9',
+  'lb_1_10',
+  'lb_1_11',
+  'lb_1_12',
+]);
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
@@ -76,6 +86,7 @@ function tableForField(fieldId: string): string {
 
 function isFieldAllowedFromSheet(fieldId: string): boolean {
   if (!fieldId) return false;
+  if (LAB_FORMULA_FIELD_IDS.has(fieldId)) return false;
   if (fieldId === 'ro_1_3') return true;
   if (fieldId.startsWith('suid_')) return true;
   if (fieldId.startsWith('ksg_')) return true;

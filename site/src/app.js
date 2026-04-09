@@ -1093,9 +1093,9 @@
         return;
       }
       state.sidebarActivePanel = isSamePanel ? 'registry' : nextPanel;
-      if (nextPanel === 'registry' || isSamePanel) state.currentView = 'registry';
+      if (nextPanel === 'registry') state.currentView = 'registry';
       renderAll_();
-      if (nextPanel === 'registry' || isSamePanel) scrollWorkspaceToTop_();
+      if (nextPanel === 'registry') scrollWorkspaceToTop_();
     }
 
     function initializeAuth_() {
@@ -4994,7 +4994,13 @@ function getSectionFields_(section, rowIndex) {
 
 function shouldHideSectionField_(section, column) {
       const sourceKey = String(section && section.sourceKey || '').trim();
+      const fieldId = normalizeText_(column && column.fieldId || '');
       const labelKey = normalizeText_(column && column.label || '');
+
+      if (sourceKey === '__lab__') {
+        return /^lb_1_(5|6|7|8|9|10|11|12)$/i.test(fieldId);
+      }
+
       if (!labelKey) return false;
 
       if (sourceKey === '__suid__') {
@@ -6031,6 +6037,7 @@ function renderQuickPresetState_() {
 
 function renderNavState_() {
       const activePanel = normalizeSidebarPanel_(state.sidebarActivePanel);
+      const activePanelForUi = state.currentView === 'object' && activePanel === 'registry' ? '' : activePanel;
       const expanded = !!state.sidebarExpanded;
       const visibleExpanded = expanded || isCompactSidebarViewport_();
       const appShell = el('appShell');
@@ -6067,7 +6074,7 @@ function renderNavState_() {
       Object.keys(buttonMap).forEach(key => {
         const button = buttonMap[key];
         if (!button) return;
-        const active = key === activePanel;
+        const active = key === activePanelForUi;
         button.classList.toggle('is-active', active);
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
         if (button.classList.contains('nav-button-expandable')) {
@@ -6079,7 +6086,7 @@ function renderNavState_() {
         Object.keys(panelMap).forEach(key => {
           const panel = panelMap[key];
           if (!panel) return;
-          setCollapsibleOpenState_(panel, key === activePanel, { mode: 'fade', duration: 180, translateY: 8 });
+          setCollapsibleOpenState_(panel, key === activePanelForUi, { mode: 'fade', duration: 180, translateY: 8 });
         });
       }
 
