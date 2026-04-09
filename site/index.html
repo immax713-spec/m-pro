@@ -4,20 +4,36 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>mpro ss</title>
-  <link rel="stylesheet" href="./src/styles.css?v=20260408n">
+  <link rel="stylesheet" href="./src/styles.css?v=20260409a">
 </head>
 <body>
   <div id="authOverlay" class="auth-overlay hidden">
-    <section class="surface auth-card" aria-modal="true" role="dialog" aria-label="Авторизация">
-      <div class="auth-brand">m-pro</div>
-      <div class="auth-form">
-        <input id="authPassword" class="auth-input" type="password" placeholder="Пароль" autocomplete="current-password" maxlength="100">
-        <button id="btnAuthLogin" class="primary auth-submit" type="button">
+    <section id="authCard" class="surface auth-card" aria-modal="true" role="dialog" aria-label="Авторизация">
+      <div id="authBrandShell" class="auth-brand-shell">
+        <svg id="authBrandLogoSvg" class="brand-logo-svg auth-brand-logo-svg" viewBox="0 0 709 374" aria-hidden="true" focusable="false">
+          <defs>
+            <linearGradient id="authBrandLogoGradient" x1="52" y1="18" x2="650" y2="334" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#9AF2E2"></stop>
+              <stop offset="100%" stop-color="#19B8A4"></stop>
+            </linearGradient>
+          </defs>
+          <path
+            id="authBrandLogoPath"
+            class="brand-logo-path auth-brand-logo-path"
+            d="M306.398 198.634 L85.3982 346.634 C33.7982 367.034 20.3264 329.8 20.0406 308.632 C51.8615 204.965 69.7022 146.843 101.523 43.175 C106.898 24.1342 127.398 7.6342 161.51 32.9058 L624.412 347.142 C656.898 363.134 694.898 347.142 687.398 313.767 L607.398 43.175 C607.398 43.175 590.898 9.63419 567.398 24.1342 L400.898 129.134"
+          ></path>
+        </svg>
+        <div class="auth-brand-wordmark">m-pro</div>
+      </div>
+      <form id="authForm" class="auth-form" autocomplete="on">
+        <input id="authLogin" name="username" class="auth-input" type="text" placeholder="Логин или имя" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="150">
+        <input id="authPassword" name="password" class="auth-input" type="password" placeholder="Пароль" autocomplete="current-password" maxlength="100">
+        <button id="btnAuthLogin" class="primary auth-submit" type="submit">
           <span class="auth-submit-text">Войти</span>
           <span class="auth-submit-spinner" aria-hidden="true"></span>
         </button>
         <div id="authError" class="auth-error hidden"></div>
-      </div>
+      </form>
     </section>
   </div>
 
@@ -419,7 +435,7 @@
   <script src="./src/vendor/supabase.js?v=20260407e"></script>
   <script src="./src/config.js?v=20260407e"></script>
   <script src="./src/source-catalog.js?v=20260407g"></script>
-  <script src="./src/supabase-shell-api.js?v=20260408i"></script>
-  <script src="./src/app.js?v=20260408n"></script>
+  <script src="./src/supabase-shell-api.js?v=20260409a"></script>
+  <script src="./src/app.js?v=20260409a"></script>
 </body>
 </html>

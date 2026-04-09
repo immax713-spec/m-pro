@@ -3,6 +3,7 @@ import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
 
 type ImportUser = {
   name?: string;
+  login?: string;
   password?: string;
   role?: string;
   division?: string;
@@ -43,23 +44,34 @@ function normalizeDivision(value: unknown): string {
   return normalizeText(value);
 }
 
+function normalizeLogin(value: unknown): string {
+  return normalizeText(value);
+}
+
+function normalizeLookupKey(value: unknown): string {
+  return normalizeText(value).toLowerCase();
+}
+
 function normalizeUsers(input: unknown): ImportUser[] {
   const list = Array.isArray(input) ? input : [];
-  const byName = new Map<string, ImportUser>();
+  const byIdentity = new Map<string, ImportUser>();
   list.forEach((item) => {
     const record = item && typeof item === 'object' ? item as Record<string, unknown> : {};
     const name = normalizeText(record.name);
+    const login = normalizeLogin(record.login);
     const password = String(record.password ?? '');
     if (!name || !password) return;
-    byName.set(name, {
+    const identityKey = login ? `login:${normalizeLookupKey(login)}` : `name:${normalizeLookupKey(name)}`;
+    byIdentity.set(identityKey, {
       name,
+      login,
       password,
       role: normalizeRole(record.role),
       division: normalizeDivision(record.division),
       isActive: record.isActive === false ? false : true,
     });
   });
-  return Array.from(byName.values());
+  return Array.from(byIdentity.values());
 }
 
 Deno.serve(async (request) => {
@@ -107,16 +119,24 @@ Deno.serve(async (request) => {
   try {
     const { data: existingRows, error: existingError } = await supabase
       .from('sf_users')
-      .select('id, name');
+      .select('id, name, login');
     if (existingError) throw existingError;
 
     const existingByName = new Map<string, Array<{ id: number; name: string }>>();
+    const existingByLogin = new Map<string, Array<{ id: number; name: string; login: string }>>();
     (Array.isArray(existingRows) ? existingRows : []).forEach((row) => {
       const name = normalizeText((row as Record<string, unknown>).name);
+      const login = normalizeLogin((row as Record<string, unknown>).login);
       const id = Number((row as Record<string, unknown>).id);
       if (!name || !Number.isFinite(id)) return;
-      if (!existingByName.has(name)) existingByName.set(name, []);
-      existingByName.get(name)?.push({ id, name });
+      const nameKey = normalizeLookupKey(name);
+      if (!existingByName.has(nameKey)) existingByName.set(nameKey, []);
+      existingByName.get(nameKey)?.push({ id, name });
+      if (login) {
+        const loginKey = normalizeLookupKey(login);
+        if (!existingByLogin.has(loginKey)) existingByLogin.set(loginKey, []);
+        existingByLogin.get(loginKey)?.push({ id, name, login });
+      }
     });
 
     const created: string[] = [];
@@ -125,6 +145,7 @@ Deno.serve(async (request) => {
 
     for (const user of users) {
       const name = normalizeText(user.name);
+      const login = normalizeLogin(user.login);
       const password = String(user.password ?? '');
       const role = normalizeRole(user.role);
       const division = normalizeDivision(user.division);
@@ -135,10 +156,12 @@ Deno.serve(async (request) => {
       }
 
       const passwordHash = bcrypt.hashSync(password, 10);
-      const matches = existingByName.get(name) || [];
+      const matches = login
+        ? (existingByLogin.get(normalizeLookupKey(login)) || [])
+        : (existingByName.get(normalizeLookupKey(name)) || []);
 
       if (matches.length > 1) {
-        skipped.push({ name, reason: 'duplicate_existing_users' });
+        skipped.push({ name, reason: login ? 'duplicate_existing_logins' : 'duplicate_existing_users' });
         continue;
       }
 
@@ -146,6 +169,7 @@ Deno.serve(async (request) => {
         const { error } = await supabase
           .from('sf_users')
           .update({
+            login,
             password_hash: passwordHash,
             role,
             division,
@@ -161,6 +185,7 @@ Deno.serve(async (request) => {
         .from('sf_users')
         .insert({
           name,
+          login,
           password_hash: passwordHash,
           role,
           division,

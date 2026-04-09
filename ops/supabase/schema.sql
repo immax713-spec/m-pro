@@ -133,12 +133,19 @@ create unique index if not exists ksg_object_id_group_index_uidx
 create table if not exists public.sf_users (
   id bigserial primary key,
   name text not null,
+  login text not null default '',
   password_hash text not null,
   role text not null default 'Пользователь',
   division text not null default '',
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+alter table public.sf_users add column if not exists login text not null default '';
+
+create unique index if not exists sf_users_login_unique_idx
+  on public.sf_users ((lower(btrim(login))))
+  where btrim(login) <> '';
 
 create table if not exists public.sf_sessions (
   token text primary key,
@@ -472,7 +479,9 @@ begin
 end;
 $$;
 
-create or replace function public.sf_auth(p_password text, p_remember boolean default false)
+drop function if exists public.sf_auth(text, boolean);
+
+create or replace function public.sf_auth(p_name text, p_password text, p_remember boolean default false)
 returns jsonb
 language plpgsql
 security definer
@@ -483,6 +492,10 @@ declare
   v_token text;
   v_expires_at timestamptz;
 begin
+  if nullif(trim(coalesce(p_name, '')), '') is null then
+    raise exception 'AUTH_INPUT: Логин или имя обязательны';
+  end if;
+
   if nullif(trim(coalesce(p_password, '')), '') is null then
     raise exception 'AUTH_INPUT: Пароль обязателен';
   end if;
@@ -493,11 +506,18 @@ begin
   into v_user
   from public.sf_users
   where coalesce(is_active, true)
+    and (
+      public.sf_normalize_text(name) = public.sf_normalize_text(p_name)
+      or (
+        nullif(trim(coalesce(login, '')), '') is not null
+        and public.sf_normalize_text(login) = public.sf_normalize_text(p_name)
+      )
+    )
     and password_hash = extensions.crypt(p_password, password_hash)
   limit 1;
 
   if not found then
-    raise exception 'AUTH_INVALID: Неверный пароль';
+    raise exception 'AUTH_INVALID: Неверный логин или пароль';
   end if;
 
   v_token := replace(extensions.gen_random_uuid()::text, '-', '') || replace(extensions.gen_random_uuid()::text, '-', '');
@@ -1275,7 +1295,7 @@ begin
 end;
 $$;
 
-grant execute on function public.sf_auth(text, boolean) to anon, authenticated;
+grant execute on function public.sf_auth(text, text, boolean) to anon, authenticated;
 grant execute on function public.sf_get_session_user(text) to anon, authenticated;
 grant execute on function public.sf_get_shared_selections(text) to anon, authenticated;
 grant execute on function public.sf_get_shared_selection_work_state(text, text) to anon, authenticated;

@@ -523,6 +523,8 @@
     let copyToastTimer = 0;
       let sidebarBrandLogoReplayTimer = 0;
       let sidebarBrandLogoToggleTimer = 0;
+      let authBrandLogoReplayTimer = 0;
+      let authBrandLogoToggleTimer = 0;
     let silentDataRefreshTimer = 0;
     let silentDataRefreshWakeTimer = 0;
     const REGISTRY_INITIAL_RENDER_BATCH = 120;
@@ -606,9 +608,13 @@
 
     // ===== Top-level events =====
     function bindEvents_() {
-      el('btnAuthLogin').addEventListener('click', () => doLogin_());
+      el('authForm').addEventListener('submit', evt => {
+        evt.preventDefault();
+        doLogin_();
+      });
       el('btnLogout').addEventListener('click', () => logout_());
       initializeSidebarBrandLogo_();
+      initializeAuthBrandLogo_();
       el('btnSidebarLogo').addEventListener('click', evt => {
         evt.preventDefault();
         window.requestAnimationFrame(() => {
@@ -619,6 +625,15 @@
       });
       el('btnSidebarCollapse').addEventListener('click', () => {
         toggleSidebarExpanded_();
+      });
+      el('authLogin').addEventListener('keydown', evt => {
+        if (evt.key === 'Enter') {
+          evt.preventDefault();
+          doLogin_();
+        }
+      });
+      el('authLogin').addEventListener('input', () => {
+        hideAuthError_();
       });
       el('authPassword').addEventListener('keydown', evt => {
         if (evt.key === 'Enter') {
@@ -1080,6 +1095,86 @@
       return !!(logo && logo.classList.contains('is-replaying'));
     }
 
+    function initializeAuthBrandLogo_() {
+      const logo = el('authBrandLogoSvg');
+      const path = el('authBrandLogoPath');
+      if (authBrandLogoReplayTimer) {
+        clearTimeout(authBrandLogoReplayTimer);
+        authBrandLogoReplayTimer = 0;
+      }
+      if (authBrandLogoToggleTimer) {
+        clearTimeout(authBrandLogoToggleTimer);
+        authBrandLogoToggleTimer = 0;
+      }
+      if (logo) logo.classList.remove('is-replaying');
+      if (!path || typeof path.getTotalLength !== 'function') return;
+      const length = Number(path.dataset.logoLength) || path.getTotalLength();
+      path.dataset.logoLength = String(length);
+      path.style.transition = '';
+      path.style.strokeDasharray = `${length} ${length}`;
+      path.style.strokeDashoffset = '0';
+    }
+
+    function replayAuthBrandLogo_(onComplete) {
+      const logo = el('authBrandLogoSvg');
+      const path = el('authBrandLogoPath');
+      if (!path || typeof path.getTotalLength !== 'function') {
+        if (typeof onComplete === 'function') onComplete();
+        return;
+      }
+      initializeAuthBrandLogo_();
+      const length = Number(path.dataset.logoLength) || path.getTotalLength();
+      if (authBrandLogoReplayTimer) {
+        clearTimeout(authBrandLogoReplayTimer);
+        authBrandLogoReplayTimer = 0;
+      }
+      if (authBrandLogoToggleTimer) {
+        clearTimeout(authBrandLogoToggleTimer);
+        authBrandLogoToggleTimer = 0;
+      }
+      if (logo) logo.classList.add('is-replaying');
+      const snakeLength = Math.max(72, Math.round(length * 0.14));
+      const eraseDuration = 520;
+      const drawDuration = 640;
+      path.style.transition = 'none';
+      path.style.strokeDasharray = `${length} ${length}`;
+      path.style.strokeDashoffset = '0';
+      path.getBoundingClientRect();
+      authBrandLogoReplayTimer = window.setTimeout(() => {
+        path.style.transition = `stroke-dasharray ${eraseDuration}ms cubic-bezier(.65,0,.35,1), stroke-dashoffset ${eraseDuration}ms cubic-bezier(.65,0,.35,1)`;
+        path.style.strokeDasharray = `${snakeLength} ${length}`;
+        path.style.strokeDashoffset = `-${Math.max(0, length - snakeLength)}`;
+        authBrandLogoReplayTimer = 0;
+        authBrandLogoToggleTimer = window.setTimeout(() => {
+          path.style.transition = 'none';
+          path.style.strokeDasharray = `${length} ${length}`;
+          path.style.strokeDashoffset = `${length}`;
+          path.getBoundingClientRect();
+          window.requestAnimationFrame(() => {
+            path.style.transition = `stroke-dashoffset ${drawDuration}ms cubic-bezier(.33,1,.68,1)`;
+            path.style.strokeDashoffset = '0';
+          });
+          authBrandLogoToggleTimer = window.setTimeout(() => {
+            if (logo) logo.classList.remove('is-replaying');
+            path.style.transition = '';
+            path.style.strokeDasharray = `${length} ${length}`;
+            path.style.strokeDashoffset = '0';
+            authBrandLogoToggleTimer = 0;
+            if (typeof onComplete === 'function') onComplete();
+          }, drawDuration);
+        }, eraseDuration);
+      }, 16);
+    }
+
+    function setAuthLoadingUi_(isLoading) {
+      const card = el('authCard');
+      const button = el('btnAuthLogin');
+      if (card) card.classList.toggle('is-loading', !!isLoading);
+      if (button) button.classList.toggle('is-loading', !!isLoading);
+      if (isLoading) replayAuthBrandLogo_();
+      else initializeAuthBrandLogo_();
+    }
+
     function handleSidebarNavigation_(panelKey) {
       const nextPanel = normalizeSidebarPanel_(panelKey);
       const isSamePanel = nextPanel !== 'registry' && nextPanel === normalizeSidebarPanel_(state.sidebarActivePanel);
@@ -1112,9 +1207,16 @@
     }
 
     async function doLogin_() {
+      const loginInput = el('authLogin');
       const passwordInput = el('authPassword');
       const loginButton = el('btnAuthLogin');
+      const identity = String(loginInput && loginInput.value || '').trim();
       const password = String(passwordInput && passwordInput.value || '').trim();
+      if (!identity) {
+        showAuthError_('Введите логин или имя');
+        if (loginInput) loginInput.focus();
+        return;
+      }
       if (!password) {
         showAuthError_('Введите пароль');
         if (passwordInput) passwordInput.focus();
@@ -1122,12 +1224,13 @@
       }
 
       loginButton.disabled = true;
-      loginButton.classList.add('is-loading');
+      setAuthLoadingUi_(true);
       hideAuthError_();
 
       try {
           const authResponse = await runServer_('auth', [{
             spreadsheetId: state.runtimeOptions.spreadsheetId || DEFAULT_SPREADSHEET_ID,
+            name: identity,
             password,
             remember: false
           }]);
@@ -1153,7 +1256,7 @@
         if (passwordInput) passwordInput.focus();
       } finally {
         loginButton.disabled = false;
-        loginButton.classList.remove('is-loading');
+        setAuthLoadingUi_(false);
       }
     }
 
@@ -1239,16 +1342,20 @@
       if (overlay) overlay.classList.remove('hidden');
       if (message) showAuthError_(message);
       else hideAuthError_();
+      setAuthLoadingUi_(false);
+      const loginInput = el('authLogin');
+      if (loginInput) loginInput.value = '';
       const passwordInput = el('authPassword');
-      if (passwordInput) {
-        passwordInput.value = '';
-        window.setTimeout(() => passwordInput.focus(), 20);
-      }
+      if (passwordInput) passwordInput.value = '';
+      window.setTimeout(() => {
+        if (loginInput) loginInput.focus();
+      }, 20);
     }
 
     function hideAuthOverlay_() {
       const overlay = el('authOverlay');
       if (overlay) overlay.classList.add('hidden');
+      setAuthLoadingUi_(false);
       hideAuthError_();
     }
 
@@ -1466,7 +1573,7 @@
     }
 
     function checkBackendReadiness_() {
-      return runServer_('auth', [{ password: '' }])
+      return runServer_('auth', [{ name: '', password: '', skipClientValidation: true }])
         .then(() => {
           clearRuntimeError_();
         })

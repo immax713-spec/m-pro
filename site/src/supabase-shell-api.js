@@ -486,6 +486,56 @@
     return result && typeof result === 'object' ? result : {};
   }
 
+  async function authWithIdentity(options) {
+    const identity = normalizeString(options && (options.name || options.identity || options.login));
+    const password = normalizeString(options && options.password);
+    const remember = !!(options && options.remember);
+    const skipClientValidation = !!(options && options.skipClientValidation);
+
+    if (!identity && !skipClientValidation) throw createShellError('Логин или имя обязательны', 'AUTH_INPUT');
+    if (!password && !skipClientValidation) throw createShellError('Пароль обязателен', 'AUTH_INPUT');
+
+    let data = null;
+    let error = null;
+
+    ({ data, error } = await supabase.rpc(RPC.auth, {
+      p_name: identity,
+      p_password: password,
+      p_remember: remember
+    }));
+
+    if (error) {
+      const errorMessage = normalizeString(
+        error.message ||
+        error.error_description ||
+        error.details ||
+        error.hint
+      );
+      const canUseLegacyPasswordOnlyFallback =
+        normalizeString(error.code) === 'PGRST202' ||
+        /p_name/i.test(errorMessage);
+
+      if (!canUseLegacyPasswordOnlyFallback) {
+        throw mapSupabaseError(error);
+      }
+
+      let legacyData = null;
+      let legacyError = null;
+      ({ data: legacyData, error: legacyError } = await supabase.rpc(RPC.auth, {
+        p_password: password,
+        p_remember: remember
+      }));
+      if (legacyError) throw mapSupabaseError(legacyError);
+      const legacyResult = legacyData && typeof legacyData === 'object' ? legacyData : {};
+      if (legacyResult && typeof legacyResult === 'object') {
+        legacyResult.legacyPasswordOnly = true;
+      }
+      return legacyResult;
+    }
+
+    return data && typeof data === 'object' ? data : {};
+  }
+
   async function getSmartFilterShellData(options) {
     const bundle = await getBundle({
       sessionToken: options && options.sessionToken,
@@ -648,7 +698,7 @@
 
   async function run(method, options) {
     const handlers = {
-      auth,
+      auth: authWithIdentity,
       getSmartFilterShellData,
       getSmartFilterShellBootstrap,
       getSmartFilterShellSharedSelections,
