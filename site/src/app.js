@@ -1206,12 +1206,55 @@
       showAuthOverlay_();
     }
 
+    function normalizeAuthIdentityInput_(value) {
+      try {
+        return String(value == null ? '' : value)
+          .normalize('NFKC')
+          .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+          .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      } catch (_error) {
+        return String(value == null ? '' : value)
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+    }
+
+    function normalizeAuthPasswordInput_(value) {
+      try {
+        return String(value == null ? '' : value)
+          .normalize('NFKC')
+          .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+          .trim();
+      } catch (_error) {
+        return String(value == null ? '' : value).trim();
+      }
+    }
+
+    function sanitizeSessionUserMetaText_(value) {
+      const text = String(value == null ? '' : value).trim();
+      if (!text) return '';
+      const meaningful = text.replace(/[\?\uFFFD\s·._-]+/g, '');
+      return meaningful ? text : '';
+    }
+
+    function normalizeSessionUser_(user) {
+      if (!user || typeof user !== 'object') return null;
+      return {
+        ...user,
+        name: String(user.name || '').trim(),
+        role: sanitizeSessionUserMetaText_(user.role),
+        division: sanitizeSessionUserMetaText_(user.division)
+      };
+    }
+
     async function doLogin_() {
       const loginInput = el('authLogin');
       const passwordInput = el('authPassword');
       const loginButton = el('btnAuthLogin');
-      const identity = String(loginInput && loginInput.value || '').trim();
-      const password = String(passwordInput && passwordInput.value || '').trim();
+      const identity = normalizeAuthIdentityInput_(loginInput && loginInput.value);
+      const password = normalizeAuthPasswordInput_(passwordInput && passwordInput.value);
       if (!identity) {
         showAuthError_('Введите логин или имя');
         if (loginInput) loginInput.focus();
@@ -1238,9 +1281,10 @@
           throw new Error(authResponse && authResponse.error ? authResponse.error : 'Не удалось выполнить вход');
         }
 
-        setCurrentUserSession_(authResponse.user, authResponse.sessionToken, authResponse.expiresAt || '');
+        const normalizedUser = normalizeSessionUser_(authResponse.user);
+        setCurrentUserSession_(normalizedUser, authResponse.sessionToken, authResponse.expiresAt || '');
         persistSession_({
-          user: authResponse.user,
+          user: normalizedUser,
           sessionToken: authResponse.sessionToken,
           expiresAt: authResponse.expiresAt || ''
         });
@@ -1268,7 +1312,8 @@
     }
 
     function setCurrentUserSession_(user, token, expiresAt) {
-      state.currentUser = (user && typeof user === 'object') ? { ...user } : null;
+      const normalizedUser = normalizeSessionUser_(user);
+      state.currentUser = normalizedUser ? { ...normalizedUser } : null;
       state.sessionToken = String(token || '').trim();
       state.sessionExpiresAt = String(expiresAt || '').trim();
       state.selectionDoneById = loadSelectionDoneState_();
@@ -1326,9 +1371,9 @@
         return;
       }
       nameNode.textContent = String(user.name || 'Пользователь');
-      const role = String(user.role || '').trim();
-      const division = String(user.division || '').trim();
-      roleNode.textContent = [role, division].filter(Boolean).join(' · ') || 'Авторизован';
+      const role = sanitizeSessionUserMetaText_(user.role) || 'Пользователь';
+      const division = sanitizeSessionUserMetaText_(user.division);
+      roleNode.textContent = division ? `${role} · ${division}` : role;
       card.classList.remove('hidden');
       logoutButton.classList.remove('hidden');
       if (exportButton) exportButton.classList.remove('hidden');
@@ -1573,27 +1618,17 @@
     }
 
     function checkBackendReadiness_() {
-      return runServer_('auth', [{ name: '', password: '', skipClientValidation: true }])
-        .then(() => {
-          clearRuntimeError_();
-        })
-        .catch(err => {
-          const code = String(err && err.code || '').trim().toUpperCase();
-          if (code === 'AUTH_INPUT' || code === 'AUTH_INVALID') {
-            clearRuntimeError_();
-            return null;
-          }
-          if (code === 'BACKEND_NOT_DEPLOYED') {
-            setRuntimeError_('Supabase backend не развернут. Выполните supabase/schema.sql, дождитесь обновления schema cache и повторите запуск.');
-            return null;
-          }
-          if (code === 'MISSING_TABLE') {
-            setRuntimeError_('В Supabase не хватает обязательных таблиц для приложения. Проверьте импорт данных и supabase/schema.sql.');
-            return null;
-          }
-          setRuntimeError_(err && err.message ? err.message : 'Не удалось проверить готовность Supabase backend.');
-          return null;
-        });
+      const config = window.SUPABASE_MPRO_CONFIG && typeof window.SUPABASE_MPRO_CONFIG === 'object'
+        ? window.SUPABASE_MPRO_CONFIG
+        : {};
+      const baseUrl = String(config.supabaseUrl || '').trim();
+      const anonKey = String(config.supabaseAnonKey || '').trim();
+      if (!baseUrl || !anonKey) {
+        setRuntimeError_('Не настроено подключение к Supabase.');
+        return Promise.resolve(null);
+      }
+      clearRuntimeError_();
+      return Promise.resolve(null);
     }
 
     function isUnauthorizedError_(err) {

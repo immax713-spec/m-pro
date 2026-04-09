@@ -62,6 +62,69 @@
     return String(value == null ? '' : value).trim();
   }
 
+  function normalizeIdentity(value) {
+    try {
+      return String(value == null ? '' : value)
+        .normalize('NFKC')
+        .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    } catch (_error) {
+      return normalizeString(value).replace(/\s+/g, ' ').trim();
+    }
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => window.setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+  }
+
+  function isTransientNetworkErrorLike(error) {
+    const text = normalizeString(
+      (error && error.message) ||
+      (error && error.error_description) ||
+      (error && error.details) ||
+      (error && error.hint) ||
+      error
+    ).toUpperCase();
+    if (!text) return false;
+    return (
+      text.indexOf('FAILED TO FETCH') >= 0 ||
+      text.indexOf('FETCH FAILED') >= 0 ||
+      text.indexOf('ERR_NETWORK_CHANGED') >= 0 ||
+      text.indexOf('NETWORK CHANGED') >= 0 ||
+      text.indexOf('ERR_HTTP2_PING_FAILED') >= 0 ||
+      text.indexOf('HTTP2_PING_FAILED') >= 0 ||
+      text.indexOf('LOAD FAILED') >= 0 ||
+      text.indexOf('NETWORKERROR') >= 0 ||
+      text.indexOf('ERR_INTERNET_DISCONNECTED') >= 0 ||
+      text.indexOf('ERR_CONNECTION_CLOSED') >= 0 ||
+      text.indexOf('ERR_CONNECTION_RESET') >= 0 ||
+      text.indexOf('ERR_TIMED_OUT') >= 0
+    );
+  }
+
+  async function callRpcWithRetry(name, params, options) {
+    const rpcName = normalizeString(name);
+    const maxAttempts = Math.max(1, Math.min(3, Number(options && options.maxAttempts) || 1));
+    let lastResult = { data: null, error: null };
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        lastResult = await supabase.rpc(rpcName, params || {});
+      } catch (error) {
+        lastResult = {
+          data: null,
+          error: {
+            message: normalizeString(error && error.message) || 'Failed to fetch'
+          }
+        };
+      }
+      if (!lastResult.error) return lastResult;
+      if (!isTransientNetworkErrorLike(lastResult.error) || attempt >= maxAttempts) return lastResult;
+      await sleep(250 * attempt);
+    }
+    return lastResult;
+  }
+
   function normalizeObjectId(value) {
     const text = normalizeString(value);
     if (!text) return '';
@@ -107,6 +170,9 @@
       )
     ) || 'Ошибка Supabase API';
     const code = normalizeString(error && error.code);
+    if (isTransientNetworkErrorLike(error)) {
+      return createShellError('Не удалось связаться с сервером Supabase. Похоже на временный сетевой сбой или блокировку провайдера. Попробуйте повторить вход или включить VPN.', 'NETWORK_UNREACHABLE');
+    }
     if (code === 'PGRST202') {
       return createShellError('Supabase backend не развернут. Примените supabase/schema.sql и обновите schema cache.', 'BACKEND_NOT_DEPLOYED');
     }
@@ -122,7 +188,7 @@
   async function invokeRpc(name, params) {
     const rpcName = normalizeString(name);
     if (!rpcName) throw createShellError('Не настроено имя RPC-функции', 'CONFIG');
-    const { data, error } = await supabase.rpc(rpcName, params || {});
+    const { data, error } = await callRpcWithRetry(rpcName, params || {}, { maxAttempts: 2 });
     if (error) throw mapSupabaseError(error);
     return data;
   }
@@ -487,7 +553,7 @@
   }
 
   async function authWithIdentity(options) {
-    const identity = normalizeString(options && (options.name || options.identity || options.login));
+    const identity = normalizeIdentity(options && (options.name || options.identity || options.login));
     const password = normalizeString(options && options.password);
     const remember = !!(options && options.remember);
     const skipClientValidation = !!(options && options.skipClientValidation);
@@ -498,11 +564,11 @@
     let data = null;
     let error = null;
 
-    ({ data, error } = await supabase.rpc(RPC.auth, {
+    ({ data, error } = await callRpcWithRetry(RPC.auth, {
       p_name: identity,
       p_password: password,
       p_remember: remember
-    }));
+    }, { maxAttempts: 3 }));
 
     if (error) {
       const errorMessage = normalizeString(
@@ -521,10 +587,10 @@
 
       let legacyData = null;
       let legacyError = null;
-      ({ data: legacyData, error: legacyError } = await supabase.rpc(RPC.auth, {
+      ({ data: legacyData, error: legacyError } = await callRpcWithRetry(RPC.auth, {
         p_password: password,
         p_remember: remember
-      }));
+      }, { maxAttempts: 2 }));
       if (legacyError) throw mapSupabaseError(legacyError);
       const legacyResult = legacyData && typeof legacyData === 'object' ? legacyData : {};
       if (legacyResult && typeof legacyResult === 'object') {
