@@ -1,35 +1,26 @@
-(function () {
+﻿(function () {
   'use strict';
 
   const config = window.SUPABASE_MPRO_CONFIG || {};
 
-  if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+  const supabaseUrl = String(config.supabaseUrl || '').trim().replace(/\/+$/g, '');
+  const supabaseAnonKey = String(config.supabaseAnonKey || '').trim();
+  const supabaseSchema = String(config.schema || 'api').trim() || 'api';
+
+  if (!supabaseUrl || !supabaseAnonKey) {
     window.SupabaseShellApi = {
       run() {
-        return Promise.reject(new Error('Supabase client library is not loaded.'));
+        return Promise.reject(new Error('Supabase RPC transport is not configured.'));
       }
     };
     return;
   }
 
-  const supabase = window.supabase.createClient(
-    String(config.supabaseUrl || '').trim(),
-    String(config.supabaseAnonKey || '').trim(),
-    {
-      db: { schema: String(config.schema || 'public').trim() || 'public' },
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false
-      }
-    }
-  );
-
   const RPC = config.rpc || {};
   const SOURCE_CATALOG = window.MPRO_SOURCE_CATALOG && typeof window.MPRO_SOURCE_CATALOG === 'object'
     ? window.MPRO_SOURCE_CATALOG
     : {};
-  const PERSISTED_BUNDLE_CACHE_KEY = 'smart_filter_shell_bundle_cache_v2';
+  const PERSISTED_BUNDLE_CACHE_KEY = 'smart_filter_shell_bundle_cache_v3';
 
   let bundleCache = null;
   let bundleCachePromise = null;
@@ -78,6 +69,64 @@
     return new Promise(resolve => window.setTimeout(resolve, Math.max(0, Number(ms) || 0)));
   }
 
+  function getRpcUrl(name) {
+    return `${supabaseUrl}/rest/v1/rpc/${encodeURIComponent(String(name || '').trim())}`;
+  }
+
+  function getRpcHeaders() {
+    return {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${supabaseAnonKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
+      Accept: 'application/json',
+      Prefer: 'params=single-object',
+      'Accept-Profile': supabaseSchema,
+      'Content-Profile': supabaseSchema
+    };
+  }
+
+  async function callRpc(rpcName, params) {
+    try {
+      const response = await window.fetch(getRpcUrl(rpcName), {
+        method: 'POST',
+        headers: getRpcHeaders(),
+        body: JSON.stringify(params || {})
+      });
+      const responseText = await response.text();
+      let payload = null;
+      if (responseText) {
+        try {
+          payload = JSON.parse(responseText);
+        } catch (_error) {
+          payload = { message: responseText };
+        }
+      }
+      if (response.ok) {
+        return { data: payload, error: null };
+      }
+      return {
+        data: null,
+        error: payload && typeof payload === 'object'
+          ? {
+              ...payload,
+              code: normalizeString(payload.code) || String(response.status || ''),
+              message: normalizeString(payload.message || payload.error || payload.details || response.statusText || 'Supabase RPC error')
+            }
+          : {
+              code: String(response.status || ''),
+              message: normalizeString(response.statusText || 'Supabase RPC error')
+            }
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: {
+          message: normalizeString(error && error.message) || 'Failed to fetch'
+        }
+      };
+    }
+  }
+
   function isTransientNetworkErrorLike(error) {
     const text = normalizeString(
       (error && error.message) ||
@@ -108,16 +157,7 @@
     const maxAttempts = Math.max(1, Math.min(3, Number(options && options.maxAttempts) || 1));
     let lastResult = { data: null, error: null };
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        lastResult = await supabase.rpc(rpcName, params || {});
-      } catch (error) {
-        lastResult = {
-          data: null,
-          error: {
-            message: normalizeString(error && error.message) || 'Failed to fetch'
-          }
-        };
-      }
+      lastResult = await callRpc(rpcName, params || {});
       if (!lastResult.error) return lastResult;
       if (!isTransientNetworkErrorLike(lastResult.error) || attempt >= maxAttempts) return lastResult;
       await sleep(250 * attempt);
@@ -126,11 +166,11 @@
   }
 
   function normalizeObjectId(value) {
-    const text = normalizeString(value);
-    if (!text) return '';
-    const number = Number(text);
-    if (Number.isFinite(number)) return String(Math.trunc(number));
-    return text;
+    return normalizeString(value);
+  }
+
+  function normalizeDataset(value) {
+    return normalizeText(value) === 'archive' ? 'archive' : 'registry';
   }
 
   function cloneJson(value) {
@@ -262,7 +302,19 @@
         .map(normalizeString)
         .filter(Boolean)
     ));
-    const columns = buildColumnsFromCatalogAndKsg(ksgFieldIds);
+    const explicitColumns = Array.isArray(payload && payload.columns)
+      ? payload.columns
+          .map((column, index) => ({
+            index: Number.isFinite(Number(column && column.index)) ? Math.floor(Number(column.index)) : index,
+            fieldId: normalizeString(column && column.fieldId),
+            source: normalizeString(column && column.source),
+            label: normalizeString(column && column.label) || normalizeString(column && column.fieldId)
+          }))
+          .filter(column => column.fieldId)
+      : [];
+    const columns = explicitColumns.length
+      ? explicitColumns
+      : buildColumnsFromCatalogAndKsg(ksgFieldIds);
     const rows = (Array.isArray(payload && payload.rows) ? payload.rows : []).map(row => (
       Array.isArray(row) ? row.map(value => normalizeString(value)) : []
     ));
@@ -279,6 +331,8 @@
       : (fallbackUser && typeof fallbackUser === 'object' ? cloneJson(fallbackUser) : null);
 
     return {
+      dataset: normalizeDataset(payload && payload.dataset),
+      sheetName: normalizeString(payload && payload.sheetName) || (explicitColumns.length ? 'Archive monitoring' : 'Summary'),
       fetchedAt: normalizeString(payload && payload.fetchedAt) || new Date().toISOString(),
       version: Number.isFinite(versionRaw) ? Math.floor(versionRaw) : 0,
       currentUser,
@@ -293,37 +347,42 @@
   function serializeBundleForStorage(bundle, sessionToken) {
     return JSON.stringify({
       sessionToken: normalizeString(sessionToken),
+      dataset: normalizeDataset(bundle && bundle.dataset),
+      sheetName: normalizeString(bundle && bundle.sheetName),
       fetchedAt: normalizeString(bundle && bundle.fetchedAt),
       version: Number.isFinite(Number(bundle && bundle.version)) ? Math.floor(Number(bundle.version)) : 0,
       currentUser: bundle && bundle.currentUser && typeof bundle.currentUser === 'object'
-        ? cloneJson(bundle.currentUser)
+        ? bundle.currentUser
         : null,
-      columns: cloneJson(Array.isArray(bundle && bundle.columns) ? bundle.columns : []),
-      rows: cloneJson(Array.isArray(bundle && bundle.rows) ? bundle.rows : []),
-      objectIds: cloneJson(Array.isArray(bundle && bundle.objectIds) ? bundle.objectIds : []),
+      columns: Array.isArray(bundle && bundle.columns) ? bundle.columns : [],
+      rows: Array.isArray(bundle && bundle.rows) ? bundle.rows : [],
+      objectIds: Array.isArray(bundle && bundle.objectIds) ? bundle.objectIds : [],
       totalRows: Number.isFinite(Number(bundle && bundle.totalRows)) ? Math.floor(Number(bundle.totalRows)) : 0
     });
   }
 
-  function restorePersistedBundle(sessionToken) {
+  function restorePersistedBundle(sessionToken, dataset) {
     const token = normalizeString(sessionToken);
+    const datasetMode = normalizeDataset(dataset);
     if (!token) return null;
     const raw = safeReadSessionStorage(PERSISTED_BUNDLE_CACHE_KEY);
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw);
-      if (!parsed || normalizeString(parsed.sessionToken) !== token) return null;
-      const columns = cloneJson(Array.isArray(parsed.columns) ? parsed.columns : []);
+      if (!parsed || normalizeString(parsed.sessionToken) !== token || normalizeDataset(parsed.dataset) !== datasetMode) return null;
+      const columns = Array.isArray(parsed.columns) ? parsed.columns : [];
       return cacheBundle({
+        dataset: datasetMode,
+        sheetName: normalizeString(parsed.sheetName) || (datasetMode === 'archive' ? 'Archive monitoring' : 'Summary'),
         fetchedAt: normalizeString(parsed.fetchedAt) || new Date().toISOString(),
         version: Number.isFinite(Number(parsed.version)) ? Math.floor(Number(parsed.version)) : 0,
-        currentUser: parsed.currentUser && typeof parsed.currentUser === 'object' ? cloneJson(parsed.currentUser) : null,
+        currentUser: parsed.currentUser && typeof parsed.currentUser === 'object' ? parsed.currentUser : null,
         columns,
-        rows: cloneJson(Array.isArray(parsed.rows) ? parsed.rows : []),
-        objectIds: cloneJson(Array.isArray(parsed.objectIds) ? parsed.objectIds : []),
+        rows: Array.isArray(parsed.rows) ? parsed.rows : [],
+        objectIds: Array.isArray(parsed.objectIds) ? parsed.objectIds : [],
         totalRows: Number.isFinite(Number(parsed.totalRows)) ? Math.floor(Number(parsed.totalRows)) : 0,
         fieldIndexById: buildFieldIndexById(columns)
-      }, { sessionToken: token });
+      }, { sessionToken: token, dataset: datasetMode });
     } catch (_error) {
       safeRemoveSessionStorage(PERSISTED_BUNDLE_CACHE_KEY);
       return null;
@@ -331,12 +390,16 @@
   }
 
   function cacheBundle(bundle, options) {
-    bundleCache = bundle;
+    bundleCache = {
+      ...(bundle || {}),
+      dataset: normalizeDataset(bundle && bundle.dataset),
+      sheetName: normalizeString(bundle && bundle.sheetName) || (normalizeDataset(bundle && bundle.dataset) === 'archive' ? 'Archive monitoring' : 'Summary')
+    };
     const sessionToken = normalizeString(options && options.sessionToken);
-    if (sessionToken && bundle) {
-      safeWriteSessionStorage(PERSISTED_BUNDLE_CACHE_KEY, serializeBundleForStorage(bundle, sessionToken));
+    if (sessionToken && bundleCache) {
+      safeWriteSessionStorage(PERSISTED_BUNDLE_CACHE_KEY, serializeBundleForStorage(bundleCache, sessionToken));
     }
-    return bundle;
+    return bundleCache;
   }
 
   async function tryLoadFastBundlePayload(options) {
@@ -349,7 +412,8 @@
         p_session_token: sessionToken,
         p_if_version: Number.isFinite(Number(options && options.ifVersion))
           ? Math.floor(Number(options && options.ifVersion))
-          : null
+          : null,
+        p_dataset: normalizeDataset(options && options.dataset)
       });
     } catch (error) {
       const code = normalizeString(error && error.code).toUpperCase();
@@ -369,20 +433,24 @@
     const settings = options || {};
     const sessionToken = normalizeString(settings.sessionToken);
     const rpcName = normalizeString(RPC.getDataBundle);
+    const dataset = normalizeDataset(settings.dataset);
     const canUseFastBundle = !!(sessionToken && rpcName);
     const skipRemoteCheck = !!settings.skipRemoteCheck;
-    if (!settings.force && !bundleCache && canUseFastBundle) restorePersistedBundle(sessionToken);
+    if (bundleCache && normalizeDataset(bundleCache.dataset) !== dataset) bundleCache = null;
+    if (bundleCachePromise && normalizeDataset(bundleCachePromise.dataset) !== dataset) bundleCachePromise = null;
+    if (!settings.force && !bundleCache && canUseFastBundle) restorePersistedBundle(sessionToken, dataset);
 
     if (!settings.force && bundleCache && skipRemoteCheck) return bundleCache;
-    if (!settings.force && bundleCachePromise) return bundleCachePromise;
+    if (!settings.force && bundleCachePromise) return bundleCachePromise.promise;
     if (!sessionToken) throw createShellError('Требуется авторизация', 'UNAUTHORIZED');
     if (!rpcName) throw createStrictDataAccessError();
 
-    bundleCachePromise = (async () => {
+    const pendingPromise = (async () => {
       if (!settings.force && bundleCache && canUseFastBundle && !skipRemoteCheck) {
         const fastPayload = await tryLoadFastBundlePayload({
           sessionToken,
-          ifVersion: bundleCache.version
+          ifVersion: bundleCache.version,
+          dataset
         });
         if (fastPayload) {
           if (fastPayload.changed === false) {
@@ -393,26 +461,29 @@
             if (Number.isFinite(Number(fastPayload.version))) bundleCache.version = Math.floor(Number(fastPayload.version));
             return bundleCache;
           }
-          return cacheBundle(buildBundleFromFastPayload(fastPayload, bundleCache.currentUser), { sessionToken });
+          return cacheBundle(buildBundleFromFastPayload(fastPayload, bundleCache.currentUser), { sessionToken, dataset });
         }
         throw createStrictDataAccessError();
       }
 
       if (canUseFastBundle) {
-        const fastPayload = await tryLoadFastBundlePayload({ sessionToken });
+        const fastPayload = await tryLoadFastBundlePayload({ sessionToken, dataset });
         if (fastPayload) {
           if (fastPayload.changed === false && bundleCache) return bundleCache;
-          return cacheBundle(buildBundleFromFastPayload(fastPayload, bundleCache && bundleCache.currentUser), { sessionToken });
+          return cacheBundle(buildBundleFromFastPayload(fastPayload, bundleCache && bundleCache.currentUser), { sessionToken, dataset });
         }
       }
 
       throw createStrictDataAccessError();
     })()
       .finally(() => {
-        bundleCachePromise = null;
+        if (bundleCachePromise && normalizeDataset(bundleCachePromise.dataset) === dataset) {
+          bundleCachePromise = null;
+        }
       });
 
-    return bundleCachePromise;
+    bundleCachePromise = { dataset, promise: pendingPromise };
+    return pendingPromise;
   }
 
   function invalidateBundleCache() {
@@ -432,6 +503,8 @@
         name: normalizeString(user.name) || 'Пользователь',
         role: normalizeString(user.role) || 'Пользователь',
         division: normalizeString(user.division),
+        apps: cloneJson(user.apps && typeof user.apps === 'object' ? user.apps : {}),
+        allowedApps: cloneJson(Array.isArray(user.allowedApps || user.allowed_apps) ? (user.allowedApps || user.allowed_apps) : []),
         loginTime: normalizeString(user.loginTime),
         spreadsheetId: 'supabase'
       },
@@ -446,21 +519,34 @@
       ? Math.floor(maxRowsRaw)
       : totalRows;
     const rows = (bundle && Array.isArray(bundle.rows) ? bundle.rows : []).slice(0, effectiveMaxRows);
+    const objectIds = (bundle && Array.isArray(bundle.objectIds) ? bundle.objectIds : []).slice(0, effectiveMaxRows);
 
     return {
-      columns: cloneJson(Array.isArray(bundle && bundle.columns) ? bundle.columns : []),
-      rows: cloneJson(rows),
+      columns: Array.isArray(bundle && bundle.columns) ? bundle.columns : [],
+      rows,
+      objectIds,
       totalRows,
       returnedRows: rows.length,
       truncated: rows.length < totalRows,
       spreadsheetName: 'Supabase',
-      sheetName: 'Сводная',
+      sheetName: normalizeString(bundle && bundle.sheetName) || (normalizeDataset(bundle && bundle.dataset) === 'archive' ? 'Archive monitoring' : 'Summary'),
+      dataset: normalizeDataset(bundle && bundle.dataset),
       fetchedAt: normalizeString(bundle && bundle.fetchedAt) || new Date().toISOString(),
       headerRow: 3,
       fieldIdRow: 1,
       sourceRow: 2,
-      currentUser: cloneJson(user || (bundle && bundle.currentUser) || {})
+      currentUser: user || (bundle && bundle.currentUser) || {}
     };
+  }
+
+  function peekBundleCache(options) {
+    const settings = options || {};
+    const dataset = normalizeDataset(settings.dataset);
+    const sessionToken = normalizeString(settings.sessionToken);
+    if (bundleCache && normalizeDataset(bundleCache.dataset) !== dataset) bundleCache = null;
+    if (!bundleCache && sessionToken) restorePersistedBundle(sessionToken, dataset);
+    if (!bundleCache) return null;
+    return buildDataResponse(bundleCache, bundleCache.currentUser || null, settings);
   }
 
   function getFieldValueFromBundle(bundle, rowIndex, fieldId) {
@@ -507,7 +593,7 @@
       out.push({
         row_index: rowIndex,
         col_index: colIndex,
-        object_id: Number(objectId),
+        object_id: objectId,
         field_id: normalizeString(column.fieldId),
         field_label: normalizeString(column.label),
         value: String(edit && edit.value != null ? edit.value : ''),
@@ -537,7 +623,7 @@
       .filter(item => item.objectId)
       .map(item => ({
         rowIndex: item.rowIndex,
-        objectId: Number(item.objectId)
+        objectId: item.objectId
       }));
   }
 
@@ -605,7 +691,8 @@
   async function getSmartFilterShellData(options) {
     const bundle = await getBundle({
       sessionToken: options && options.sessionToken,
-      force: !!(options && options.force)
+      force: !!(options && options.force),
+      dataset: options && options.dataset
     });
     if (bundle && bundle.currentUser) {
       return buildDataResponse(bundle, bundle.currentUser, options);
@@ -619,7 +706,14 @@
     const selectionId = normalizeString(options && options.activeSelectionId);
     const bundlePromise = getBundle({
       sessionToken: options && options.sessionToken,
-      force: !!(options && options.force)
+      force: !!(options && options.force),
+      dataset: options && options.dataset
+    });
+    const monitoringOverlayPromise = invokeRpc(RPC.getMonitoringOverlay, {
+      p_session_token: normalizeString(options && options.sessionToken)
+    });
+    const mapOverlayPromise = invokeRpc(RPC.getRegistryMapOverlay, {
+      p_session_token: normalizeString(options && options.sessionToken)
     });
     const selectionsPromise = invokeRpc(RPC.getSharedSelections, {
       p_session_token: normalizeString(options && options.sessionToken)
@@ -631,8 +725,10 @@
         })
       : Promise.resolve(null);
 
-    const [bundle, sharedSelections, sharedSelectionWork] = await Promise.all([
+    const [bundle, monitoringOverlay, mapOverlay, sharedSelections, sharedSelectionWork] = await Promise.all([
       bundlePromise,
+      monitoringOverlayPromise,
+      mapOverlayPromise,
       selectionsPromise,
       workPromise
     ]);
@@ -643,11 +739,61 @@
 
     return {
       data: buildDataResponse(bundle, session.user, options),
+      monitoringOverlay: monitoringOverlay && typeof monitoringOverlay === 'object'
+        ? monitoringOverlay
+        : { rows: [] },
+      mapOverlay: mapOverlay && typeof mapOverlay === 'object'
+        ? mapOverlay
+        : { rows: [] },
       sharedSelections: Array.isArray(sharedSelections) ? sharedSelections : [],
       sharedSelectionWork: sharedSelectionWork && typeof sharedSelectionWork === 'object'
         ? sharedSelectionWork
         : buildEmptyWorkState(selectionId, session.user)
     };
+  }
+
+  async function getSmartFilterShellObjectMonitoringHistory(options) {
+    await requireSession(options && options.sessionToken);
+    const result = await invokeRpc(RPC.getObjectMonitoringHistory, {
+      p_session_token: normalizeString(options && options.sessionToken),
+      p_object_id: normalizeString(options && options.objectId)
+    });
+    return result && typeof result === 'object' ? result : { rows: [] };
+  }
+
+  async function getSmartFilterShellArchiveMonitoring(options) {
+    await requireSession(options && options.sessionToken);
+    const limitRaw = Number(options && options.limit);
+    const result = await invokeRpc(RPC.getArchiveMonitoring, {
+      p_session_token: normalizeString(options && options.sessionToken),
+      p_limit: Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : null
+    });
+    return result && typeof result === 'object' ? result : { rows: [] };
+  }
+
+  async function getSmartFilterShellObjectLabStudiesHistory(options) {
+    await requireSession(options && options.sessionToken);
+    const result = await invokeRpc(RPC.getObjectLabStudiesHistory, {
+      p_session_token: normalizeString(options && options.sessionToken),
+      p_object_id: normalizeString(options && options.objectId)
+    });
+    return result && typeof result === 'object' ? result : { rows: [] };
+  }
+
+  async function getSmartFilterShellLabStudyInspectors(options) {
+    await requireSession(options && options.sessionToken);
+    const result = await invokeRpc(RPC.getLabStudyInspectors, {
+      p_session_token: normalizeString(options && options.sessionToken)
+    });
+    return result && typeof result === 'object' ? result : { rows: [] };
+  }
+
+  async function createSmartFilterShellLabStudy(options) {
+    await requireSession(options && options.sessionToken);
+    return invokeRpc(RPC.createLabStudy, {
+      p_session_token: normalizeString(options && options.sessionToken),
+      p_payload: options || {}
+    });
   }
 
   async function getSmartFilterShellSharedSelections(options) {
@@ -676,6 +822,68 @@
       p_session_token: normalizeString(options && options.sessionToken),
       p_payload: options || {}
     });
+  }
+
+  async function publishSmartFilterShellSelectionToMpro(options) {
+    const session = await requireSession(options && options.sessionToken);
+    const bundle = await getBundle({
+      sessionToken: options && options.sessionToken,
+      skipRemoteCheck: true
+    });
+    const resolved = resolveObjectIdsFromRowIndexes(bundle, options && options.rowIndexes);
+    const result = await invokeRpc(RPC.publishSelectionToMpro, {
+      p_session_token: normalizeString(options && options.sessionToken),
+      p_payload: {
+        selectionId: normalizeString(options && options.selectionId),
+        selectionName: normalizeString(options && options.selectionName),
+        targetDivision:
+          normalizeString(options && options.targetDivision) ||
+          normalizeString(
+            session &&
+            session.user &&
+            session.user.apps &&
+            session.user.apps.mpro &&
+            session.user.apps.mpro.division
+          ) ||
+          normalizeString(session && session.user && session.user.division) ||
+          'map',
+        mode: normalizeString(options && options.mode) || 'append',
+        objectIds: resolved.map(item => item.objectId)
+      }
+    });
+    return result && typeof result === 'object'
+      ? {
+          ...result,
+          resolvedRows: resolved.map(item => item.rowIndex)
+        }
+      : {
+          success: true,
+          resolvedRows: resolved.map(item => item.rowIndex)
+        };
+  }
+
+  async function removeSmartFilterShellRegistryObjectsFromMproMap(options) {
+    await requireSession(options && options.sessionToken);
+    const bundle = await getBundle({
+      sessionToken: options && options.sessionToken,
+      skipRemoteCheck: true
+    });
+    const resolved = resolveObjectIdsFromRowIndexes(bundle, options && options.rowIndexes);
+    const result = await invokeRpc(RPC.removeRegistryObjectsFromMproMap, {
+      p_session_token: normalizeString(options && options.sessionToken),
+      p_payload: {
+        objectIds: resolved.map(item => item.objectId)
+      }
+    });
+    return result && typeof result === 'object'
+      ? {
+          ...result,
+          resolvedRows: resolved.map(item => item.rowIndex)
+        }
+      : {
+          success: true,
+          resolvedRows: resolved.map(item => item.rowIndex)
+        };
   }
 
   async function saveSmartFilterShellSharedSelectionWorkState(options) {
@@ -767,9 +975,16 @@
       auth: authWithIdentity,
       getSmartFilterShellData,
       getSmartFilterShellBootstrap,
+      getSmartFilterShellArchiveMonitoring,
+      getSmartFilterShellObjectMonitoringHistory,
+      getSmartFilterShellObjectLabStudiesHistory,
+      getSmartFilterShellLabStudyInspectors,
+      createSmartFilterShellLabStudy,
       getSmartFilterShellSharedSelections,
       getSmartFilterShellSharedSelectionWorkState,
       saveSmartFilterShellSharedSelection,
+      publishSmartFilterShellSelectionToMpro,
+      removeSmartFilterShellRegistryObjectsFromMproMap,
       saveSmartFilterShellSharedSelectionWorkState,
       saveSmartFilterShellSharedSelectionWorkBatch,
       deleteSmartFilterShellSharedSelection,
@@ -785,6 +1000,8 @@
 
   window.SupabaseShellApi = {
     run,
-    invalidateBundleCache
+    invalidateBundleCache,
+    peekBundleCache
   };
 })();
+

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>m-pro</title>
+</head>
+<body>
+  <script>
+    (function () {
+      const SITE_ENTRY_URL = 'site/index.html';
+      const MPRO_ENTRY_URL = 'mpro.html';
+      const SITE_SESSION_KEYS = ['smart_filter_shell_session', 'smart_filter_shell_session_persist'];
+      const MPRO_SESSION_KEYS = ['mpro_user', 'mpro_user_persist'];
+
+      function readStorageValue(storage, key) {
+        try {
+          return storage.getItem(key);
+        } catch (_error) {
+          return '';
+        }
+      }
+
+      function writeStorageValue(storage, key, value) {
+        try {
+          storage.setItem(key, value);
+        } catch (_error) {
+          // no-op
+        }
+      }
+
+      function parseSession(raw) {
+        if (!raw) return null;
+        try {
+          const parsed = JSON.parse(raw);
+          if (!parsed || !parsed.user || !parsed.sessionToken) return null;
+          const expiresAt = String(parsed.expiresAt || '').trim();
+          if (expiresAt) {
+            const expiryMs = Date.parse(expiresAt);
+            if (Number.isFinite(expiryMs) && expiryMs <= Date.now()) return null;
+          }
+          return parsed;
+        } catch (_error) {
+          return null;
+        }
+      }
+
+      function readSession(keys) {
+        const storages = [window.sessionStorage, window.localStorage];
+        for (let storageIndex = 0; storageIndex < storages.length; storageIndex += 1) {
+          const storage = storages[storageIndex];
+          for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
+            const raw = readStorageValue(storage, keys[keyIndex]);
+            const parsed = parseSession(raw);
+            if (parsed) {
+              return {
+                payload: parsed,
+                raw,
+                storage
+              };
+            }
+          }
+        }
+        return null;
+      }
+
+      function normalizeAllowedApps(user) {
+        const apps = user && user.apps && typeof user.apps === 'object' && !Array.isArray(user.apps) ? user.apps : {};
+        const rawAllowed = Array.isArray(user && user.allowedApps)
+          ? user.allowedApps
+          : (Array.isArray(user && user.allowed_apps) ? user.allowed_apps : []);
+        const allowed = [];
+        rawAllowed.forEach(function (value) {
+          const code = String(value || '').trim().toLowerCase();
+          if (!code || allowed.indexOf(code) !== -1) return;
+          allowed.push(code);
+        });
+        if (!allowed.length) {
+          Object.keys(apps).forEach(function (key) {
+            const code = String(key || '').trim().toLowerCase();
+            if (!code || allowed.indexOf(code) !== -1) return;
+            allowed.push(code);
+          });
+        }
+        return allowed;
+      }
+
+      function redirect(url) {
+        window.location.replace(url);
+      }
+
+      const siteSession = readSession(SITE_SESSION_KEYS);
+      const mproSession = readSession(MPRO_SESSION_KEYS);
+      const preferredSession = siteSession || mproSession;
+
+      if (preferredSession && preferredSession.payload && preferredSession.payload.user) {
+        const allowedApps = normalizeAllowedApps(preferredSession.payload.user);
+        if (allowedApps.indexOf('site') !== -1) {
+          if (!siteSession && preferredSession.raw) {
+            writeStorageValue(window.sessionStorage, SITE_SESSION_KEYS[0], preferredSession.raw);
+          }
+          redirect(SITE_ENTRY_URL);
+          return;
+        }
+        if (allowedApps.indexOf('mpro') !== -1) {
+          if (!mproSession && preferredSession.raw) {
+            writeStorageValue(window.sessionStorage, MPRO_SESSION_KEYS[0], preferredSession.raw);
+          }
+          redirect(MPRO_ENTRY_URL);
+          return;
+        }
+      }
+
+      redirect(SITE_ENTRY_URL);
+    })();
+  </script>
+</body>
+</html>

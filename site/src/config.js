@@ -2,9 +2,9 @@
   'use strict';
 
   const defaults = {
-    supabaseUrl: 'https://lkflvchascdapzcbennf.supabase.co',
-    supabaseAnonKey: 'sb_publishable_fzwXEWgtIkIjbZJ6WuXrNQ_FZ3c4kNg',
-    schema: 'public',
+    supabaseUrl: 'https://vsdfxrnkxohsuewyvpih.supabase.co',
+    supabaseAnonKey: 'sb_publishable_7deVw5OluDBmYalvdq_13Q_yKrCDT5H',
+    schema: 'api',
     fetchPageSize: 1000,
     dataTables: {
       objects: 'objects',
@@ -18,10 +18,19 @@
     rpc: {
       auth: 'sf_auth',
       getDataBundle: 'sf_get_data_bundle',
+      getArchiveMonitoring: 'sf_get_archive_monitoring',
+      getMonitoringOverlay: 'sf_get_registry_monitoring_overlay',
+      getRegistryMapOverlay: 'sf_get_registry_map_overlay',
+      getObjectMonitoringHistory: 'sf_get_object_monitoring_history',
+      getObjectLabStudiesHistory: 'sf_get_object_lab_studies_history',
+      getLabStudyInspectors: 'sf_get_lab_study_inspectors',
+      createLabStudy: 'sf_create_lab_study',
       getSessionUser: 'sf_get_session_user',
       getSharedSelections: 'sf_get_shared_selections',
       getSharedSelectionWorkState: 'sf_get_shared_selection_work_state',
       saveSharedSelection: 'sf_save_shared_selection',
+      publishSelectionToMpro: 'sf_publish_selection_to_mpro',
+      removeRegistryObjectsFromMproMap: 'sf_remove_registry_objects_from_mpro_map',
       saveSharedSelectionWorkState: 'sf_save_shared_selection_work_state',
       saveSharedSelectionWorkBatch: 'sf_save_shared_selection_work_batch',
       deleteSharedSelection: 'sf_delete_shared_selection',

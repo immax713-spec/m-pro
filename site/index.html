@@ -4,9 +4,344 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>mpro ss</title>
-  <link rel="stylesheet" href="./src/styles.css?v=20260409a">
+  <link rel="dns-prefetch" href="//api-maps.yandex.ru">
+  <link rel="preconnect" href="https://api-maps.yandex.ru" crossorigin>
+  <script>
+    (function () {
+      const SHELL_SESSION_STORAGE_KEY = 'smart_filter_shell_session';
+      const REGISTRY_SESSION_STORAGE_KEY = 'smart_filter_shell_registry_session';
+      const ALLOWED_APPS = new Set(['site', 'mpro']);
+      const SIDEBAR_PANEL_KEYS = new Set(['registry', 'categories', 'analytics', 'projects', 'data']);
+
+      function normalizeAllowedApps(user) {
+        if (!user || typeof user !== 'object') return [];
+        const apps = user.apps && typeof user.apps === 'object' && !Array.isArray(user.apps)
+          ? user.apps
+          : {};
+        const rawValue = user.allowedApps != null ? user.allowedApps : user.allowed_apps;
+        const source = Array.isArray(rawValue)
+          ? rawValue
+          : (typeof rawValue === 'string' ? rawValue.split(/[,\s;|]+/) : []);
+        const out = [];
+        source.forEach(item => {
+          const code = String(item || '').trim().toLowerCase();
+          if (!code || !ALLOWED_APPS.has(code) || out.indexOf(code) !== -1) return;
+          out.push(code);
+        });
+        if (!out.length) {
+          Object.keys(apps).forEach(key => {
+            const code = String(key || '').trim().toLowerCase();
+            if (!code || !ALLOWED_APPS.has(code) || out.indexOf(code) !== -1) return;
+            out.push(code);
+          });
+        }
+        return out;
+      }
+
+      function readWarmSiteSession() {
+        let raw = '';
+        try {
+          raw = String(window.sessionStorage.getItem(SHELL_SESSION_STORAGE_KEY) || '');
+        } catch (_error) {
+          return null;
+        }
+        if (!raw) return null;
+        try {
+          const parsed = JSON.parse(raw);
+          const expiresAt = String(parsed && parsed.expiresAt || '').trim();
+          if (expiresAt) {
+            const expiryMs = Date.parse(expiresAt);
+            if (Number.isFinite(expiryMs) && expiryMs <= Date.now()) return null;
+          }
+          if (!parsed || !parsed.user || !String(parsed.sessionToken || '').trim()) return null;
+          if (normalizeAllowedApps(parsed.user).indexOf('site') === -1) return null;
+          return parsed;
+        } catch (_error) {
+          return null;
+        }
+      }
+
+      const bootSession = readWarmSiteSession();
+      function normalizeSidebarPanel(value) {
+        const normalized = String(value || '').trim();
+        return SIDEBAR_PANEL_KEYS.has(normalized) ? normalized : 'registry';
+      }
+      function normalizeCurrentView(value) {
+        const normalized = String(value || '').trim();
+        return normalized === 'object' || normalized === 'analytics' ? normalized : 'registry';
+      }
+      function readWarmNavState() {
+        let raw = '';
+        try {
+          raw = String(window.localStorage.getItem(REGISTRY_SESSION_STORAGE_KEY) || '');
+        } catch (_error) {
+          return null;
+        }
+        if (!raw) return null;
+        try {
+          const parsed = JSON.parse(raw);
+          return {
+            currentView: normalizeCurrentView(parsed && parsed.currentView),
+            sidebarExpanded: parsed && parsed.sidebarExpanded !== undefined ? !!parsed.sidebarExpanded : true,
+            sidebarActivePanel: normalizeSidebarPanel(parsed && parsed.sidebarActivePanel),
+            registrySidebarPanelOpen: parsed && parsed.registrySidebarPanelOpen !== undefined ? !!parsed.registrySidebarPanelOpen : true
+          };
+        } catch (_error) {
+          return null;
+        }
+      }
+      window.__SITE_BOOT_SESSION__ = bootSession;
+      window.__SITE_BOOT_NAV__ = readWarmNavState();
+      if (bootSession) {
+        document.documentElement.classList.add('site-has-warm-session');
+      }
+    })();
+  </script>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      color: #1f2b2d;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background: radial-gradient(circle at 0% 0%, rgba(15, 125, 112, 0.16), transparent 28%),
+        radial-gradient(circle at 100% 0%, rgba(185, 106, 51, 0.14), transparent 26%),
+        linear-gradient(180deg, #f6f7f4 0%, #edf1eb 52%, #e6ece4 100%);
+    }
+    button {
+      font: inherit;
+      cursor: pointer;
+    }
+    .hidden {
+      display: none !important;
+    }
+    .app {
+      --sidebar-width: 304px;
+      display: grid;
+      grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      min-height: 100vh;
+      padding: 10px;
+    }
+    .sidebar {
+      position: sticky;
+      top: 10px;
+      align-self: start;
+      min-height: calc(100vh - 20px);
+      border-radius: 18px;
+      border: 1px solid rgba(154, 242, 226, 0.08);
+      background: radial-gradient(circle at 18% 8%, rgba(115, 216, 200, 0.15), transparent 30%),
+        radial-gradient(circle at 100% 0%, rgba(115, 216, 200, 0.06), transparent 24%),
+        linear-gradient(180deg, #1a282c 0%, #121b1e 100%);
+      color: #edf5f2;
+      box-shadow: 0 24px 48px rgba(12, 20, 21, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      overflow: hidden;
+    }
+    .sidebar-shell {
+      display: grid;
+      align-content: start;
+      min-height: calc(100vh - 20px);
+      padding: 10px;
+    }
+    .sidebar-top {
+      display: grid;
+      gap: 7px;
+      padding-bottom: 10px;
+    }
+    .sidebar-brand-row {
+      display: flex;
+      justify-content: center;
+    }
+    .sidebar-brand-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+    .brand-logo-svg {
+      display: block;
+      width: 100%;
+      max-width: 112px;
+      height: auto;
+    }
+    .brand-logo-path {
+      fill: none;
+      stroke: url(#brandLogoGradient);
+      stroke-width: 32;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .sidebar-collapse-toggle {
+      justify-self: end;
+      display: inline-grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      min-width: 18px;
+      min-height: 18px;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      color: rgba(237, 245, 242, 0.46);
+      box-shadow: none;
+    }
+    .user-session {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      padding: 10px 0 0 6px;
+    }
+    .user-session-name {
+      font-size: 14px;
+      line-height: 1.1;
+      font-weight: 900;
+      color: #fff;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .user-session-role {
+      font-size: 11px;
+      line-height: 1.2;
+      color: rgba(237, 245, 242, 0.7);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .sidebar-nav {
+      display: grid;
+      gap: 4px;
+      padding: 4px 0;
+    }
+    .nav-item {
+      display: grid;
+      gap: 0;
+    }
+    .nav-button {
+      position: relative;
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      min-height: 40px;
+      padding: 0 6px;
+      border: 0;
+      background: transparent;
+      color: rgba(154, 183, 175, 0.82);
+      box-shadow: none;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.1;
+      text-align: left;
+    }
+    .nav-button.is-active {
+      color: #fff;
+      background: linear-gradient(180deg, rgba(23, 148, 130, 0.94) 0%, rgba(15, 125, 112, 0.94) 100%);
+      border-radius: 14px;
+    }
+    .nav-button-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+    }
+    .sidebar-icon-svg {
+      width: 32px;
+      height: 32px;
+      fill: none;
+      stroke: rgba(158, 189, 181, 0.9);
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .nav-button.is-active .sidebar-icon-svg {
+      stroke: #9af2e2;
+    }
+    .nav-button-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .nav-item-panel {
+      display: grid;
+    }
+    .sidebar-section {
+      padding: 10px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .sidebar-registry-toggle,
+    .sidebar-data-action {
+      display: grid;
+      align-items: center;
+      width: 100%;
+      min-height: 34px;
+      padding: 0 8px 0 6px;
+      border: 0;
+      background: transparent;
+      color: rgba(202, 225, 218, 0.9);
+      box-shadow: none;
+      font-size: 11px;
+      font-weight: 700;
+      text-align: left;
+    }
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 10px 8px 12px;
+    }
+    .sidebar-footer-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-height: 40px;
+      padding: 0 8px;
+      border: 0;
+      background: transparent;
+      color: #e27e59;
+      box-shadow: none;
+      text-align: left;
+    }
+    .sidebar-footer-button-label {
+      display: inline;
+    }
+    .workspace {
+      min-width: 0;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+    body.site-shell-booting {
+      background: #edf1eb;
+    }
+    body.site-shell-booting #authOverlay,
+    body.site-shell-booting #appShell {
+      visibility: hidden;
+      opacity: 0;
+    }
+    body.site-nav-hydrating #appSidebar,
+    body.site-nav-hydrating #appSidebar * {
+      transition: none !important;
+      animation: none !important;
+    }
+  </style>
+    <link id="siteAppStylesheet" rel="stylesheet" href="./src/styles.css?v=20260414bp">
 </head>
-<body>
+<body class="site-shell-booting site-nav-hydrating">
   <div id="authOverlay" class="auth-overlay hidden">
     <section id="authCard" class="surface auth-card" aria-modal="true" role="dialog" aria-label="Авторизация">
       <div id="authBrandShell" class="auth-brand-shell">
@@ -26,9 +361,9 @@
         <div class="auth-brand-wordmark">m-pro</div>
       </div>
       <form id="authForm" class="auth-form" autocomplete="on">
-        <input id="authLogin" name="username" class="auth-input" type="text" placeholder="Логин или имя" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="150">
+        <input id="authLogin" name="username" class="auth-input" type="text" placeholder="Логин" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="150">
         <input id="authPassword" name="password" class="auth-input" type="password" placeholder="Пароль" autocomplete="current-password" maxlength="100">
-        <button id="btnAuthLogin" class="primary auth-submit" type="submit">
+        <button id="btnAuthLogin" class="auth-submit" type="submit">
           <span class="auth-submit-text">Войти</span>
           <span class="auth-submit-spinner" aria-hidden="true"></span>
         </button>
@@ -75,7 +410,20 @@
 
         <nav class="sidebar-nav" aria-label="Навигация">
           <div class="nav-item">
-            <button id="btnNavRegistry" class="nav-button is-active" type="button" title="Реестр" aria-label="Реестр">
+            <button id="btnNavMpro" class="nav-button" type="button" title="Открыть M-PRO" aria-label="Открыть M-PRO" disabled>
+              <span class="nav-button-icon" aria-hidden="true">
+                <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
+                  <path d="M15.75 4.75 12 6.1 8 4.75 4.25 6.1v9.15L8 13.9l4 1.35 3.75-1.35V4.75Z"></path>
+                  <path d="M8 4.75v9.15"></path>
+                  <path d="M12 6.1v9.15"></path>
+                </svg>
+              </span>
+              <span class="nav-button-label">M-PRO</span>
+            </button>
+          </div>
+
+          <div class="nav-item nav-item-has-panel">
+            <button id="btnNavRegistry" class="nav-button nav-button-expandable is-active" type="button" title="Реестр" aria-label="Реестр" aria-expanded="true">
               <span class="nav-button-icon" aria-hidden="true">
                 <svg class="sidebar-icon-svg" viewBox="0 0 20 20" focusable="false">
                   <path d="M6 4.75h8a1 1 0 0 1 1 1v8.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8.5a1 1 0 0 1 1-1Z"></path>
@@ -86,6 +434,25 @@
               </span>
               <span class="nav-button-label">Реестр</span>
             </button>
+            <div id="sidebarRegistryPanel" class="nav-item-panel">
+              <section class="sidebar-section sidebar-registry-panel">
+                <div class="sidebar-registry-list">
+                  <button id="btnToggleRegistryColumns" class="ghost sidebar-registry-toggle" type="button" aria-pressed="false" title="Вид реестра" aria-label="Вид реестра">
+                    <span class="sidebar-registry-toggle-label">Вид реестра</span>
+                  </button>
+                  <div id="registryColumnsPanel" class="registry-columns-panel sidebar-registry-columns hidden"></div>
+
+                  <button id="btnAdminRegistryEditMode" class="ghost sidebar-registry-toggle hidden" type="button" aria-pressed="false" title="Управление объектами" aria-label="Управление объектами">
+                    <span class="sidebar-registry-toggle-label">Управление объектами</span>
+                  </button>
+                  <div id="sidebarRegistryAdminState" class="sidebar-registry-note hidden"></div>
+                  <div id="sidebarRegistryAdminActions" class="sidebar-registry-admin-actions hidden">
+                    <button id="btnAdminRegistryAdd" class="ghost sidebar-registry-action hidden" type="button">Добавить объект</button>
+                    <button id="btnAdminRegistryDelete" class="ghost sidebar-registry-action hidden" type="button">Удалить выбранные строки</button>
+                  </div>
+                </div>
+              </section>
+            </div>
           </div>
 
           <div class="nav-item nav-item-has-panel">
@@ -100,16 +467,6 @@
               <span class="nav-button-label">Категории</span>
             </button>
             <div id="sidebarCategoriesPanel" class="nav-item-panel hidden">
-              <section id="selectedSectionsPanel" class="sidebar-section sidebar-selected-section hidden">
-                <div class="section-head">
-                  <div>
-                    <h3>Активные категории</h3>
-                  </div>
-                  <button id="btnResetSections" class="ghost sidebar-reset-icon" type="button" title="Сбросить выбранные категории" aria-label="Сбросить выбранные категории">&times;</button>
-                </div>
-                <div id="sectionChips" class="section-chips"></div>
-              </section>
-
               <section id="presetSection" class="sidebar-group sidebar-inline-group">
                 <div class="quick-preset-grid">
                   <div class="preset-row">
@@ -176,9 +533,7 @@
               </span>
               <span class="nav-button-label">Аналитика</span>
             </button>
-            <div id="sidebarAnalyticsPanel" class="nav-item-panel hidden">
-              <div class="sidebar-inline-note">Пока в разработке</div>
-            </div>
+            <div id="sidebarAnalyticsPanel" class="nav-item-panel hidden"></div>
           </div>
 
           <div class="nav-item nav-item-has-panel">
@@ -234,50 +589,12 @@
                   <span id="savedSelectionPanelSummary" class="saved-selection-panel-meta"></span>
                 </div>
                 <div id="savedSelectionPanelBody" class="saved-selection-panel-body">
-                  <div id="selectionCompose" class="saved-selection-compose hidden">
-                    <div class="saved-selection-compose-head">
-                      <div id="selectionComposerTitle" class="saved-selection-compose-title">Новый проект</div>
-                      <div id="selectionComposerSummary" class="saved-selection-compose-summary"></div>
-                    </div>
-                    <div class="saved-selection-compose-row">
-                      <input id="selectionNameInput" type="text" placeholder="Название проекта" maxlength="120">
-                      <button id="btnConfirmSelectionComposer" class="primary saved-selection-compose-icon-button saved-selection-submit" type="button" title="Сохранить проект" aria-label="Сохранить проект">
-                        <svg class="saved-selection-compose-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                          <path d="M4 10.5l4 4 8-10"></path>
-                        </svg>
-                      </button>
-                    </div>
-                    <div class="saved-selection-scope saved-selection-scope-list">
-                      <button id="btnSelectionScopePersonal" class="active" type="button">
-                        <span class="saved-selection-scope-mark" aria-hidden="true"></span>
-                        <span class="saved-selection-scope-label">Мои</span>
-                      </button>
-                      <button id="btnSelectionScopeDivision" type="button">
-                        <span class="saved-selection-scope-mark" aria-hidden="true"></span>
-                        <span class="saved-selection-scope-label">Команда</span>
-                      </button>
-                      <button id="btnSelectionScopeShared" type="button">
-                        <span class="saved-selection-scope-mark" aria-hidden="true"></span>
-                        <span class="saved-selection-scope-label">Все</span>
-                      </button>
-                    </div>
-                    <div class="saved-selection-compose-actions">
-                      <button id="btnAppendSelectionComposer" class="ghost hidden" type="button">Добавить текущие</button>
-                      <div class="saved-selection-compose-icon-row">
-                        <button id="btnSelectionComposerClose" class="ghost saved-selection-compose-icon-button hidden" type="button" title="Закрыть редактор проекта" aria-label="Закрыть редактор проекта">
-                          <svg class="saved-selection-compose-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                            <path d="M5 5l10 10"></path>
-                            <path d="M15 5L5 15"></path>
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
                   <div id="savedSelectionList" class="saved-selection-list"></div>
                 </div>
               </section>
             </div>
           </div>
+
         </nav>
 
         <div class="sidebar-footer">
@@ -292,6 +609,89 @@
         </div>
       </div>
     </aside>
+    <script>
+      (function () {
+        const bootSession = window.__SITE_BOOT_SESSION__;
+        if (!bootSession || !bootSession.user || !bootSession.sessionToken) return;
+
+        function normalizeText(value) {
+          return String(value == null ? '' : value).trim();
+        }
+
+        function normalizeSessionApps(apps) {
+          const source = apps && typeof apps === 'object' && !Array.isArray(apps) ? apps : {};
+          const out = {};
+          Object.keys(source).forEach(key => {
+            const appCode = String(key || '').trim().toLowerCase();
+            if (!appCode) return;
+            const profile = source[key] && typeof source[key] === 'object' ? source[key] : {};
+            out[appCode] = {
+              role: normalizeText(profile.role),
+              division: normalizeText(profile.division)
+            };
+          });
+          return out;
+        }
+
+        function normalizeAllowedApps(user) {
+          const apps = normalizeSessionApps(user && user.apps);
+          const rawValue = user && user.allowedApps != null ? user.allowedApps : user && user.allowed_apps;
+          const source = Array.isArray(rawValue)
+            ? rawValue
+            : (typeof rawValue === 'string' ? rawValue.split(/[,\s;|]+/) : []);
+          const out = [];
+          source.forEach(item => {
+            const code = String(item || '').trim().toLowerCase();
+            if (!code || out.indexOf(code) !== -1) return;
+            out.push(code);
+          });
+          if (!out.length) {
+            Object.keys(apps).forEach(code => {
+              if (out.indexOf(code) !== -1) return;
+              out.push(code);
+            });
+          }
+          return { apps, allowedApps: out };
+        }
+
+        const user = bootSession.user;
+        const sessionMeta = normalizeAllowedApps(user);
+        const siteProfile = sessionMeta.allowedApps.indexOf('site') !== -1
+          ? (sessionMeta.apps.site || { role: normalizeText(user.role), division: normalizeText(user.division) })
+          : null;
+        const role = siteProfile ? (siteProfile.role || normalizeText(user.role)) : normalizeText(user.role);
+        const division = siteProfile ? (siteProfile.division || normalizeText(user.division)) : normalizeText(user.division);
+        const displayRole = division ? `${role || 'Пользователь'} · ${division}` : (role || 'Пользователь');
+        const canOpenMpro = sessionMeta.allowedApps.indexOf('mpro') !== -1 || !!sessionMeta.apps.mpro;
+
+        const card = document.getElementById('userSessionCard');
+        const nameNode = document.getElementById('userSessionName');
+        const roleNode = document.getElementById('userSessionRole');
+        const logoutButton = document.getElementById('btnLogout');
+        const mproButton = document.getElementById('btnNavMpro');
+        const mproNavItem = mproButton ? mproButton.closest('.nav-item') : null;
+
+        if (card && nameNode && roleNode) {
+          nameNode.textContent = normalizeText(user.name) || 'Пользователь';
+          roleNode.textContent = displayRole;
+          card.classList.remove('hidden');
+        }
+        if (logoutButton) {
+          logoutButton.classList.remove('hidden');
+        }
+        if (mproNavItem) {
+          mproNavItem.classList.toggle('hidden', !canOpenMpro);
+        } else if (mproButton) {
+          mproButton.classList.toggle('hidden', !canOpenMpro);
+        }
+        if (mproButton) {
+          const title = canOpenMpro ? 'Открыть M-PRO' : 'Нет доступа к M-PRO';
+          mproButton.disabled = !canOpenMpro;
+          mproButton.title = title;
+          mproButton.setAttribute('aria-label', title);
+        }
+      })();
+    </script>
 
     <main class="workspace">
       <div id="runtimeErrorBanner" class="runtime-error-banner hidden" role="alert"></div>
@@ -320,14 +720,13 @@
             <input id="registrySearchInput" class="registry-search-input" type="text" placeholder="Поиск по УИН, коду ДС, коду АНО СМГ и названию">
             <textarea id="registryBulkUinInput" class="registry-bulk-search hidden" placeholder="Вставьте УИНы списком: по одному в строке, через запятую или точку с запятой"></textarea>
           </div>
-          <div class="registry-toolbar-actions">
-            <button id="btnRegistryFilterToggle" class="ghost icon-button registry-filter-button" type="button" title="Фильтр" aria-label="Фильтр">
-              <span class="registry-filter-icon" aria-hidden="true"></span>
-            </button>
-          </div>
+        <div class="registry-toolbar-actions">
+          <button id="btnRegistryFilterToggle" class="ghost icon-button registry-filter-button" type="button" title="Фильтр" aria-label="Фильтр">
+            <span class="registry-filter-icon" aria-hidden="true"></span>
+          </button>
+          <div id="registryFilterHintActions" class="registry-filter-hint-actions hidden"></div>
         </div>
-
-        <div id="registryColumnsPanel" class="registry-columns-panel hidden"></div>
+      </div>
 
         <div id="registryBulkActions" class="registry-bulk-actions hidden">
           <button id="btnApplyRegistryBulkUin" class="ghost" type="button">Применить список</button>
@@ -340,7 +739,7 @@
             <span id="objectCountBadge" class="badge">0 объектов</span>
             <div class="registry-refresh-group">
               <span id="registryRefreshNote" class="registry-refresh-note hidden" aria-live="polite"></span>
-              <button id="btnReload" class="ghost registry-refresh-button" type="button" title="Обновить данные" aria-label="Обновить данные">
+              <button id="btnReload" class="ghost registry-refresh-button action-icon-button action-icon-button--success" type="button" title="Обновить данные" aria-label="Обновить данные">
                 <svg class="registry-refresh-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                   <path d="M4 4v5h5"></path>
                   <path d="M20 20v-5h-5"></path>
@@ -349,20 +748,11 @@
                 </svg>
               </button>
             </div>
-          </div>
-          <div class="registry-meta-actions">
-            <button id="btnAdminRegistryEditMode" class="ghost registry-admin-mode-button hidden" type="button">Режим редактирования</button>
-            <button id="btnAdminRegistryAdd" class="ghost icon-button registry-admin-action-button registry-admin-add-button hidden" type="button" title="Добавить объект" aria-label="Добавить объект">+</button>
-            <button id="btnAdminRegistryDelete" class="ghost icon-button registry-admin-action-button registry-admin-delete-button hidden" type="button" title="Удалить выбранные строки" aria-label="Удалить выбранные строки">&#128465;</button>
-            <div id="registrySharedWorkInlineActions" class="registry-shared-work-inline hidden"></div>
-            <button id="btnToggleRegistryColumns" class="ghost icon-button registry-columns-toggle-button" type="button" title="Настроить вид реестра" aria-label="Настроить вид реестра">
-              <svg class="edit-badge-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                <path d="M4.25 15.75l2.85-.72 7.37-7.37-2.13-2.13-7.37 7.37-.72 2.85Z"></path>
-                <path d="M11.85 5.55l2.13 2.13"></path>
-              </svg>
-            </button>
-          </div>
         </div>
+        <div class="registry-meta-actions">
+            <div id="registrySharedWorkInlineActions" class="registry-shared-work-inline hidden"></div>
+        </div>
+      </div>
         <div id="registrySelectionEditBar" class="registry-selection-edit hidden"></div>
         <div id="adminRegistryEditBar" class="registry-admin-edit hidden"></div>
 
@@ -374,8 +764,10 @@
           </table>
         </div>
       </section>
+      <section id="analyticsView" class="surface analytics-view hidden"></section>
       <div id="registryFloatingMenu" class="registry-floating-menu" role="listbox" aria-hidden="true"></div>
       <div id="adminRegistryDialog" class="admin-registry-overlay hidden" aria-hidden="true"></div>
+      <div id="labStudyCreateOverlay" class="lab-study-create-overlay hidden" aria-hidden="true"></div>
 
       <section id="objectView" class="record-shell hidden">
         <section class="surface record-summary">
@@ -383,7 +775,7 @@
             <div class="record-head-main">
               <h2 id="recordTitle">Выберите объект</h2>
             </div>
-            <button id="btnHeaderEdit" class="ghost icon-button header-edit-button hidden" type="button" title="Редактировать шапку" aria-label="Редактировать шапку">
+            <button id="btnHeaderEdit" class="ghost icon-button header-edit-button action-icon-button action-icon-button--success hidden" type="button" title="Редактировать шапку" aria-label="Редактировать шапку">
               <svg class="edit-badge-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                 <path d="M4.25 15.75l2.85-.72 7.37-7.37-2.13-2.13-7.37 7.37-.72 2.85Z"></path>
                 <path d="M11.85 5.55l2.13 2.13"></path>
@@ -399,14 +791,14 @@
                 <div id="objectWorkStatusBadge" class="object-work-badge hidden"></div>
               </div>
               <div class="object-save-actions">
-                <button id="btnPrevUndoneObject" class="ghost object-workflow-button object-nav-button hidden" type="button" aria-label="Предыдущий невыполненный объект" title="Предыдущий невыполненный объект">
+                <button id="btnPrevUndoneObject" class="ghost object-workflow-button object-nav-button action-icon-button action-icon-button--neutral hidden" type="button" aria-label="Предыдущий невыполненный объект" title="Предыдущий невыполненный объект">
                   <svg class="object-nav-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                     <path d="M11.75 5.5 7 10l4.75 4.5"></path>
                     <path d="M7.5 10h6"></path>
                   </svg>
                 </button>
                 <button id="btnMarkObjectDone" class="ghost object-workflow-button object-complete-button hidden" type="button">Выполнить</button>
-                <button id="btnNextUndoneObject" class="ghost object-workflow-button object-nav-button hidden" type="button" aria-label="Следующий невыполненный объект" title="Следующий невыполненный объект">
+                <button id="btnNextUndoneObject" class="ghost object-workflow-button object-nav-button action-icon-button action-icon-button--neutral hidden" type="button" aria-label="Следующий невыполненный объект" title="Следующий невыполненный объект">
                   <svg class="object-nav-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                     <path d="M8.25 5.5 13 10l-4.75 4.5"></path>
                     <path d="M12.5 10h-6"></path>
@@ -415,7 +807,7 @@
                 <button id="btnTakeObjectWork" class="ghost object-workflow-button object-take-button hidden" type="button">Взять себе</button>
                 <button id="btnReleaseObjectWork" class="ghost object-workflow-button object-release-button hidden" type="button">Вернуть в работу</button>
                 <div id="objectSaveStatus" class="object-save-status idle">0 изм.</div>
-                <button id="btnSaveObject" class="primary object-save-button" type="button" disabled>
+                <button id="btnSaveObject" class="primary object-save-button" type="button" disabled title="Сохранить изменения" aria-label="Сохранить изменения">
                   <span class="object-save-button-text">Сохранить</span>
                 </button>
               </div>
@@ -429,13 +821,163 @@
 
         <section id="objectHistorySection" class="surface object-history-card hidden"></section>
       </section>
+
+      <div id="labStudySchemeOverlay" class="lab-study-scheme-overlay hidden" aria-hidden="true">
+        <div class="lab-study-scheme-backdrop" data-lab-study-scheme-close="1"></div>
+        <section class="lab-study-scheme-dialog surface" role="dialog" aria-modal="true" aria-labelledby="labStudySchemeTitle">
+          <div class="lab-study-scheme-head">
+            <div>
+              <h3 id="labStudySchemeTitle">Схема исследования</h3>
+              <div id="labStudySchemeSubtitle" class="lab-study-scheme-subtitle"></div>
+            </div>
+            <button class="ghost lab-study-scheme-close action-icon-button action-icon-button--danger" type="button" data-lab-study-scheme-close="1" title="Закрыть схему исследования" aria-label="Закрыть схему исследования">
+              <svg class="action-icon-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                <path d="M5 5l10 10"></path>
+                <path d="M15 5L5 15"></path>
+              </svg>
+            </button>
+          </div>
+          <div id="labStudySchemeMap" class="lab-study-scheme-map"></div>
+          <div id="labStudySchemeLegend" class="lab-study-scheme-legend"></div>
+        </section>
+      </div>
     </main>
   </div>
 
-  <script src="./src/vendor/supabase.js?v=20260407e"></script>
-  <script src="./src/config.js?v=20260407e"></script>
-  <script src="./src/source-catalog.js?v=20260407g"></script>
-  <script src="./src/supabase-shell-api.js?v=20260409b"></script>
-  <script src="./src/app.js?v=20260409b"></script>
+  <script>
+    (function () {
+      const bootSession = window.__SITE_BOOT_SESSION__;
+      const bootNav = window.__SITE_BOOT_NAV__ || null;
+      const panelKeys = ['registry', 'categories', 'analytics', 'projects', 'data'];
+      const buttonIds = {
+        registry: 'btnNavRegistry',
+        categories: 'btnNavCategories',
+        analytics: 'btnNavAnalytics',
+        projects: 'btnNavProjects',
+        data: 'btnNavData'
+      };
+      const panelIds = {
+        registry: 'sidebarRegistryPanel',
+        categories: 'sidebarCategoriesPanel',
+        analytics: 'sidebarAnalyticsPanel',
+        projects: 'sidebarProjectsPanel',
+        data: 'sidebarDataPanel'
+      };
+
+      function normalizeText(value) {
+        return String(value == null ? '' : value).trim();
+      }
+
+      function normalizeSidebarPanel(value) {
+        const normalized = normalizeText(value);
+        return panelKeys.indexOf(normalized) >= 0 ? normalized : 'registry';
+      }
+
+      function normalizeCurrentView(value) {
+        const normalized = normalizeText(value);
+        return normalized === 'object' || normalized === 'analytics' ? normalized : 'registry';
+      }
+
+      function isCompactSidebarViewport() {
+        try {
+          return !!(window && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 980px)').matches);
+        } catch (_error) {
+          return false;
+        }
+      }
+
+      function applyBootNavState() {
+        const currentViewNormalizer = typeof normalizeCurrentView === 'function'
+          ? normalizeCurrentView
+          : value => {
+              const normalized = normalizeText(value);
+              return normalized === 'object' || normalized === 'analytics' ? normalized : 'registry';
+            };
+        const sidebarPanelNormalizer = typeof normalizeSidebarPanel === 'function'
+          ? normalizeSidebarPanel
+          : value => {
+              const normalized = normalizeText(value);
+              return panelKeys.indexOf(normalized) >= 0 ? normalized : 'registry';
+            };
+        const currentView = currentViewNormalizer(bootNav && bootNav.currentView);
+        const sidebarExpanded = bootNav && bootNav.sidebarExpanded !== undefined ? !!bootNav.sidebarExpanded : true;
+        const activePanel = sidebarPanelNormalizer(bootNav && bootNav.sidebarActivePanel);
+        const registrySidebarPanelOpen = !(bootNav && bootNav.registrySidebarPanelOpen === false);
+        const activePanelForUi = currentView === 'object' && activePanel === 'registry' ? '' : activePanel;
+        const isRegistryPanelOpen = activePanelForUi === 'registry' && registrySidebarPanelOpen;
+        const visibleExpanded = sidebarExpanded || isCompactSidebarViewport();
+        const appShell = document.getElementById('appShell');
+        const sidebar = document.getElementById('appSidebar');
+        const toggleButton = document.getElementById('btnSidebarCollapse');
+
+        if (appShell) appShell.classList.toggle('sidebar-expanded', visibleExpanded);
+        if (sidebar) {
+          sidebar.classList.toggle('is-expanded', visibleExpanded);
+          sidebar.classList.toggle('is-collapsed', !visibleExpanded);
+        }
+        if (toggleButton) {
+          const label = visibleExpanded ? 'Свернуть меню' : 'Раскрыть меню';
+          toggleButton.classList.toggle('is-expanded', visibleExpanded);
+          toggleButton.title = label;
+          toggleButton.setAttribute('aria-label', label);
+        }
+
+        panelKeys.forEach(key => {
+          const button = document.getElementById(buttonIds[key]);
+          const panel = document.getElementById(panelIds[key]);
+          const active = key === activePanelForUi;
+          const expandedForButton = key === 'registry' ? isRegistryPanelOpen : active;
+          const shouldOpen = key === 'registry' ? isRegistryPanelOpen : key === activePanelForUi;
+
+          if (button) {
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            if (button.classList.contains('nav-button-expandable')) {
+              button.setAttribute('aria-expanded', expandedForButton ? 'true' : 'false');
+            }
+            const item = button.closest('.nav-item');
+            if (item) item.classList.toggle('is-open', expandedForButton);
+          }
+
+          if (panel) {
+            panel.classList.toggle('hidden', !shouldOpen);
+            panel.dataset.collapsibleState = shouldOpen ? 'open' : 'closed';
+            panel.style.transition = 'none';
+            panel.style.overflow = '';
+            panel.style.willChange = '';
+            panel.style.opacity = '';
+            panel.style.transform = '';
+            panel.style.maxHeight = '';
+          }
+        });
+      }
+
+      function applyBootAdminState() {
+        if (!bootSession || !bootSession.user || !bootSession.sessionToken) return;
+        const user = bootSession.user;
+        const apps = user.apps && typeof user.apps === 'object' && !Array.isArray(user.apps) ? user.apps : {};
+        const siteProfile = apps.site && typeof apps.site === 'object' ? apps.site : null;
+        const role = normalizeText((siteProfile && siteProfile.role) || user.role).toLowerCase();
+        const isAdmin = /admin|админ/.test(role);
+        const editButton = document.getElementById('btnAdminRegistryEditMode');
+        if (editButton) editButton.classList.toggle('hidden', !isAdmin);
+      }
+
+      applyBootNavState();
+      applyBootAdminState();
+
+      const body = document.body;
+      const overlay = document.getElementById('authOverlay');
+      if (bootSession && bootSession.user && bootSession.sessionToken) {
+        if (overlay) overlay.classList.add('hidden');
+      } else if (overlay) {
+        overlay.classList.remove('hidden');
+      }
+      if (body) body.classList.remove('site-shell-booting');
+    })();
+  </script>
+
+<script src="./runtime-config.js?v=20260416a"></script>
+<script src="./bootstrap.js?v=20260416a"></script>
 </body>
 </html>
