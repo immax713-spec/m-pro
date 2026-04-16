@@ -1,0 +1,150 @@
+name: Deploy mpro7.ru old-root compatibility
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - index.html
+      - mpro.html
+      - build-manifest.json
+      - README.md
+      - site/**
+      - mpro/**
+      - vendor/**
+      - .github/workflows/deploy-old-root-compat.yml
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-mpro7-old-root-compat
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
+
+      - name: Normalize deploy vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          host='${{ secrets.SERVER_HOST }}'
+          user='${{ secrets.SERVER_USER }}'
+          port='${{ secrets.SERVER_PORT }}'
+          path='${{ secrets.SERVER_PATH }}'
+
+          host="$(echo "$host" | tr -d '\r' | xargs)"
+          user="$(echo "$user" | tr -d '\r' | xargs)"
+          port="$(echo "$port" | tr -d '\r' | xargs)"
+          path="$(echo "$path" | tr -d '\r' | xargs)"
+
+          if [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]]; then
+            port="22"
+          fi
+
+          if [[ -z "$path" ]]; then
+            path="/var/www/mpro7.ru"
+          elif [[ "$path" != /* ]]; then
+            path="/var/www/$path"
+          fi
+
+          archive_path="${path%/}/.deploy-root-compat-${GITHUB_SHA}.tar.gz"
+          release_path="${path%/}/.deploy-root-compat-${GITHUB_SHA}"
+
+          echo "DEPLOY_HOST=$host" >> "$GITHUB_ENV"
+          echo "DEPLOY_USER=$user" >> "$GITHUB_ENV"
+          echo "DEPLOY_PORT=$port" >> "$GITHUB_ENV"
+          echo "DEPLOY_PATH=$path" >> "$GITHUB_ENV"
+          echo "DEPLOY_ARCHIVE_PATH=$archive_path" >> "$GITHUB_ENV"
+          echo "DEPLOY_RELEASE_PATH=$release_path" >> "$GITHUB_ENV"
+
+      - name: Add server to known_hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Create deployment archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --exclude='site/src/app/40-ui.js.bak_test' -czf deploy-root-compat.tar.gz \
+            index.html \
+            mpro.html \
+            build-manifest.json \
+            README.md \
+            site \
+            mpro \
+            vendor
+
+      - name: Ensure deploy root exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
+            set -e
+            mkdir -p "'"$DEPLOY_PATH"'"
+          '
+
+      - name: Upload archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -P "$DEPLOY_PORT" \
+            ./deploy-root-compat.tar.gz \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ARCHIVE_PATH"
+
+      - name: Extract and refresh old root bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
+            set -euo pipefail
+            rm -rf "'"$DEPLOY_RELEASE_PATH"'"
+            mkdir -p "'"$DEPLOY_RELEASE_PATH"'"
+            tar -xzf "'"$DEPLOY_ARCHIVE_PATH"'" -C "'"$DEPLOY_RELEASE_PATH"'"
+            rm -f "'"$DEPLOY_ARCHIVE_PATH"'"
+
+            if [ -f "'"$DEPLOY_PATH"'/bmw.html" ]; then
+              cp "'"$DEPLOY_PATH"'/bmw.html" "'"$DEPLOY_PATH"'/bmw.html.bak"
+            fi
+
+            cp "'"$DEPLOY_RELEASE_PATH"'/index.html" "'"$DEPLOY_PATH"'/index.html"
+            cp "'"$DEPLOY_RELEASE_PATH"'/index.html" "'"$DEPLOY_PATH"'/bmw.html"
+            cp "'"$DEPLOY_RELEASE_PATH"'/mpro.html" "'"$DEPLOY_PATH"'/mpro.html"
+            cp "'"$DEPLOY_RELEASE_PATH"'/build-manifest.json" "'"$DEPLOY_PATH"'/build-manifest.json"
+            cp "'"$DEPLOY_RELEASE_PATH"'/README.md" "'"$DEPLOY_PATH"'/README.md"
+
+            rm -rf "'"$DEPLOY_PATH"'/site.new" "'"$DEPLOY_PATH"'/mpro.new" "'"$DEPLOY_PATH"'/vendor.new"
+            cp -a "'"$DEPLOY_RELEASE_PATH"'/site" "'"$DEPLOY_PATH"'/site.new"
+            cp -a "'"$DEPLOY_RELEASE_PATH"'/mpro" "'"$DEPLOY_PATH"'/mpro.new"
+            cp -a "'"$DEPLOY_RELEASE_PATH"'/vendor" "'"$DEPLOY_PATH"'/vendor.new"
+
+            rm -rf "'"$DEPLOY_PATH"'/site.bak" "'"$DEPLOY_PATH"'/mpro.bak" "'"$DEPLOY_PATH"'/vendor.bak"
+            if [ -d "'"$DEPLOY_PATH"'/site" ]; then mv "'"$DEPLOY_PATH"'/site" "'"$DEPLOY_PATH"'/site.bak"; fi
+            if [ -d "'"$DEPLOY_PATH"'/mpro" ]; then mv "'"$DEPLOY_PATH"'/mpro" "'"$DEPLOY_PATH"'/mpro.bak"; fi
+            if [ -d "'"$DEPLOY_PATH"'/vendor" ]; then mv "'"$DEPLOY_PATH"'/vendor" "'"$DEPLOY_PATH"'/vendor.bak"; fi
+
+            mv "'"$DEPLOY_PATH"'/site.new" "'"$DEPLOY_PATH"'/site"
+            mv "'"$DEPLOY_PATH"'/mpro.new" "'"$DEPLOY_PATH"'/mpro"
+            mv "'"$DEPLOY_PATH"'/vendor.new" "'"$DEPLOY_PATH"'/vendor"
+
+            find "'"$DEPLOY_PATH"'/site" -type d -exec chmod 755 {} +
+            find "'"$DEPLOY_PATH"'/mpro" -type d -exec chmod 755 {} +
+            find "'"$DEPLOY_PATH"'/vendor" -type d -exec chmod 755 {} +
+            find "'"$DEPLOY_PATH"'/site" -type f -exec chmod 644 {} +
+            find "'"$DEPLOY_PATH"'/mpro" -type f -exec chmod 644 {} +
+            find "'"$DEPLOY_PATH"'/vendor" -type f -exec chmod 644 {} +
+            chmod 644 "'"$DEPLOY_PATH"'/index.html" "'"$DEPLOY_PATH"'/bmw.html" "'"$DEPLOY_PATH"'/mpro.html" "'"$DEPLOY_PATH"'/build-manifest.json" "'"$DEPLOY_PATH"'/README.md"
+
+            rm -rf "'"$DEPLOY_RELEASE_PATH"'"
+          '
