@@ -18,6 +18,12 @@ Add these repository secrets before enabling the workflow:
 - Active release symlink: `/var/www/html/current`
 - Nginx config: `/etc/nginx/sites-available/mpro7-root`
 
+## Important deployment rule
+
+The GitHub Actions workflow only updates the static release bundle. It does
+not overwrite the live Nginx config on the server, because the config is
+modified by Certbot after HTTPS is issued.
+
 ## First-time bootstrap on the server
 
 From the repository root:

@@ -38,7 +38,12 @@ HTML
   ln -sfn "${PLACEHOLDER_RELEASE}" "${CURRENT_LINK}"
 fi
 
-install -m 644 "${NGINX_CONF_SOURCE}" "${NGINX_CONF_TARGET}"
+if [[ ! -f "${NGINX_CONF_TARGET}" ]]; then
+  install -m 644 "${NGINX_CONF_SOURCE}" "${NGINX_CONF_TARGET}"
+else
+  echo "Nginx config already exists at ${NGINX_CONF_TARGET}; leaving it unchanged."
+fi
+
 ln -sfn "${NGINX_CONF_TARGET}" /etc/nginx/sites-enabled/mpro7-root
 
 if [[ -L /etc/nginx/sites-enabled/default ]]; then

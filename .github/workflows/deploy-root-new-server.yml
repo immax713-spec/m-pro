@@ -67,7 +67,6 @@ jobs:
           echo "DEPLOY_PORT=$port" >> "$GITHUB_ENV"
           echo "ARCHIVE_NAME=deploy-root-${GITHUB_SHA}.tar.gz" >> "$GITHUB_ENV"
           echo "REMOTE_ARCHIVE=/tmp/deploy-root-${GITHUB_SHA}.tar.gz" >> "$GITHUB_ENV"
-          echo "REMOTE_NGINX_CONF=/tmp/mpro7-root-${GITHUB_SHA}.conf" >> "$GITHUB_ENV"
 
       - name: Add server to known_hosts
         shell: bash
@@ -97,20 +96,12 @@ jobs:
           set -euo pipefail
           scp -P "$DEPLOY_PORT" "$ARCHIVE_NAME" "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_ARCHIVE"
 
-      - name: Upload nginx config
-        shell: bash
-        run: |
-          set -euo pipefail
-          scp -P "$DEPLOY_PORT" \
-            ops/nginx/mpro7-root-new-server.conf \
-            "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_NGINX_CONF"
-
       - name: Deploy on server
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "GITHUB_SHA=$GITHUB_SHA RELEASE_ROOT=$RELEASE_ROOT CURRENT_LINK=$CURRENT_LINK REMOTE_ARCHIVE=$REMOTE_ARCHIVE REMOTE_NGINX_CONF=$REMOTE_NGINX_CONF bash -s" <<'EOF'
+            "GITHUB_SHA=$GITHUB_SHA RELEASE_ROOT=$RELEASE_ROOT CURRENT_LINK=$CURRENT_LINK REMOTE_ARCHIVE=$REMOTE_ARCHIVE bash -s" <<'EOF'
           set -euo pipefail
 
           release_dir="${RELEASE_ROOT}/${GITHUB_SHA}"
@@ -125,14 +116,6 @@ jobs:
           sudo find "$release_dir" -type f -exec chmod 644 {} +
 
           sudo ln -sfn "$release_dir" "$CURRENT_LINK"
-          sudo mv "$REMOTE_NGINX_CONF" /etc/nginx/sites-available/mpro7-root
-          sudo ln -sfn /etc/nginx/sites-available/mpro7-root /etc/nginx/sites-enabled/mpro7-root
-          if [ -L /etc/nginx/sites-enabled/default ]; then
-            sudo rm -f /etc/nginx/sites-enabled/default
-          fi
-
-          sudo nginx -t
-          sudo systemctl reload nginx
 
           sudo find "$RELEASE_ROOT" -mindepth 1 -maxdepth 1 -type d ! -name 'bootstrap-empty' -printf '%T@ %p\n' \
             | sort -nr \
