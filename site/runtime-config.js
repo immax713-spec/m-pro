@@ -10,7 +10,7 @@
 
   const deployConfig = {
     ...currentDeployConfig,
-  assetVersion: '20260416a',
+  assetVersion: '20260416b',
     supabaseUrl: 'https://vsdfxrnkxohsuewyvpih.supabase.co',
     supabaseAnonKey: 'sb_publishable_7deVw5OluDBmYalvdq_13Q_yKrCDT5H'
   };
@@ -20,6 +20,8 @@
     ...currentSupabaseConfig,
     supabaseUrl: String(deployConfig.supabaseUrl || '').trim(),
     supabaseAnonKey: String(deployConfig.supabaseAnonKey || '').trim(),
+    requestTimeoutMs: 20000,
+    authRequestTimeoutMs: 12000,
     schema: 'api',
     rpc: {
       ...(currentSupabaseConfig.rpc || {}),

@@ -5,6 +5,8 @@
     supabaseUrl: 'https://vsdfxrnkxohsuewyvpih.supabase.co',
     supabaseAnonKey: 'sb_publishable_7deVw5OluDBmYalvdq_13Q_yKrCDT5H',
     schema: 'api',
+    requestTimeoutMs: 20000,
+    authRequestTimeoutMs: 12000,
     fetchPageSize: 1000,
     dataTables: {
       objects: 'objects',

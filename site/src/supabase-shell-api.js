@@ -6,6 +6,8 @@
   const supabaseUrl = String(config.supabaseUrl || '').trim().replace(/\/+$/g, '');
   const supabaseAnonKey = String(config.supabaseAnonKey || '').trim();
   const supabaseSchema = String(config.schema || 'api').trim() || 'api';
+  const requestTimeoutMs = normalizeTimeoutMs(config.requestTimeoutMs || config.timeoutMs, 20000);
+  const authRequestTimeoutMs = normalizeTimeoutMs(config.authRequestTimeoutMs, 12000);
 
   if (!supabaseUrl || !supabaseAnonKey) {
     window.SupabaseShellApi = {
@@ -53,6 +55,12 @@
     return String(value == null ? '' : value).trim();
   }
 
+  function normalizeTimeoutMs(value, fallback) {
+    const timeout = Number(value);
+    if (!Number.isFinite(timeout) || timeout <= 0) return Math.max(3000, Number(fallback) || 15000);
+    return Math.min(60000, Math.max(3000, Math.floor(timeout)));
+  }
+
   function normalizeIdentity(value) {
     try {
       return String(value == null ? '' : value)
@@ -85,12 +93,19 @@
     };
   }
 
-  async function callRpc(rpcName, params) {
+  async function callRpc(rpcName, params, options) {
+    const timeoutMs = normalizeTimeoutMs(options && options.timeoutMs, requestTimeoutMs);
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timerId = controller
+      ? window.setTimeout(() => controller.abort(), timeoutMs)
+      : 0;
     try {
       const response = await window.fetch(getRpcUrl(rpcName), {
         method: 'POST',
         headers: getRpcHeaders(),
-        body: JSON.stringify(params || {})
+        body: JSON.stringify(params || {}),
+        cache: 'no-store',
+        ...(controller ? { signal: controller.signal } : {})
       });
       const responseText = await response.text();
       let payload = null;
@@ -118,12 +133,24 @@
             }
       };
     } catch (error) {
+      if (error && error.name === 'AbortError') {
+        return {
+          data: null,
+          error: {
+            code: 'TIMEOUT',
+            message: `Request timeout after ${timeoutMs} ms`
+          }
+        };
+      }
       return {
         data: null,
         error: {
+          code: normalizeString(error && error.code),
           message: normalizeString(error && error.message) || 'Failed to fetch'
         }
       };
+    } finally {
+      if (timerId) window.clearTimeout(timerId);
     }
   }
 
@@ -148,16 +175,19 @@
       text.indexOf('ERR_INTERNET_DISCONNECTED') >= 0 ||
       text.indexOf('ERR_CONNECTION_CLOSED') >= 0 ||
       text.indexOf('ERR_CONNECTION_RESET') >= 0 ||
-      text.indexOf('ERR_TIMED_OUT') >= 0
+      text.indexOf('ERR_TIMED_OUT') >= 0 ||
+      text.indexOf('TIMEOUT') >= 0 ||
+      text.indexOf('ABORTERROR') >= 0
     );
   }
 
   async function callRpcWithRetry(name, params, options) {
     const rpcName = normalizeString(name);
     const maxAttempts = Math.max(1, Math.min(3, Number(options && options.maxAttempts) || 1));
+    const timeoutMs = normalizeTimeoutMs(options && options.timeoutMs, requestTimeoutMs);
     let lastResult = { data: null, error: null };
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      lastResult = await callRpc(rpcName, params || {});
+      lastResult = await callRpc(rpcName, params || {}, { timeoutMs });
       if (!lastResult.error) return lastResult;
       if (!isTransientNetworkErrorLike(lastResult.error) || attempt >= maxAttempts) return lastResult;
       await sleep(250 * attempt);
@@ -228,7 +258,10 @@
   async function invokeRpc(name, params) {
     const rpcName = normalizeString(name);
     if (!rpcName) throw createShellError('Не настроено имя RPC-функции', 'CONFIG');
-    const { data, error } = await callRpcWithRetry(rpcName, params || {}, { maxAttempts: 2 });
+    const { data, error } = await callRpcWithRetry(rpcName, params || {}, {
+      maxAttempts: 2,
+      timeoutMs: requestTimeoutMs
+    });
     if (error) throw mapSupabaseError(error);
     return data;
   }
@@ -654,7 +687,10 @@
       p_name: identity,
       p_password: password,
       p_remember: remember
-    }, { maxAttempts: 3 }));
+    }, {
+      maxAttempts: 2,
+      timeoutMs: authRequestTimeoutMs
+    }));
 
     if (error) {
       const errorMessage = normalizeString(
@@ -676,7 +712,10 @@
       ({ data: legacyData, error: legacyError } = await callRpcWithRetry(RPC.auth, {
         p_password: password,
         p_remember: remember
-      }, { maxAttempts: 2 }));
+      }, {
+        maxAttempts: 1,
+        timeoutMs: authRequestTimeoutMs
+      }));
       if (legacyError) throw mapSupabaseError(legacyError);
       const legacyResult = legacyData && typeof legacyData === 'object' ? legacyData : {};
       if (legacyResult && typeof legacyResult === 'object') {
