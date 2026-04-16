@@ -3272,6 +3272,8 @@
             }
 
             const hasSession = !!(
+                parseSession(readStorageValue(window.sessionStorage, 'smart_filter_shell_session')) ||
+                parseSession(readStorageValue(window.localStorage, 'smart_filter_shell_session_persist')) ||
                 parseSession(readStorageValue(window.sessionStorage, 'mpro_user')) ||
                 parseSession(readStorageValue(window.localStorage, 'mpro_user_persist'))
             );
@@ -3361,12 +3363,12 @@
                     <div class="user-card">
                         <span class="user-emoji">👤</span>
                         <div>
-                            <span class="user-role">Администратор:</span>
-                            <span class="user-name">Admin</span>
+                            <span class="user-role">Проверка доступа:</span>
+                            <span class="user-name">Подключение...</span>
                         </div>
                     </div>
 
-                    <div class="ios-section workday-section" id="workDaySection">
+                    <div class="ios-section workday-section" id="workDaySection" style="display:none">
                         <div class="workday-control-card" id="workDayControlWrapper">
                             <div class="workday-status-box">
                                 <div class="workday-status-dot pending" id="workDayStatusDot"></div>
@@ -3389,7 +3391,7 @@
                     </div>
 
                     <!-- Admin Functions -->
-                    <div class="ios-section" id="adminFunctionsSection">
+                    <div class="ios-section" id="adminFunctionsSection" style="display:none">
                         <div class="ios-section-title">⚙️ Административные функции</div>
                         <div class="ios-group">
                             <button class="ios-btn" data-action="show-homes">
@@ -3611,7 +3613,7 @@
         </button>
     </div>
 
-    <script src="mpro/runtime-config.js?v=20260416g"></script>
-    <script src="mpro/bootstrap.js?v=20260416g"></script>
+<script src="mpro/runtime-config.js?v=20260416h"></script>
+<script src="mpro/bootstrap.js?v=20260416h"></script>
 </body>
 </html>

@@ -478,11 +478,30 @@
                 RuntimeState.setCurrentUser(bootSession.user);
                 RuntimeState.setSessionToken(bootSession.sessionToken);
                 const bootDateToken = buildDateToken_();
-                const hydratedFromCache = hydrateDataFromBootstrapCache_(bootSession.sessionToken, {
-                    dateToken: bootDateToken
-                });
-                markMproShellReady_();
-                updateUserCard();
+                const bootSessionExpiry = String(bootSession.expiresAt || '');
+                const shouldBlockOnUserSync = !hasMeaningfulSessionIdentity_(bootSession.user);
+                const syncPromise = typeof syncCurrentUserFromSessionToken_ === 'function'
+                    ? syncCurrentUserFromSessionToken_({
+                        sessionToken: bootSession.sessionToken,
+                        expiresAt: bootSessionExpiry,
+                        timeoutMs: shouldBlockOnUserSync ? 7000 : 6000
+                    }).catch((error) => {
+                        console.warn('Initial session user sync failed:', error);
+                        return null;
+                    })
+                    : Promise.resolve(null);
+
+                const continueBoot = () => {
+                    if (!RuntimeState.getSessionToken()) {
+                        window.location.replace(SITE_APP_ENTRY_URL);
+                        return;
+                    }
+
+                    const hydratedFromCache = hydrateDataFromBootstrapCache_(RuntimeState.getSessionToken(), {
+                        dateToken: bootDateToken
+                    });
+                    markMproShellReady_();
+                    updateUserCard();
                 if (typeof window.__M_PRO_ENSURE_YMAPS__ === 'function') {
                     window.__M_PRO_ENSURE_YMAPS__().catch(() => null);
                 }
@@ -515,6 +534,14 @@
                         }
                     });
                 scheduleMenuIndicatorSync_();
+                };
+
+                if (shouldBlockOnUserSync) {
+                    syncPromise.finally(continueBoot);
+                } else {
+                    continueBoot();
+                    syncPromise.catch(() => null);
+                }
             } else {
                 // Пользователь не авторизован: показываем оверлей входа
                 window.location.replace(SITE_APP_ENTRY_URL);

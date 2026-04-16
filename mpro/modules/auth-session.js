@@ -61,6 +61,28 @@
             };
         }
 
+        function hasMeaningfulSessionIdentity_(user) {
+            if (!user || typeof user !== 'object') return false;
+            return !!(
+                sanitizeSessionUserMetaText_(user.name) ||
+                sanitizeSessionUserMetaText_(user.login) ||
+                sanitizeSessionUserMetaText_(user.role) ||
+                sanitizeSessionUserMetaText_(user.division)
+            );
+        }
+
+        function getNormalizedSessionAllowedApps_(user) {
+            if (!user || typeof user !== 'object') return [];
+            const apps = (user.apps && typeof user.apps === 'object' && !Array.isArray(user.apps)) ? user.apps : {};
+            return normalizeSessionAllowedApps_(user.allowedApps || user.allowed_apps, apps);
+        }
+
+        function isSessionAllowedForMpro_(sessionPayload) {
+            if (!sessionPayload?.user || !sessionPayload.sessionToken) return false;
+            const allowedApps = getNormalizedSessionAllowedApps_(sessionPayload.user);
+            return !allowedApps.length || allowedApps.includes('mpro');
+        }
+
         function parseSessionPayload_(raw) {
             if (!raw) return null;
             try {
@@ -83,17 +105,114 @@
             }
         }
 
+        function readStorageValueSafe_(storage, key) {
+            try {
+                return storage.getItem(key);
+            } catch (_error) {
+                return '';
+            }
+        }
+
+        function removeStorageValueSafe_(storage, key) {
+            try {
+                storage.removeItem(key);
+            } catch (_error) {
+                // no-op
+            }
+        }
+
+        function buildStoredSessionCandidate_(storage, key, meta = {}) {
+            const raw = readStorageValueSafe_(storage, key);
+            if (!raw) return null;
+
+            const session = parseSessionPayload_(raw);
+            if (!session) {
+                removeStorageValueSafe_(storage, key);
+                return null;
+            }
+            if (!isSessionAllowedForMpro_(session)) {
+                return null;
+            }
+
+            return {
+                session,
+                source: String(meta.source || '').trim().toLowerCase(),
+                remember: !!meta.remember,
+                isSessionStorage: !!meta.isSessionStorage
+            };
+        }
+
+        function scoreStoredSessionCandidate_(candidate) {
+            if (!candidate?.session) return -1;
+            let score = 0;
+            if (hasMeaningfulSessionIdentity_(candidate.session.user)) score += 100;
+            if (candidate.isSessionStorage) score += 20;
+            if (candidate.source === 'site') score += 30;
+            return score;
+        }
+
+        function shouldRememberCurrentSession_() {
+            try {
+                return !!(
+                    localStorage.getItem(CONFIG.SESSION_PERSIST_KEY) ||
+                    localStorage.getItem(SITE_SESSION_PERSIST_STORAGE_KEY)
+                );
+            } catch (_error) {
+                return false;
+            }
+        }
+
+        function areSessionUsersEquivalent_(leftUser, rightUser) {
+            const left = normalizeCurrentAppUser_(leftUser);
+            const right = normalizeCurrentAppUser_(rightUser);
+            if (!left || !right) return left === right;
+
+            const leftAllowed = getNormalizedSessionAllowedApps_(left).join('|');
+            const rightAllowed = getNormalizedSessionAllowedApps_(right).join('|');
+
+            return (
+                String(left.id ?? '') === String(right.id ?? '') &&
+                String(left.login || '') === String(right.login || '') &&
+                String(left.name || '') === String(right.name || '') &&
+                String(left.role || '') === String(right.role || '') &&
+                String(left.division || '') === String(right.division || '') &&
+                leftAllowed === rightAllowed
+            );
+        }
+
         function readStoredSession_() {
-            const tempRaw = sessionStorage.getItem(CONFIG.SESSION_KEY);
-            const tempSession = parseSessionPayload_(tempRaw);
-            if (tempSession) return tempSession;
+            const candidates = [
+                buildStoredSessionCandidate_(window.sessionStorage, SITE_SESSION_STORAGE_KEY, {
+                    source: 'site',
+                    remember: false,
+                    isSessionStorage: true
+                }),
+                buildStoredSessionCandidate_(window.localStorage, SITE_SESSION_PERSIST_STORAGE_KEY, {
+                    source: 'site',
+                    remember: true,
+                    isSessionStorage: false
+                }),
+                buildStoredSessionCandidate_(window.sessionStorage, CONFIG.SESSION_KEY, {
+                    source: 'mpro',
+                    remember: false,
+                    isSessionStorage: true
+                }),
+                buildStoredSessionCandidate_(window.localStorage, CONFIG.SESSION_PERSIST_KEY, {
+                    source: 'mpro',
+                    remember: true,
+                    isSessionStorage: false
+                })
+            ]
+                .filter(Boolean)
+                .sort((left, right) => scoreStoredSessionCandidate_(right) - scoreStoredSessionCandidate_(left));
 
-            const persistedRaw = localStorage.getItem(CONFIG.SESSION_PERSIST_KEY);
-            const persistedSession = parseSessionPayload_(persistedRaw);
-            if (persistedSession) return persistedSession;
+            if (!candidates.length) return null;
 
-            if (persistedRaw) localStorage.removeItem(CONFIG.SESSION_PERSIST_KEY);
-            return null;
+            const selected = candidates[0];
+            if (selected.source === 'site') {
+                persistSession_(selected.session, { remember: selected.remember });
+            }
+            return selected.session;
         }
 
         function persistSession_(sessionPayload, options = {}) {
@@ -173,6 +292,42 @@
             } catch (_) {
                 // no-op
             }
+        }
+
+        async function syncCurrentUserFromSessionToken_(options = {}) {
+            if (!isSupabaseBackendTransport_()) return RuntimeState.getCurrentUser();
+
+            const sessionToken = String(options.sessionToken || RuntimeState.getSessionToken()).trim();
+            if (!sessionToken) return null;
+
+            const timeoutMs = Math.max(4000, Number(options.timeoutMs) || 8000);
+            const response = await callMproSupabaseRpc_('getSessionUser', {
+                p_session_token: sessionToken
+            }, timeoutMs, 'sf_get_session_user');
+
+            const rawUser = response && typeof response === 'object' && response.user && typeof response.user === 'object'
+                ? response.user
+                : response;
+            const normalizedUser = normalizeCurrentAppUser_(rawUser);
+            if (!normalizedUser || !isSessionAllowedForMpro_({ user: normalizedUser, sessionToken })) {
+                throw new Error('Не удалось определить пользователя M-PRO');
+            }
+
+            const currentUser = RuntimeState.getCurrentUser();
+            const shouldRefreshUi = !areSessionUsersEquivalent_(currentUser, normalizedUser) || !hasMeaningfulSessionIdentity_(currentUser);
+            if (shouldRefreshUi) {
+                RuntimeState.setCurrentUser(normalizedUser);
+                persistSession_({
+                    user: normalizedUser,
+                    sessionToken,
+                    expiresAt: String(options.expiresAt || response?.expiresAt || '')
+                }, {
+                    remember: shouldRememberCurrentSession_()
+                });
+                updateUserCard();
+            }
+
+            return normalizedUser;
         }
 
         function syncAppSwitcherUi_() {
@@ -491,17 +646,17 @@
         }
 
         function updateUserCard() {
-            if (!RuntimeState.hasCurrentUser()) return;
-            
             const userRole = document.querySelector('.user-role');
             const userName = document.querySelector('.user-name');
             const userEmoji = document.querySelector('.user-emoji');
             const currentUser = RuntimeState.getCurrentUser();
+            const roleText = sanitizeSessionUserMetaText_(currentUser?.role);
+            const nameText = sanitizeSessionUserMetaText_(currentUser?.name) || sanitizeSessionUserMetaText_(currentUser?.login);
             
             debugLog('👤 updateUserCard:', currentUser);
             
-            if (userRole && currentUser.role) userRole.textContent = currentUser.role + ':';
-            if (userName && currentUser.name) userName.textContent = currentUser.name;
+            if (userRole) userRole.textContent = roleText ? `${roleText}:` : 'Проверка доступа:';
+            if (userName) userName.textContent = nameText || 'Подключение...';
             if (userEmoji) userEmoji.textContent = CONFIG.DEFAULTS?.INSPECTOR_ICON || '👤';
             syncAppSwitcherUi_();
             applyRoleVisibility_();

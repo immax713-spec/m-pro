@@ -34,6 +34,14 @@
             return role.indexOf('\u0438\u043d\u0441\u043f\u0435\u043a\u0442') !== -1 || role.indexOf('inspector') !== -1;
         }
 
+        function hasResolvedCurrentUserRole_() {
+            return !!(
+                sanitizeSessionUserMetaText_(RuntimeState.getCurrentUser()?.name) ||
+                sanitizeSessionUserMetaText_(RuntimeState.getCurrentUser()?.login) ||
+                sanitizeSessionUserMetaText_(RuntimeState.getCurrentUser()?.role)
+            );
+        }
+
         function getCurrentUserDivisionNorms_() {
             const raw = String(RuntimeState.getCurrentUser()?.division || '')
                 .replace(/\u00A0/g, ' ')
@@ -64,13 +72,14 @@
         }
 
         function applyRoleVisibility_() {
-            const hideAdmin = isInspectorRole_();
+            const hasResolvedUser = hasResolvedCurrentUserRole_();
+            const hideAdmin = !hasResolvedUser || isInspectorRole_();
             const adminSection = UIState.getDomById('adminFunctionsSection');
             const managementPanel = UIState.getDomById('inspectorManagementPanel');
             const workDaySection = UIState.getDomById('workDaySection');
             if (adminSection) adminSection.style.display = hideAdmin ? 'none' : '';
             if (managementPanel && hideAdmin) managementPanel.classList.add('hidden');
-            if (workDaySection) workDaySection.style.display = hideAdmin ? '' : 'none';
+            if (workDaySection) workDaySection.style.display = hasResolvedUser && isInspectorRole_() ? '' : 'none';
         }
 
         function getRoleScopedObjects_(objectsData) {
