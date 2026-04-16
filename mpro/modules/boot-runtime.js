@@ -483,6 +483,15 @@
                 });
                 markMproShellReady_();
                 updateUserCard();
+                if (typeof window.__M_PRO_ENSURE_YMAPS__ === 'function') {
+                    window.__M_PRO_ENSURE_YMAPS__().catch(() => null);
+                }
+                if (typeof scheduleMapWarmup_ === 'function') {
+                    scheduleMapWarmup_({
+                        delayMs: hydratedFromCache ? 900 : 1400,
+                        timeoutMs: 2600
+                    });
+                }
                 if (!hydratedFromCache) {
                     resetWorkDayState_();
                 }
