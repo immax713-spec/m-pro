@@ -757,6 +757,28 @@
             });
         }
 
+        function applyLiveObjectColorToMap_(objectId, color) {
+            const safeObjectId = String(objectId || '').trim();
+            if (!safeObjectId || !color) return;
+            const objectManager = MapState.getObjectManager();
+            const activeLayer = MapState.getActiveObjectsLayer();
+
+            const setLayerColor = (layer) => {
+                if (!layer || !layer.objects || typeof layer.objects.getById !== 'function') return;
+                const feature = layer.objects.getById(safeObjectId);
+                if (!feature) return;
+                try {
+                    layer.objects.setObjectOptions(feature.id ?? safeObjectId, {
+                        ...(feature.options || {}),
+                        iconColor: color
+                    });
+                } catch (_) {}
+            };
+
+            setLayerColor(objectManager);
+            setLayerColor(activeLayer);
+        }
+
         /**
          * Обновить открытые детали объекта, если объект принадлежит измененному инспектору.
          * @private

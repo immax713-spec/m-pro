@@ -189,6 +189,26 @@
             return String(value || '').trim() === UNASSIGNED_INSPECTOR_FILTER_KEY;
         }
 
+        function getUnassignedInspectorBackendValue_() {
+            return String(CONFIG.DEFAULTS?.UNKNOWN_INSPECTOR || '').trim() || 'Не назначен';
+        }
+
+        function isUnassignedInspectorName_(value) {
+            const normalized = normalizeInspectorName_(value);
+            if (!normalized) return true;
+            return normalized === normalizeInspectorName_(getUnassignedInspectorBackendValue_())
+                || normalized === normalizeInspectorName_(getUnassignedInspectorLabel_());
+        }
+
+        // Override broken encoded labels with stable Unicode escapes.
+        function getUnassignedInspectorLabel_() {
+            return '\u0418\u043d\u0441\u043f\u0435\u043a\u0442\u043e\u0440 \u043d\u0435 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d';
+        }
+
+        function getUnassignedInspectorBackendValue_() {
+            return String(CONFIG.DEFAULTS?.UNKNOWN_INSPECTOR || '').trim() || '\u041d\u0435 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d';
+        }
+
         function getBackendBaseUrl_() {
             const baseUrl = String(CONFIG.BACKEND?.baseUrl || '').trim();
             if (!baseUrl) {

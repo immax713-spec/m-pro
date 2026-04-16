@@ -28,6 +28,31 @@ function openObjectDetails(objectId) {
                 initYandexDiskButtons();
             }, 100);
         }
+
+function openObjectDetails(objectId) {
+            const object = DataState.findObjectById(objectId);
+            if (!object) {
+                console.error('вќЊ РћР±СЉРµРєС‚ РЅРµ РЅР°Р№РґРµРЅ:', objectId);
+                return;
+            }
+
+            UIState.setCurrentOpenObjectId(objectId);
+            UIState.setSelectedObjectId(objectId);
+            const content = UIState.getDomById('objectDetailsContent');
+            if (!content) return;
+
+            renderOpenObjectDetailsContent_(object);
+
+            const overlay = UIState.getDomById('objectDetailsOverlay');
+            if (!overlay) return;
+            overlay.classList.add('object-details--visible');
+            overlay.classList.remove('hidden');
+            document.body.classList.add('object-details-open');
+
+            setTimeout(() => {
+                initYandexDiskButtons();
+            }, 100);
+        }
         
         function isRetriableObjectActionError_(error) {
             if (typeof isRetriableSupabaseTransportError_ === 'function' && isRetriableSupabaseTransportError_(error)) {
@@ -131,6 +156,9 @@ function openObjectDetails(objectId) {
             const onRetry = typeof internalParams._onRetry === 'function' ? internalParams._onRetry : null;
             const requestAttempts = Math.max(1, Number(internalParams._requestAttempts) || 1);
             const requestTimeout = Math.max(5000, Number(internalParams._requestTimeout) || 15000);
+            const optimisticInspector = Object.prototype.hasOwnProperty.call(internalParams, '_optimisticInspector')
+                ? internalParams._optimisticInspector
+                : undefined;
             delete internalParams._keepOpen;
             delete internalParams._skipOptimistic;
             delete internalParams._onSuccess;
@@ -138,10 +166,14 @@ function openObjectDetails(objectId) {
             delete internalParams._onRetry;
             delete internalParams._requestAttempts;
             delete internalParams._requestTimeout;
+            delete internalParams._optimisticInspector;
 
             const object = DataState.findObjectById(objectId);
             if (object && !skipOptimistic) {
-                optimisticallyUpdateObject_(objectId, action, internalParams);
+                optimisticallyUpdateObject_(objectId, action, {
+                    ...internalParams,
+                    optimisticInspector
+                });
             }
 
             if (!keepOpen) closeObjectDetails();
@@ -345,7 +377,7 @@ function openObjectDetails(objectId) {
                 ? DataState.getInspectorsList()
                 : [];
             const currentInspectorNorm = normalizeInspectorName_(obj?.inspector);
-            const currentInspectorAssigned = !!String(obj?.inspector || '').trim();
+            const currentInspectorAssigned = !isUnassignedInspectorName_(obj?.inspector);
             const seen = new Set();
             const reassignInspectors = inspectorsList
                 .filter(item => {
@@ -353,6 +385,7 @@ function openObjectDetails(objectId) {
                     const role = String(item.role || '').toLowerCase();
                     if (role && (role.indexOf('admin') !== -1 || role.indexOf('админ') !== -1)) return false;
                     const norm = normalizeInspectorName_(item.name);
+                    if (isUnassignedInspectorName_(item.name)) return false;
                     if (!norm || seen.has(norm)) return false;
                     seen.add(norm);
                     return true;
@@ -371,14 +404,12 @@ function openObjectDetails(objectId) {
             const triggerClassName = currentInspectorText
                 ? 'object-card__dropdown-trigger-text'
                 : 'object-card__dropdown-trigger-text object-card__dropdown-trigger-text--placeholder';
-            const options = [
-                {
-                    name: '',
-                    label: getUnassignedInspectorLabel_(),
-                    inspectorNorm: normalizeInspectorName_(getUnassignedInspectorLabel_()),
-                    isSelected: !currentInspectorAssigned
-                }
-            ].concat(reassignInspectors.map(item => ({
+            const options = [{
+                name: getUnassignedInspectorLabel_(),
+                label: getUnassignedInspectorLabel_(),
+                inspectorNorm: normalizeInspectorName_(getUnassignedInspectorLabel_()),
+                isSelected: !currentInspectorAssigned
+            }].concat(reassignInspectors.map(item => ({
                 name: String(item.name || '').trim(),
                 label: String(item.name || '').trim(),
                 inspectorNorm: normalizeInspectorName_(String(item.name || '').trim()),
@@ -668,6 +699,27 @@ function openObjectDetails(objectId) {
         const OBJECT_FACT_SAVE_PENDING_ = new Set();
         const OBJECT_FACT_SESSION_VALUES_ = new Map();
         const OBJECT_FACT_STORAGE_PREFIX_ = 'mpro:object-facts:';
+        const OBJECT_FACT_HIDDEN_SOURCES_ = new Set(['Laboratory', 'ConstructionControl', 'Metro']);
+
+        function getObjectFactSourceKey_(obj) {
+            return String(obj?.source || '').trim();
+        }
+
+        function shouldShowObjectFacts_(obj, status = getObjectStatus(obj)) {
+            if (!obj || !status?.isActive) return false;
+            return !OBJECT_FACT_HIDDEN_SOURCES_.has(getObjectFactSourceKey_(obj));
+        }
+
+        function areObjectFactsRequired_(obj, status = getObjectStatus(obj)) {
+            return shouldShowObjectFacts_(obj, status);
+        }
+
+        function getObjectFactsExitMeta_(obj, facts, status = getObjectStatus(obj)) {
+            if (!status?.isActive || !areObjectFactsRequired_(obj, status) || facts?.hasRequiredFields) {
+                return 'Завершить посещение объекта';
+            }
+            return 'Заполните готовность и кол-во людей';
+        }
 
         function normalizeObjectFactText_(value) {
             return String(value ?? '')
@@ -953,6 +1005,7 @@ function openObjectDetails(objectId) {
             const object = DataState.findObjectById(objectId);
             if (!object) return;
             const facts = getObjectFactsState_(object);
+            const factsAreRequired = areObjectFactsRequired_(object);
 
             card.querySelectorAll('.object-card__fact-input').forEach((inputNode) => {
                 if (inputNode instanceof HTMLInputElement) {
@@ -977,6 +1030,33 @@ function openObjectDetails(objectId) {
 
         }
 
+        function syncObjectFactsDraftUi_(objectId) {
+            const content = UIState.getDomById('objectDetailsContent');
+            if (!content) return;
+            const card = content.querySelector('.object-card');
+            if (!(card instanceof HTMLElement)) return;
+            if (String(card.dataset.objectId || '') !== String(objectId || '')) return;
+
+            const object = DataState.findObjectById(objectId);
+            if (!object) return;
+            const facts = getObjectFactsState_(object);
+            const factsAreRequired = areObjectFactsRequired_(object);
+
+            card.querySelectorAll('.object-card__fact-input').forEach((inputNode) => {
+                if (inputNode instanceof HTMLInputElement) {
+                    inputNode.disabled = !!facts.isSaving;
+                }
+            });
+
+            const exitButton = card.querySelector('[data-action="mark-exit"]');
+            if (exitButton instanceof HTMLButtonElement) {
+                exitButton.disabled = !!facts.isSaving || (factsAreRequired && !facts.hasRequiredFields);
+                exitButton.title = facts.hasRequiredFields
+                    ? 'Р—Р°РІРµСЂС€РёС‚СЊ РїРѕСЃРµС‰РµРЅРёРµ РѕР±СЉРµРєС‚Р°'
+                    : 'РЎРЅР°С‡Р°Р»Р° Р·Р°РїРѕР»РЅРёС‚Рµ СЃС‚СЂРѕРёС‚РµР»СЊРЅСѓСЋ РіРѕС‚РѕРІРЅРѕСЃС‚СЊ Рё РєРѕР»-РІРѕ Р»СЋРґРµР№';
+            }
+        }
+
         function handleObjectFactInput_(inputNode) {
             if (!(inputNode instanceof HTMLInputElement)) return;
             const objectId = String(inputNode.dataset.objectId || '').trim();
@@ -991,6 +1071,33 @@ function openObjectDetails(objectId) {
                 inputNode.value = normalizedValue;
             }
             syncObjectFactsDraftUi_(objectId);
+        }
+
+        function syncObjectFactsDraftUi_(objectId) {
+            const content = UIState.getDomById('objectDetailsContent');
+            if (!content) return;
+            const card = content.querySelector('.object-card');
+            if (!(card instanceof HTMLElement)) return;
+            if (String(card.dataset.objectId || '') !== String(objectId || '')) return;
+
+            const object = DataState.findObjectById(objectId);
+            if (!object) return;
+            const facts = getObjectFactsState_(object);
+            const factsAreRequired = areObjectFactsRequired_(object);
+
+            card.querySelectorAll('.object-card__fact-input').forEach((inputNode) => {
+                if (inputNode instanceof HTMLInputElement) {
+                    inputNode.disabled = !!facts.isSaving;
+                }
+            });
+
+            const exitButton = card.querySelector('[data-action="mark-exit"]');
+            if (exitButton instanceof HTMLButtonElement) {
+                exitButton.disabled = !!facts.isSaving || (factsAreRequired && !facts.hasRequiredFields);
+                exitButton.title = facts.hasRequiredFields
+                    ? '\u0417\u0430\u0432\u0435\u0440\u0448\u0438\u0442\u044c \u043f\u043e\u0441\u0435\u0449\u0435\u043d\u0438\u0435 \u043e\u0431\u044a\u0435\u043a\u0442\u0430'
+                    : '\u0421\u043d\u0430\u0447\u0430\u043b\u0430 \u0437\u0430\u043f\u043e\u043b\u043d\u0438\u0442\u0435 \u0441\u0442\u0440\u043e\u0438\u0442\u0435\u043b\u044c\u043d\u0443\u044e \u0433\u043e\u0442\u043e\u0432\u043d\u043e\u0441\u0442\u044c \u0438 \u043a\u043e\u043b-\u0432\u043e \u043b\u044e\u0434\u0435\u0439';
+            }
         }
 
         function saveObjectFacts(objectId) {
@@ -1116,6 +1223,7 @@ function openObjectDetails(objectId) {
         }
 
         function renderObjectFactsFormHtml_(obj, vm) {
+            if (!shouldShowObjectFacts_(obj, vm?.status)) return '';
             const facts = vm?.facts || getObjectFactsState_(obj);
             const objectIdAttr = Utils.escapeAttr(obj?.id);
             const readinessValueAttr = Utils.escapeAttr(facts.readinessValue || '');
@@ -1160,7 +1268,7 @@ function openObjectDetails(objectId) {
                             >
                         </label>
                     </div>
-                    <div class="object-card__facts-footer">
+                    <div class="object-card__facts-footer" hidden>
                         <button
                             class="object-card__fact-save"
                             type="button"
@@ -1173,10 +1281,110 @@ function openObjectDetails(objectId) {
             `;
         }
 
+        function renderObjectFactsFormHtml_(obj, vm) {
+            if (!shouldShowObjectFacts_(obj, vm?.status)) return '';
+            const facts = vm?.facts || getObjectFactsState_(obj);
+            const objectIdAttr = Utils.escapeAttr(obj?.id);
+            const readinessValueAttr = Utils.escapeAttr(facts.readinessValue || '');
+            const peopleCountValueAttr = Utils.escapeAttr(facts.peopleCountValue || '');
+
+            return `
+                <div class="object-card__row object-card__row--facts">
+                    <div class="object-card__row-head">
+                        <span class="object-card__label">Р¤Р°РєС‚РёС‡РµСЃРєРёРµ РґР°РЅРЅС‹Рµ</span>
+                    </div>
+                    <div class="object-card__facts-grid">
+                        <label class="object-card__fact-field">
+                            <span class="object-card__fact-label">
+                                <span>РЎС‚СЂРѕРёС‚РµР»СЊРЅР°СЏ РіРѕС‚РѕРІРЅРѕСЃС‚СЊ</span>
+                            </span>
+                            <input
+                                class="object-card__fact-input"
+                                type="text"
+                                inputmode="decimal"
+                                autocomplete="off"
+                                placeholder="Р’РІРµРґРёС‚Рµ С„Р°РєС‚"
+                                value="${readinessValueAttr}"
+                                data-input-action="update-object-fact"
+                                data-object-id="${objectIdAttr}"
+                                data-fact-field="readiness"
+                            >
+                        </label>
+                        <label class="object-card__fact-field">
+                            <span class="object-card__fact-label">
+                                <span>РљРѕР»-РІРѕ Р»СЋРґРµР№</span>
+                            </span>
+                            <input
+                                class="object-card__fact-input"
+                                type="text"
+                                inputmode="numeric"
+                                autocomplete="off"
+                                placeholder="Р’РІРµРґРёС‚Рµ С„Р°РєС‚"
+                                value="${peopleCountValueAttr}"
+                                data-input-action="update-object-fact"
+                                data-object-id="${objectIdAttr}"
+                                data-fact-field="peopleCount"
+                            >
+                        </label>
+                    </div>
+                </div>
+            `;
+        }
+
 
         let labStudySchemeMap_ = null;
         let labStudySchemeLayer_ = null;
         let labStudySchemeCurrentObjectId_ = null;
+
+        function renderObjectFactsFormHtml_(obj, vm) {
+            if (!shouldShowObjectFacts_(obj, vm?.status)) return '';
+            const facts = vm?.facts || getObjectFactsState_(obj);
+            const objectIdAttr = Utils.escapeAttr(obj?.id);
+            const readinessValueAttr = Utils.escapeAttr(facts.readinessValue || '');
+            const peopleCountValueAttr = Utils.escapeAttr(facts.peopleCountValue || '');
+
+            return `
+                <div class="object-card__row object-card__row--facts">
+                    <div class="object-card__row-head">
+                        <span class="object-card__label">\u0424\u0430\u043a\u0442\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u0434\u0430\u043d\u043d\u044b\u0435</span>
+                    </div>
+                    <div class="object-card__facts-grid">
+                        <label class="object-card__fact-field">
+                            <span class="object-card__fact-label">
+                                <span>\u0421\u0442\u0440\u043e\u0438\u0442\u0435\u043b\u044c\u043d\u0430\u044f \u0433\u043e\u0442\u043e\u0432\u043d\u043e\u0441\u0442\u044c</span>
+                            </span>
+                            <input
+                                class="object-card__fact-input"
+                                type="text"
+                                inputmode="decimal"
+                                autocomplete="off"
+                                placeholder="\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0444\u0430\u043a\u0442"
+                                value="${readinessValueAttr}"
+                                data-input-action="update-object-fact"
+                                data-object-id="${objectIdAttr}"
+                                data-fact-field="readiness"
+                            >
+                        </label>
+                        <label class="object-card__fact-field">
+                            <span class="object-card__fact-label">
+                                <span>\u041a\u043e\u043b-\u0432\u043e \u043b\u044e\u0434\u0435\u0439</span>
+                            </span>
+                            <input
+                                class="object-card__fact-input"
+                                type="text"
+                                inputmode="numeric"
+                                autocomplete="off"
+                                placeholder="\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0444\u0430\u043a\u0442"
+                                value="${peopleCountValueAttr}"
+                                data-input-action="update-object-fact"
+                                data-object-id="${objectIdAttr}"
+                                data-fact-field="peopleCount"
+                            >
+                        </label>
+                    </div>
+                </div>
+            `;
+        }
 
 
         function syncLabStudySchemeLegend_(object) {
@@ -1438,6 +1646,10 @@ function openObjectDetails(objectId) {
             const primary = [];
             const trailing = [];
             const facts = getObjectFactsState_(obj);
+            const factsAreRequired = areObjectFactsRequired_(obj, { isNew, isActive });
+            if (!factsAreRequired) {
+                facts.hasRequiredFields = true;
+            }
 
             if (isNew) {
                 primary.push(`<button class="object-card__button object-card__button--primary" data-action="mark-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('entry', 'Вход', 'Начать посещение объекта')}</button>`);
@@ -1469,6 +1681,42 @@ function openObjectDetails(objectId) {
                 headerHtml: renderObjectCardHeaderHtml_(vm),
                 infoHtml: renderObjectCardInfoHtml_(obj, vm),
                 actionsHtml: renderObjectCardActionsHtml_(obj, vm)
+            };
+        }
+
+        function buildWorkflowActionGroups_(obj, { isNew, isActive }) {
+            const objectIdAttr = Utils.escapeAttr(obj.id);
+            const primary = [];
+            const trailing = [];
+            const facts = getObjectFactsState_(obj);
+            const factsAreRequired = areObjectFactsRequired_(obj, { isNew, isActive });
+            const canStartEntry = !isInspectorRole_() || WorkDayRuntimeState.isOpen();
+            if (!factsAreRequired) {
+                facts.hasRequiredFields = true;
+            }
+
+            if (isNew) {
+                const entryMeta = canStartEntry
+                    ? '\u041d\u0430\u0447\u0430\u0442\u044c \u043f\u043e\u0441\u0435\u0449\u0435\u043d\u0438\u0435 \u043e\u0431\u044a\u0435\u043a\u0442\u0430'
+                    : '\u041e\u0442\u043a\u0440\u043e\u0439 \u0440\u0430\u0431\u043e\u0447\u0438\u0439 \u0434\u0435\u043d\u044c, \u0447\u0442\u043e\u0431\u044b \u043d\u0430\u0447\u0430\u0442\u044c \u043f\u043e\u0441\u0435\u0449\u0435\u043d\u0438\u0435';
+                primary.push(`<button class="object-card__button object-card__button--primary" data-action="mark-entry" data-object-id="${objectIdAttr}"${canStartEntry ? '' : ' disabled'}>${renderActionLabel_('entry', '\u0412\u0445\u043e\u0434', entryMeta)}</button>`);
+            }
+
+            if (isActive) {
+                const allowCancelEntry = !isInspectorRole_();
+                const exitMeta = facts.hasRequiredFields
+                    ? '\u0417\u0430\u0432\u0435\u0440\u0448\u0438\u0442\u044c \u043f\u043e\u0441\u0435\u0449\u0435\u043d\u0438\u0435 \u043e\u0431\u044a\u0435\u043a\u0442\u0430'
+                    : '\u0417\u0430\u043f\u043e\u043b\u043d\u0438\u0442\u0435 \u0433\u043e\u0442\u043e\u0432\u043d\u043e\u0441\u0442\u044c \u0438 \u043a\u043e\u043b-\u0432\u043e \u043b\u044e\u0434\u0435\u0439';
+                primary.push(`<button class="object-card__button object-card__button--primary" data-action="mark-exit" data-object-id="${objectIdAttr}"${facts.hasRequiredFields ? '' : ' disabled'}>${renderActionLabel_('exit', '\u0417\u0430\u0432\u0435\u0440\u0448\u0438\u0442\u044c', exitMeta)}</button>`);
+                if (allowCancelEntry) {
+                    trailing.push(`<button class="object-card__button object-card__button--warning" data-action="cancel-entry" data-object-id="${objectIdAttr}">${renderActionLabel_('undo', '\u041e\u0442\u043c\u0435\u043d\u0438\u0442\u044c \u0432\u0445\u043e\u0434', '\u0421\u043d\u044f\u0442\u044c \u0442\u0435\u043a\u0443\u0449\u0435\u0435 \u043f\u043e\u0441\u0435\u0449\u0435\u043d\u0438\u0435')}</button>`);
+                }
+                trailing.push(`<button class="object-card__button object-card__button--danger" data-action="mark-denied" data-object-id="${objectIdAttr}">${renderActionLabel_('denied', '\u041e\u0442\u043a\u0430\u0437\u0430\u043d\u043e', '\u0417\u0430\u0444\u0438\u043a\u0441\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u043e\u0442\u043a\u0430\u0437 \u0432 \u0434\u043e\u0441\u0442\u0443\u043f\u0435')}</button>`);
+            }
+
+            return {
+                primaryHtml: primary.join(''),
+                trailingHtml: trailing.join('')
             };
         }
 
@@ -1570,14 +1818,28 @@ function openObjectDetails(objectId) {
          */
         function reassignInspector(objectId, newInspector) {
             const normalizedInspector = String(newInspector || '').trim();
+            const isUnassignedTarget = isUnassignedInspectorName_(normalizedInspector);
+            const nextInspectorValue = isUnassignedTarget ? null : normalizedInspector;
             const object = DataState.findObjectById(objectId);
-            if (object && normalizeInspectorName_(object.inspector) === normalizeInspectorName_(normalizedInspector)) return;
-            executeObjectAction_(objectId, 'reassign', { newInspector: normalizedInspector });
+            if (object) {
+                const currentUnassigned = isUnassignedInspectorName_(object.inspector);
+                if ((currentUnassigned && isUnassignedTarget) || normalizeInspectorName_(object.inspector) === normalizeInspectorName_(nextInspectorValue)) {
+                    return;
+                }
+            }
+            executeObjectAction_(objectId, 'reassign', {
+                newInspector: nextInspectorValue,
+                _optimisticInspector: isUnassignedTarget ? '' : nextInspectorValue
+            });
         }
 
         function markExit(objectId) {
             if (!ensureCurrentUserCanInteractWithObjects_()) return;
+            const object = DataState.findObjectById(objectId);
             const factsPayload = buildObjectFactsPayload_(objectId);
+            if (object && !areObjectFactsRequired_(object)) {
+                factsPayload.hasRequiredFields = true;
+            }
             if (!factsPayload.hasRequiredFields) {
                 showNotification('Заполните строительную готовность и кол-во людей', 'warning');
                 syncObjectFactsDraftUi_(objectId);
@@ -1763,9 +2025,9 @@ function openObjectDetails(objectId) {
                     markCompletedTemporarilyVisible_(objectId);
                     break;
                 case 'reassign':
-                    object.inspector = params.newInspector;
+                    object.inspector = String(params.optimisticInspector ?? params.newInspector ?? '').trim();
                     const reassignedStyle = getInspectorStyle(object.inspector);
-                    applyLiveInspectorColorToMap_(object.inspector, reassignedStyle.color);
+                    applyLiveObjectColorToMap_(objectId, reassignedStyle.color);
                     forceMapRerender = true;
                     break;
             }
