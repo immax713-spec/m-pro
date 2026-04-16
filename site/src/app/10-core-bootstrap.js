@@ -830,6 +830,7 @@
       state.selectedRowIndex = -1;
       state.objectTabRowIndexes = [];
       state.activeRegistrySelectionId = '';
+      state.activeRegistrySelectionBaseRowIndexes = null;
       state.selectionDraftSourceId = '';
       state.columns = [];
       state.rows = [];

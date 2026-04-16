@@ -495,6 +495,29 @@ function resetRegistrySelectionPublishDraftState_(options) {
       if (!settings.preserveDraft) clearRegistrySelectionEditDraft_();
     }
 
+function clearActiveRegistrySelectionBaseState_() {
+      state.activeRegistrySelectionBaseRowIndexes = null;
+    }
+
+function setActiveRegistrySelectionBaseRowIndexes_(rowIndexes) {
+      if (!Array.isArray(rowIndexes)) {
+        state.activeRegistrySelectionBaseRowIndexes = [];
+        return;
+      }
+      state.activeRegistrySelectionBaseRowIndexes = rowIndexes
+        .map(value => Number(value))
+        .filter(value => Number.isFinite(value) && value >= 0)
+        .map(value => Math.floor(value));
+    }
+
+function shouldUseActiveRegistrySelectionBase_() {
+      const contextId = String(state.activeRegistrySelectionId || state.selectionDraftSourceId || '').trim();
+      if (!contextId) return false;
+      if (isRegistryMapRemovalMode_()) return false;
+      if (state.selectionComposerOpen && getRegistrySelectionComposerViewMode_() === 'registry') return false;
+      return true;
+    }
+
 function closeRegistrySelectionEditing_(options) {
       if (state.selectionComposerOpen) {
         closeRegistrySelectionComposer_();
@@ -1738,14 +1761,10 @@ function syncRegistrySelectionMatchState_() {
       const draftSource = active || getRegistrySelectionDraftSource_();
       if (!draftSource) {
         state.activeRegistrySelectionId = '';
+        clearActiveRegistrySelectionBaseState_();
         return;
       }
-      if (matchesCurrentRegistrySelectionState_(draftSource)) {
-        state.activeRegistrySelectionId = draftSource.id;
-        state.selectionDraftSourceId = draftSource.id;
-        return;
-      }
-      state.activeRegistrySelectionId = '';
+      state.activeRegistrySelectionId = draftSource.id;
       state.selectionDraftSourceId = draftSource.id;
     }
 
@@ -1899,6 +1918,7 @@ function applySavedRegistrySelection_(id) {
       state.analyticsRegistryDrilldownRowIndexes = [];
       state.activeRegistrySelectionId = item.id;
       state.selectionDraftSourceId = item.id;
+      clearActiveRegistrySelectionBaseState_();
       if (hasStoredRegistrySelectionBulkSet_(item)) {
         state.objectQuery = '';
         state.bulkUinText = String(item.bulkUinText || '');
@@ -1914,6 +1934,7 @@ function applySavedRegistrySelection_(id) {
       el('registrySearchInput').value = state.objectQuery;
       syncRegistryBulkUinUi_();
       applyObjectFilters_();
+      setActiveRegistrySelectionBaseRowIndexes_(state.filteredRowIndexes);
       ensureObjectSelection_();
       persistRegistrySessionState_();
       return refreshActiveSharedSelectionWorkState_({ silent: true, skipRender: true })
@@ -2032,6 +2053,7 @@ function formatSavedSelectionDate_(value) {
 function clearActiveRegistrySelectionState_() {
       state.activeRegistrySelectionId = '';
       state.selectionDraftSourceId = '';
+      clearActiveRegistrySelectionBaseState_();
       persistRegistrySessionState_();
     }
 
@@ -2039,6 +2061,7 @@ function resetActiveRegistrySelectionViewState_() {
       state.selectionPublishMenuId = '';
       state.activeRegistrySelectionId = '';
       state.selectionDraftSourceId = '';
+      clearActiveRegistrySelectionBaseState_();
       state.currentView = 'registry';
       state.analyticsRegistryDrilldownRowIndexes = [];
       state.objectQuery = '';
@@ -2071,12 +2094,14 @@ function restoreActiveRegistrySelectionState_() {
       const searchInput = el('registrySearchInput');
       if (!item) {
         if (state.activeRegistrySelectionId) clearActiveRegistrySelectionState_();
+        clearActiveRegistrySelectionBaseState_();
         if (searchInput) searchInput.value = state.objectQuery;
         state.registryBulkDraftText = null;
         syncRegistryBulkUinUi_();
         return false;
       }
       state.selectionDraftSourceId = item.id;
+      clearActiveRegistrySelectionBaseState_();
       if (hasStoredRegistrySelectionBulkSet_(item)) {
         state.objectQuery = '';
         state.bulkUinText = String(item.bulkUinText || '');

@@ -828,6 +828,7 @@
       personalRegistrySelections: [],
       sharedRegistrySelections: [],
       activeRegistrySelectionId: '',
+      activeRegistrySelectionBaseRowIndexes: null,
       selectionLoadingId: '',
       selectionRemovingId: '',
       selectionPublishingId: '',

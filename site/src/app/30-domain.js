@@ -2559,13 +2559,19 @@ function updateRegistryFacetSearch_(facetKey, value) {
     }
 
 function applyObjectFilters_() {
+      const useActiveSelectionBase = shouldUseActiveRegistrySelectionBase_();
+      const activeSelectionBaseRowIndexes = useActiveSelectionBase && Array.isArray(state.activeRegistrySelectionBaseRowIndexes)
+        ? state.activeRegistrySelectionBaseRowIndexes
+        : null;
       const bulkUinOrder = buildRegistryBulkUinOrderMap_(state.bulkUinText);
       const bulkUinSet = bulkUinOrder.size ? new Set(Array.from(bulkUinOrder.keys())) : new Set();
       const searchTokens = tokenize_(state.objectQuery);
       const analyticsDrilldownSet = new Set(normalizeAnalyticsRegistryDrilldownRowIndexes_(state.analyticsRegistryDrilldownRowIndexes));
       const baseFiltered = [];
       const filtered = [];
-      for (let rowIndex = 0; rowIndex < state.rows.length; rowIndex++) {
+      const candidateRowIndexes = activeSelectionBaseRowIndexes || Array.from({ length: state.rows.length }, (_, rowIndex) => rowIndex);
+      for (let idx = 0; idx < candidateRowIndexes.length; idx++) {
+        const rowIndex = candidateRowIndexes[idx];
         if (analyticsDrilldownSet.size && !analyticsDrilldownSet.has(rowIndex)) continue;
         if (!matchesRegistryBulkUin_(rowIndex, bulkUinSet)) continue;
         if (!matchesRegistrySearch_(rowIndex, searchTokens)) continue;
@@ -2576,6 +2582,9 @@ function applyObjectFilters_() {
       state.filteredRowIndexes = bulkUinOrder.size
         ? sortRegistryRowIndexesByBulkUinOrder_(filtered, Array.from(bulkUinOrder.keys()))
         : filtered;
+      if (useActiveSelectionBase && state.activeRegistrySelectionBaseRowIndexes === null) {
+        setActiveRegistrySelectionBaseRowIndexes_(state.filteredRowIndexes);
+      }
       pruneSharedSelectionWorkBatchSelection_();
       pruneRegistryMapRemovalSelection_();
       syncRegistrySelectionDraftFromFilteredRows_();
