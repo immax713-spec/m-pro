@@ -86,13 +86,13 @@
           key: 'constructionControl',
           title: 'Строительный контроль',
           plan: 258,
-          fact: 258
+          fact: 303
         },
         {
           key: 'metroMonitoring',
           title: 'Метрополитен',
-          plan: 47,
-          fact: 47
+          plan: 48,
+          fact: 48
         },
         {
           key: 'uniqueMonitoring',
@@ -103,7 +103,7 @@
         {
           key: 'labStudies',
           title: 'Лаборатория',
-          plan: 72,
+          plan: 203,
           fact: 275
         }
       ]
@@ -113,26 +113,26 @@
       snapshotLabel: 'мониторинг 01.04–15.04.2026',
       overall: {
         plan: 526,
-        fact: 746
+        fact: 486
       },
       tracks: [
         {
           key: 'constructionMonitoring',
           title: 'Строймониторинг',
           plan: 526,
-          fact: 746
+          fact: 486
         },
         {
           key: 'constructionControl',
           title: 'Строительный контроль',
-          plan: 195,
-          fact: 12
+          plan: 190,
+          fact: 10
         },
         {
           key: 'metroMonitoring',
           title: 'Метрополитен',
           plan: 48,
-          fact: 31
+          fact: 48
         },
         {
           key: 'uniqueMonitoring',
@@ -144,7 +144,7 @@
           key: 'labStudies',
           title: 'Лаборатория',
           plan: 240,
-          fact: 61
+          fact: 49
         }
       ]
     });
