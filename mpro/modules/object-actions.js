@@ -29,6 +29,89 @@ function openObjectDetails(objectId) {
             }, 100);
         }
         
+        function isRetriableObjectActionError_(error) {
+            if (typeof isRetriableSupabaseTransportError_ === 'function' && isRetriableSupabaseTransportError_(error)) {
+                return true;
+            }
+            const status = Number(error?.status || error?.response?.status || 0);
+            const code = String(error?.code || '').trim().toUpperCase();
+            const message = String(
+                error?.message ||
+                error?.error ||
+                error?.details ||
+                error
+            ).trim().toUpperCase();
+            return (
+                code === 'TIMEOUT' ||
+                status === 0 ||
+                status === 408 ||
+                status === 425 ||
+                status === 429 ||
+                status >= 500 ||
+                message.indexOf('TIMEOUT') >= 0 ||
+                message.indexOf('FAILED TO FETCH') >= 0 ||
+                message.indexOf('LOAD FAILED') >= 0 ||
+                message.indexOf('CONNECTION') >= 0 ||
+                message.indexOf('NETWORK') >= 0
+            );
+        }
+
+        function waitForObjectActionRetry_(delayMs) {
+            const timeoutMs = Math.max(400, Number(delayMs) || 0);
+            if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+                return new Promise((resolve) => setTimeout(resolve, Math.min(timeoutMs, 700)));
+            }
+            return new Promise((resolve) => {
+                let settled = false;
+                let timerId = 0;
+                const finish = () => {
+                    if (settled) return;
+                    settled = true;
+                    window.removeEventListener('online', handleOnline);
+                    if (timerId) clearTimeout(timerId);
+                    resolve();
+                };
+                const handleOnline = () => finish();
+                window.addEventListener('online', handleOnline, { once: true });
+                timerId = window.setTimeout(finish, timeoutMs);
+            });
+        }
+
+        function executeObjectActionRequestWithRetry_(payload, options = {}) {
+            const attempts = Math.max(1, Number(options.attempts) || 1);
+            const timeoutMs = Math.max(5000, Number(options.timeout) || 15000);
+            const onRetry = typeof options.onRetry === 'function' ? options.onRetry : null;
+            let attempt = 0;
+
+            const run = () => {
+                attempt += 1;
+                return Promise.resolve(MproApi.executeObjectAction(payload, timeoutMs))
+                    .then((response) => {
+                        if (response?.success !== false) return response;
+                        const responseError = {
+                            ...response,
+                            message: String(response?.error || response?.message || '').trim(),
+                            code: String(response?.code || '').trim(),
+                            status: Number(response?.status || 0)
+                        };
+                        if (attempt >= attempts || !isRetriableObjectActionError_(responseError)) {
+                            return response;
+                        }
+                        if (onRetry) onRetry({ attempt, maxAttempts: attempts, error: responseError });
+                        return waitForObjectActionRetry_(650 * attempt).then(run);
+                    })
+                    .catch((error) => {
+                        if (attempt >= attempts || !isRetriableObjectActionError_(error)) {
+                            throw error;
+                        }
+                        if (onRetry) onRetry({ attempt, maxAttempts: attempts, error });
+                        return waitForObjectActionRetry_(650 * attempt).then(run);
+                    });
+            };
+
+            return run();
+        }
+
         function executeObjectActionEnhanced_(objectId, action, params) {
             if (!objectId) {
                 showNotification('❌ Ошибка: не указан ID объекта', 'error');
@@ -45,10 +128,16 @@ function openObjectDetails(objectId) {
             const skipOptimistic = !!internalParams._skipOptimistic;
             const onSuccess = typeof internalParams._onSuccess === 'function' ? internalParams._onSuccess : null;
             const onError = typeof internalParams._onError === 'function' ? internalParams._onError : null;
+            const onRetry = typeof internalParams._onRetry === 'function' ? internalParams._onRetry : null;
+            const requestAttempts = Math.max(1, Number(internalParams._requestAttempts) || 1);
+            const requestTimeout = Math.max(5000, Number(internalParams._requestTimeout) || 15000);
             delete internalParams._keepOpen;
             delete internalParams._skipOptimistic;
             delete internalParams._onSuccess;
             delete internalParams._onError;
+            delete internalParams._onRetry;
+            delete internalParams._requestAttempts;
+            delete internalParams._requestTimeout;
 
             const object = DataState.findObjectById(objectId);
             if (object && !skipOptimistic) {
@@ -87,7 +176,11 @@ function openObjectDetails(objectId) {
                 : Promise.resolve(requestParams);
 
             return requestPayloadPromise
-                .then((payload) => MproApi.executeObjectAction(payload, 15000))
+                .then((payload) => executeObjectActionRequestWithRetry_(payload, {
+                    attempts: requestAttempts,
+                    timeout: requestTimeout,
+                    onRetry
+                }))
                 .then((response) => {
                     if (response.success) {
                         showNotification('✅ ' + (response.message || 'Действие выполнено'), 'success');
@@ -572,6 +665,7 @@ function openObjectDetails(objectId) {
         }
 
         const OBJECT_FACT_DRAFTS_ = new Map();
+        const OBJECT_FACT_SAVE_PENDING_ = new Set();
         const OBJECT_FACT_SESSION_VALUES_ = new Map();
         const OBJECT_FACT_STORAGE_PREFIX_ = 'mpro:object-facts:';
 
@@ -758,7 +852,8 @@ function openObjectDetails(objectId) {
                 missingReadiness,
                 missingPeopleCount,
                 hasRequiredFields,
-                isDirty
+                isDirty,
+                isSaving: objectId ? OBJECT_FACT_SAVE_PENDING_.has(objectId) : false
             };
         }
 
@@ -790,6 +885,14 @@ function openObjectDetails(objectId) {
             const key = String(objectId || '').trim();
             if (!key) return;
             OBJECT_FACT_DRAFTS_.delete(key);
+        }
+
+        function setObjectFactSavePending_(objectId, isPending) {
+            const key = String(objectId || '').trim();
+            if (!key) return;
+            if (isPending) OBJECT_FACT_SAVE_PENDING_.add(key);
+            else OBJECT_FACT_SAVE_PENDING_.delete(key);
+            syncObjectFactsDraftUi_(key);
         }
 
         function applyObjectFactsToObject_(objectId, readinessValue, peopleCountValue) {
@@ -851,14 +954,22 @@ function openObjectDetails(objectId) {
             if (!object) return;
             const facts = getObjectFactsState_(object);
 
+            card.querySelectorAll('.object-card__fact-input').forEach((inputNode) => {
+                if (inputNode instanceof HTMLInputElement) {
+                    inputNode.disabled = !!facts.isSaving;
+                }
+            });
+
             const saveButton = card.querySelector('[data-action="save-object-facts"]');
             if (saveButton instanceof HTMLButtonElement) {
-                saveButton.disabled = !facts.isDirty;
+                saveButton.disabled = !!facts.isSaving || !facts.isDirty;
+                saveButton.classList.toggle('is-loading', !!facts.isSaving);
+                saveButton.textContent = facts.isSaving ? 'Сохраняем...' : 'Сохранить';
             }
 
             const exitButton = card.querySelector('[data-action="mark-exit"]');
             if (exitButton instanceof HTMLButtonElement) {
-                exitButton.disabled = !facts.hasRequiredFields;
+                exitButton.disabled = !!facts.isSaving || !facts.hasRequiredFields;
                 exitButton.title = facts.hasRequiredFields
                     ? 'Завершить посещение объекта'
                     : 'Сначала заполните строительную готовность и кол-во людей';
@@ -884,18 +995,38 @@ function openObjectDetails(objectId) {
 
         function saveObjectFacts(objectId) {
             if (!ensureCurrentUserCanInteractWithObjects_()) return Promise.resolve(null);
-            const factsPayload = buildObjectFactsPayload_(objectId);
-            return executeObjectAction_(objectId, 'saveFacts', {
+            const objectKey = String(objectId || '').trim();
+            if (!objectKey) return Promise.resolve({ success: false, error: 'Object id missing' });
+            if (OBJECT_FACT_SAVE_PENDING_.has(objectKey)) {
+                return Promise.resolve({ success: false, error: 'Save already in progress' });
+            }
+            const factsPayload = buildObjectFactsPayload_(objectKey);
+            setObjectFactSavePending_(objectKey, true);
+            return executeObjectAction_(objectKey, 'saveFacts', {
                 readinessValue: factsPayload.readinessValue,
                 peopleCountValue: factsPayload.peopleCountValue,
                 _keepOpen: true,
                 _skipOptimistic: true,
+                _requestAttempts: 3,
+                _requestTimeout: 12000,
+                _onRetry: ({ attempt, maxAttempts }) => {
+                    const nextAttempt = Math.min(maxAttempts, attempt + 1);
+                    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                        showNotification(`Нет сети. Жду соединение и повторяю сохранение (${nextAttempt}/${maxAttempts})`, 'warning');
+                        return;
+                    }
+                    showNotification(`Связь нестабильна. Повторяю сохранение (${nextAttempt}/${maxAttempts})`, 'warning');
+                },
                 _onSuccess: () => {
-                    applyObjectFactsToObject_(objectId, factsPayload.readinessValue, factsPayload.peopleCountValue);
+                    applyObjectFactsToObject_(objectKey, factsPayload.readinessValue, factsPayload.peopleCountValue);
+                    showNotification('Данные сохранены', 'success');
                 },
                 _onError: () => {
-                    syncObjectFactsDraftUi_(objectId);
+                    syncObjectFactsDraftUi_(objectKey);
+                    showNotification('Не удалось сохранить данные. Проверьте сеть и попробуйте ещё раз', 'error');
                 }
+            }).finally(() => {
+                setObjectFactSavePending_(objectKey, false);
             });
         }
 

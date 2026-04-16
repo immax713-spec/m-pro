@@ -1,18 +1,6 @@
 name: Deploy mpro7.ru /77
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - index.html
-      - mpro.html
-      - build-manifest.json
-      - README.md
-      - site/**
-      - mpro/**
-      - vendor/**
-      - .github/workflows/deploy-77.yml
   workflow_dispatch:
 
 concurrency:

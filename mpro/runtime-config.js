@@ -19,7 +19,7 @@
 
   const deployConfig = {
     ...currentDeployConfig,
-    assetVersion: '20260415f',
+    assetVersion: '20260416g',
     supabaseUrl: 'https://vsdfxrnkxohsuewyvpih.supabase.co',
     supabaseAnonKey: 'sb_publishable_7deVw5OluDBmYalvdq_13Q_yKrCDT5H',
     yandexMapsApiKey: '52007aca-39bd-4a9c-87ef-4d9b730aeb71'
