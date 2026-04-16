@@ -113,7 +113,7 @@
 
             const label = document.createElement('label');
             label.setAttribute('for', input.id);
-            label.textContent = String(item.value || '');
+            label.textContent = String(item.label || item.value || '');
 
             const badge = document.createElement('span');
             badge.className = 'inspector-counter list-progress-counter';
@@ -248,6 +248,7 @@
             const visibleInspectors = getRoleScopedInspectors_(DataState.getInspectorsList());
             const visibleObjects = getRoleScopedObjects_(DataState.getObjectsData());
             const inspectorStatsByNorm = {};
+            const unassignedStats = { total: 0, completed: 0 };
 
             visibleObjects.forEach((obj) => {
                 if (!obj || typeof obj !== 'object') return;
@@ -260,6 +261,11 @@
                     inspectorStatsByNorm[inspectorNorm].total += 1;
                     if (isObjectCompletedForListStats_(obj)) {
                         inspectorStatsByNorm[inspectorNorm].completed += 1;
+                    }
+                } else {
+                    unassignedStats.total += 1;
+                    if (isObjectCompletedForListStats_(obj)) {
+                        unassignedStats.completed += 1;
                     }
                 }
 
@@ -312,6 +318,27 @@
                 group.signature = buildFilterGroupSignature_(group);
                 inspectorGroups.push(group);
             });
+
+            if (unassignedStats.total > 0) {
+                const unassignedGroup = {
+                    key: 'inspectors:unassigned',
+                    title: 'Без инспектора',
+                    count: unassignedStats.total,
+                    checkboxId: 'chk-group-insp-unassigned',
+                    groupMeta: { division: 'Без инспектора', type: 'inspectors' },
+                    items: [{
+                        key: getUnassignedInspectorFilterKey_(),
+                        inputId: buildFilterItemDomId_('insp', 'Без инспектора', getUnassignedInspectorFilterKey_()),
+                        value: getUnassignedInspectorFilterKey_(),
+                        label: getUnassignedInspectorLabel_(),
+                        division: 'Без инспектора',
+                        badgeText: `${unassignedStats.completed}/${unassignedStats.total}`,
+                        badgeTitle: `Выполнено ${unassignedStats.completed} из ${unassignedStats.total}`
+                    }]
+                };
+                unassignedGroup.signature = buildFilterGroupSignature_(unassignedGroup);
+                inspectorGroups.push(unassignedGroup);
+            }
 
             const listGroups = [];
             Object.keys(listStatsByDivision).forEach((division) => {
@@ -535,19 +562,26 @@
          */
         function applyInspectorDrivenListAvailability_(selectedInspectors, cache) {
             const listCheckboxes = Array.isArray(cache?.lists) ? cache.lists : [];
+            const selectedInspectorValues = Array.isArray(selectedInspectors) ? selectedInspectors : [];
+            const includeUnassigned = selectedInspectorValues.some(value => isUnassignedInspectorFilterValue_(value));
             const selectedNormSet = new Set(
-                (Array.isArray(selectedInspectors) ? selectedInspectors : [])
+                selectedInspectorValues
+                    .filter(value => !isUnassignedInspectorFilterValue_(value))
                     .map(name => normalizeInspectorName_(name))
                     .filter(Boolean)
             );
 
             let allowedListKeys = null;
-            if (selectedNormSet.size > 0) {
+            if (selectedNormSet.size > 0 || includeUnassigned) {
                 allowedListKeys = new Set();
                 const scopedObjects = getRoleScopedObjects_(DataState.getObjectsData());
                 scopedObjects.forEach(obj => {
                     const objInspectorNorm = normalizeInspectorName_(obj?.inspector);
-                    if (objInspectorNorm && !selectedNormSet.has(objInspectorNorm)) return;
+                    if (objInspectorNorm) {
+                        if (!selectedNormSet.has(objInspectorNorm)) return;
+                    } else if (!includeUnassigned) {
+                        return;
+                    }
                     allowedListKeys.add(getObjectListDivisionKey_(obj));
                 });
             }

@@ -252,6 +252,7 @@ function openObjectDetails(objectId) {
                 ? DataState.getInspectorsList()
                 : [];
             const currentInspectorNorm = normalizeInspectorName_(obj?.inspector);
+            const currentInspectorAssigned = !!String(obj?.inspector || '').trim();
             const seen = new Set();
             const reassignInspectors = inspectorsList
                 .filter(item => {
@@ -266,17 +267,35 @@ function openObjectDetails(objectId) {
                 .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ru'));
 
             const objectIdAttr = Utils.escapeAttr(obj.id);
-            const currentInspectorText = String(obj?.inspector || '').trim();
+            const currentLabelState = currentInspectorAssigned
+                ? String(obj?.inspector || '').trim()
+                : getUnassignedInspectorLabel_();
+            const triggerClassNameState = 'object-card__dropdown-trigger-text';
+            const currentInspectorText = currentInspectorAssigned
+                ? String(obj?.inspector || '').trim()
+                : getUnassignedInspectorLabel_();
             const currentLabel = currentInspectorText || 'Выберите инспектора';
             const triggerClassName = currentInspectorText
                 ? 'object-card__dropdown-trigger-text'
                 : 'object-card__dropdown-trigger-text object-card__dropdown-trigger-text--placeholder';
-            const options = reassignInspectors.map(item => {
+            const options = [
+                {
+                    name: '',
+                    label: getUnassignedInspectorLabel_(),
+                    inspectorNorm: normalizeInspectorName_(getUnassignedInspectorLabel_()),
+                    isSelected: !currentInspectorAssigned
+                }
+            ].concat(reassignInspectors.map(item => ({
+                name: String(item.name || '').trim(),
+                label: String(item.name || '').trim(),
+                inspectorNorm: normalizeInspectorName_(String(item.name || '').trim()),
+                isSelected: normalizeInspectorName_(String(item.name || '').trim()) === currentInspectorNorm
+            }))).map(item => {
                 const inspectorName = String(item.name || '').trim();
-                const inspectorNorm = normalizeInspectorName_(inspectorName);
-                const isSelected = inspectorNorm === currentInspectorNorm;
+                const inspectorNorm = String(item.inspectorNorm || '').trim();
+                const isSelected = !!item.isSelected;
                 const valueAttr = Utils.escapeAttr(inspectorName);
-                const optionText = Utils.escapeHtml(inspectorName);
+                const optionText = Utils.escapeHtml(String(item.label || inspectorName));
                 return `
                     <button
                         type="button"
@@ -306,7 +325,7 @@ function openObjectDetails(objectId) {
                         aria-expanded="false"
                     >
                         <span class="object-card__dropdown-trigger-copy">
-                            <span class="${triggerClassName}">${Utils.escapeHtml(currentLabel)}</span>
+                            <span class="${triggerClassNameState}">${Utils.escapeHtml(currentLabelState)}</span>
                         </span>
                         <span class="object-card__dropdown-trigger-icon" aria-hidden="true">
                             <svg viewBox="0 0 20 20" focusable="false">
@@ -413,7 +432,7 @@ function openObjectDetails(objectId) {
             if (!(actionNode instanceof HTMLElement)) return;
             const objectId = String(actionNode.dataset.objectId || '').trim();
             const inspectorValue = String(actionNode.dataset.inspectorValue || '').trim();
-            if (!objectId || !inspectorValue) return;
+            if (!objectId) return;
             closeReassignDropdowns_();
             reassignInspector(objectId, inspectorValue);
         }
@@ -1419,10 +1438,10 @@ function openObjectDetails(objectId) {
          * @param {string} newInspector - Имя нового инспектора
          */
         function reassignInspector(objectId, newInspector) {
-            if (!newInspector) return;
+            const normalizedInspector = String(newInspector || '').trim();
             const object = DataState.findObjectById(objectId);
-            if (object && object.inspector === newInspector) return;
-            executeObjectAction_(objectId, 'reassign', { newInspector: newInspector });
+            if (object && normalizeInspectorName_(object.inspector) === normalizeInspectorName_(normalizedInspector)) return;
+            executeObjectAction_(objectId, 'reassign', { newInspector: normalizedInspector });
         }
 
         function markExit(objectId) {

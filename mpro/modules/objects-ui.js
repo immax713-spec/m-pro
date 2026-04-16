@@ -109,21 +109,25 @@ function getSelectedInspectorFilters_() {
             const selectedLists = Array.isArray(currentFilters?.lists) ? currentFilters.lists : [];
             if (selected.inspectors.length === 0 || selectedLists.length === 0) return [];
 
+            const showUnassignedObjects = selected.inspectors.some(value => isUnassignedInspectorFilterValue_(value));
             const inspectorSet = new Set(
-                selected.inspectors.map(name => normalizeInspectorName_(name)).filter(Boolean)
+                selected.inspectors
+                    .filter(value => !isUnassignedInspectorFilterValue_(value))
+                    .map(name => normalizeInspectorName_(name))
+                    .filter(Boolean)
             );
             const listSet = new Set(
                 selectedLists
                     .filter(item => item && typeof item === 'object')
                     .map(item => `${item.division}::${item.name}`)
             );
-            if (inspectorSet.size === 0 || listSet.size === 0) return [];
+            if ((inspectorSet.size === 0 && !showUnassignedObjects) || listSet.size === 0) return [];
 
             return objectsData.filter(obj => {
                 const listKey = obj.__listDivisionKey || getObjectListDivisionKey_(obj);
                 if (!listSet.has(listKey)) return false;
                 const inspectorNorm = normalizeInspectorName_(obj?.inspector);
-                if (!inspectorNorm) return true;
+                if (!inspectorNorm) return showUnassignedObjects;
                 return inspectorSet.has(inspectorNorm);
             });
         }

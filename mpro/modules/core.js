@@ -174,6 +174,21 @@
                 .toLowerCase();
         }
 
+        const UNASSIGNED_INSPECTOR_FILTER_KEY = '__mpro_unassigned__';
+        const UNASSIGNED_INSPECTOR_LABEL = 'Инспектор не назначен';
+
+        function getUnassignedInspectorFilterKey_() {
+            return UNASSIGNED_INSPECTOR_FILTER_KEY;
+        }
+
+        function getUnassignedInspectorLabel_() {
+            return UNASSIGNED_INSPECTOR_LABEL;
+        }
+
+        function isUnassignedInspectorFilterValue_(value) {
+            return String(value || '').trim() === UNASSIGNED_INSPECTOR_FILTER_KEY;
+        }
+
         function getBackendBaseUrl_() {
             const baseUrl = String(CONFIG.BACKEND?.baseUrl || '').trim();
             if (!baseUrl) {
