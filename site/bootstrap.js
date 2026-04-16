@@ -88,6 +88,35 @@
     });
   }
 
+  function delay(ms) {
+    return new Promise(resolve => {
+      setTimeout(resolve, Math.max(0, Number(ms) || 0));
+    });
+  }
+
+  function waitForNetworkRecovery(attempt) {
+    const timeoutMs = Math.max(600, 900 + (Math.max(0, Number(attempt) || 0) * 700));
+    if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+      return delay(Math.min(timeoutMs, 500));
+    }
+    return new Promise(resolve => {
+      let settled = false;
+      let timerId = 0;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener('online', handleOnline);
+        if (timerId) {
+          clearTimeout(timerId);
+        }
+        resolve();
+      };
+      const handleOnline = () => finish();
+      window.addEventListener('online', handleOnline, { once: true });
+      timerId = window.setTimeout(finish, timeoutMs);
+    });
+  }
+
   function loadStylesheet(path) {
     const href = withVersion(path);
     const resolvedHref = new URL(href, document.baseURI).href;
@@ -109,39 +138,7 @@
     });
   }
 
-  function loadScript(path) {
-    const src = withVersion(path);
-    const resolvedSrc = new URL(src, document.baseURI).href;
-    const existing = Array.from(document.querySelectorAll('script[src]'))
-      .find(script => String(script.src || '').trim() === resolvedSrc);
-    if (existing) {
-      return new Promise((resolve, reject) => {
-        const cleanup = () => {
-          existing.removeEventListener('load', handleLoad);
-          existing.removeEventListener('error', handleError);
-        };
-        const handleLoad = () => {
-          cleanup();
-          existing.dataset.loaded = 'true';
-          resolve();
-        };
-        const handleError = () => {
-          cleanup();
-          existing.dataset.failed = 'true';
-          reject(new Error(`Failed to load script: ${path}`));
-        };
-        if (existing.dataset.loaded === 'true') {
-          resolve();
-          return;
-        }
-        if (existing.dataset.failed === 'true') {
-          reject(new Error(`Failed to load script: ${path}`));
-          return;
-        }
-        existing.addEventListener('load', handleLoad, { once: true });
-        existing.addEventListener('error', handleError, { once: true });
-      });
-    }
+  function appendScriptTag(src, path) {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.charset = 'utf-8';
@@ -158,6 +155,55 @@
       const parent = document.head || document.body || document.documentElement;
       parent.appendChild(script);
     });
+  }
+
+  function loadScript(path) {
+    const src = withVersion(path);
+    const resolvedSrc = new URL(src, document.baseURI).href;
+    const maxAttempts = 2;
+
+    const loadOnce = () => {
+      const existing = Array.from(document.querySelectorAll('script[src]'))
+        .find(script => String(script.src || '').trim() === resolvedSrc);
+      if (existing) {
+        if (existing.dataset.loaded === 'true') {
+          return Promise.resolve();
+        }
+        if (existing.dataset.failed === 'true') {
+          existing.remove();
+          return appendScriptTag(src, path);
+        }
+        return new Promise((resolve, reject) => {
+          const cleanup = () => {
+            existing.removeEventListener('load', handleLoad);
+            existing.removeEventListener('error', handleError);
+          };
+          const handleLoad = () => {
+            cleanup();
+            existing.dataset.loaded = 'true';
+            resolve();
+          };
+          const handleError = () => {
+            cleanup();
+            existing.dataset.failed = 'true';
+            reject(new Error(`Failed to load script: ${path}`));
+          };
+          existing.addEventListener('load', handleLoad, { once: true });
+          existing.addEventListener('error', handleError, { once: true });
+        });
+      }
+      return appendScriptTag(src, path);
+    };
+
+    const run = (attempt) => loadOnce().catch(async (error) => {
+      if (attempt >= maxAttempts) {
+        throw error;
+      }
+      await waitForNetworkRecovery(attempt);
+      return run(attempt + 1);
+    });
+
+    return run(0);
   }
 
   function loadScriptsSequentially(paths) {
@@ -219,7 +265,7 @@
 
   async function boot() {
     if (isPlaceholder(supabaseConfig.supabaseUrl) || isPlaceholder(supabaseConfig.supabaseAnonKey)) {
-      renderFatalConfigError('Заполните new/site/runtime-config.js перед деплоем: укажите URL и publishable key Supabase.');
+      renderFatalConfigError('Заполните site/runtime-config.js перед деплоем: укажите URL и publishable key Supabase.');
       return;
     }
 
@@ -244,7 +290,7 @@
   function safeBoot() {
     boot().catch((error) => {
       console.error(error);
-      renderFatalConfigError('Не удалось загрузить frontend Site. Проверьте new/site/bootstrap.js и состав deploy-файлов.');
+      renderFatalConfigError('Не удалось загрузить frontend Site. Проверьте соединение и повторите обновление страницы.');
     });
   }
   safeBoot();
