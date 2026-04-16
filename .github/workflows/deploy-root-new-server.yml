@@ -1,0 +1,141 @@
+name: Deploy mpro7.ru root to new server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - index.html
+      - mpro.html
+      - build-manifest.json
+      - README.md
+      - site/**
+      - mpro/**
+      - vendor/**
+      - ops/nginx/mpro7-root-new-server.conf
+      - ops/server/bootstrap-mpro7-root.sh
+      - docs/deploy-new-server.md
+      - .github/workflows/deploy-root-new-server.yml
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-mpro7-root-new-server
+  cancel-in-progress: true
+
+env:
+  RELEASE_ROOT: /var/www/html/releases
+  CURRENT_LINK: /var/www/html/current
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.NEW_SERVER_SSH_KEY }}
+
+      - name: Normalize deploy vars
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          host="$(printf '%s' '${{ secrets.NEW_SERVER_HOST }}' | tr -d '\r' | xargs)"
+          user="$(printf '%s' '${{ secrets.NEW_SERVER_USER }}' | tr -d '\r' | xargs)"
+          port="$(printf '%s' '${{ secrets.NEW_SERVER_PORT }}' | tr -d '\r' | xargs)"
+
+          if [[ -z "$host" ]]; then
+            echo "NEW_SERVER_HOST is required"
+            exit 1
+          fi
+
+          if [[ -z "$user" ]]; then
+            echo "NEW_SERVER_USER is required"
+            exit 1
+          fi
+
+          if [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]]; then
+            port="22"
+          fi
+
+          echo "DEPLOY_HOST=$host" >> "$GITHUB_ENV"
+          echo "DEPLOY_USER=$user" >> "$GITHUB_ENV"
+          echo "DEPLOY_PORT=$port" >> "$GITHUB_ENV"
+          echo "ARCHIVE_NAME=deploy-root-${GITHUB_SHA}.tar.gz" >> "$GITHUB_ENV"
+          echo "REMOTE_ARCHIVE=/tmp/deploy-root-${GITHUB_SHA}.tar.gz" >> "$GITHUB_ENV"
+          echo "REMOTE_NGINX_CONF=/tmp/mpro7-root-${GITHUB_SHA}.conf" >> "$GITHUB_ENV"
+
+      - name: Add server to known_hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Build deploy archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar \
+            --exclude='site/src/app/40-ui.js.bak_test' \
+            -czf "$ARCHIVE_NAME" \
+            index.html \
+            mpro.html \
+            build-manifest.json \
+            README.md \
+            site \
+            mpro \
+            vendor
+
+      - name: Upload release bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -P "$DEPLOY_PORT" "$ARCHIVE_NAME" "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_ARCHIVE"
+
+      - name: Upload nginx config
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -P "$DEPLOY_PORT" \
+            ops/nginx/mpro7-root-new-server.conf \
+            "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_NGINX_CONF"
+
+      - name: Deploy on server
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "GITHUB_SHA=$GITHUB_SHA RELEASE_ROOT=$RELEASE_ROOT CURRENT_LINK=$CURRENT_LINK REMOTE_ARCHIVE=$REMOTE_ARCHIVE REMOTE_NGINX_CONF=$REMOTE_NGINX_CONF bash -s" <<'EOF'
+          set -euo pipefail
+
+          release_dir="${RELEASE_ROOT}/${GITHUB_SHA}"
+
+          sudo mkdir -p "$RELEASE_ROOT"
+          sudo rm -rf "$release_dir"
+          sudo mkdir -p "$release_dir"
+          sudo tar -xzf "$REMOTE_ARCHIVE" -C "$release_dir"
+          sudo rm -f "$REMOTE_ARCHIVE"
+
+          sudo find "$release_dir" -type d -exec chmod 755 {} +
+          sudo find "$release_dir" -type f -exec chmod 644 {} +
+
+          sudo ln -sfn "$release_dir" "$CURRENT_LINK"
+          sudo mv "$REMOTE_NGINX_CONF" /etc/nginx/sites-available/mpro7-root
+          sudo ln -sfn /etc/nginx/sites-available/mpro7-root /etc/nginx/sites-enabled/mpro7-root
+          if [ -L /etc/nginx/sites-enabled/default ]; then
+            sudo rm -f /etc/nginx/sites-enabled/default
+          fi
+
+          sudo nginx -t
+          sudo systemctl reload nginx
+
+          sudo find "$RELEASE_ROOT" -mindepth 1 -maxdepth 1 -type d ! -name 'bootstrap-empty' -printf '%T@ %p\n' \
+            | sort -nr \
+            | awk 'NR > 5 { print $2 }' \
+            | xargs -r sudo rm -rf
+          EOF
