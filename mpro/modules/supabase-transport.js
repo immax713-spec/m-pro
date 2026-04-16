@@ -160,6 +160,26 @@
             );
         }
 
+        function isRetriableSupabaseTransportError_(error) {
+            const code = String(error?.code || '').trim().toUpperCase();
+            const status = Number(error?.status || 0);
+            const name = String(error?.name || '').trim().toUpperCase();
+            const message = String(error?.message || '').trim().toUpperCase();
+            return (
+                code === 'TIMEOUT' ||
+                status === 0 ||
+                status === 408 ||
+                status === 425 ||
+                status === 429 ||
+                status >= 500 ||
+                name === 'TYPEERROR' ||
+                message.indexOf('TIMEOUT') >= 0 ||
+                message.indexOf('FAILED TO FETCH') >= 0 ||
+                message.indexOf('LOAD FAILED') >= 0 ||
+                message.indexOf('NETWORK') >= 0
+            );
+        }
+
         async function callSupabaseRpc_(rpcName, payload = {}, timeout = CONFIG.TIMEOUT) {
             const url = getSupabaseRpcUrl_(rpcName);
             const headers = getSupabaseRpcHeaders_();

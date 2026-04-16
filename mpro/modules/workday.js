@@ -19,6 +19,45 @@
             renderWorkDayStatusUi_();
         }
 
+        function setWorkDayUnavailableState_(message = '') {
+            if (!isInspectorRole_()) return;
+            WorkDayRuntimeState.setLoaded(false);
+            WorkDayRuntimeState.setLastError(String(message || 'Статус рабочего дня недоступен').trim());
+            renderWorkDayStatusUi_();
+        }
+
+        function findCurrentInspectorWorkDayPayload_(rawMap) {
+            const map = rawMap && typeof rawMap === 'object' ? rawMap : {};
+            const currentInspectorNorm = normalizeInspectorName_(RuntimeState.getCurrentUserName(''));
+            if (!currentInspectorNorm) return null;
+
+            let bestMatch = null;
+            Object.keys(map).some((key) => {
+                if (normalizeInspectorName_(key) !== currentInspectorNorm) return false;
+                bestMatch = map[key];
+                return true;
+            });
+            return (bestMatch && typeof bestMatch === 'object') ? bestMatch : null;
+        }
+
+        function hydrateCurrentWorkDayStateFromData_() {
+            if (!isInspectorRole_()) return false;
+            const inspectorNorm = normalizeInspectorName_(RuntimeState.getCurrentUserName(''));
+            if (!inspectorNorm) return false;
+
+            const workDayMap = DataState.getInspectorsWorkDay();
+            if (!workDayMap || typeof workDayMap !== 'object') return false;
+
+            const payload = findCurrentInspectorWorkDayPayload_(workDayMap);
+            WorkDayRuntimeState.setLoaded(true);
+            WorkDayRuntimeState.setOpen(!!payload?.open);
+            WorkDayRuntimeState.setOpenTime(payload?.open ? (payload.openTime || '') : '');
+            WorkDayRuntimeState.clearError();
+            WorkDayRuntimeState.markSynced(inspectorNorm);
+            renderWorkDayStatusUi_();
+            return true;
+        }
+
         function renderWorkDayStatusUi_() {
             const section = UIState.getDomById('workDaySection');
             const wrapper = UIState.getDomById('workDayControlWrapper');
@@ -51,7 +90,7 @@
                 nextText = 'Синхронизация...';
                 dotClass = 'workday-status-dot pending';
             } else if (!isLoaded) {
-                nextText = lastError ? 'Нет связи с сервером' : 'Обновление...';
+                nextText = lastError ? 'Статус временно недоступен' : 'Обновление...';
                 dotClass = 'workday-status-dot pending';
             } else if (isOpen) {
                 const openTime = formatWorkDayTime_(WorkDayRuntimeState.getOpenTime());
@@ -111,6 +150,9 @@
             const inspectorNorm = normalizeInspectorName_(RuntimeState.getCurrentUserName(''));
             const recentlySynced = Date.now() - WorkDayRuntimeState.getLastSyncAt() < 12000;
             const sameInspector = inspectorNorm && inspectorNorm === WorkDayRuntimeState.getLastSyncInspectorNorm();
+            const hadLoadedState = WorkDayRuntimeState.isLoaded();
+            const previousOpen = WorkDayRuntimeState.isOpen();
+            const previousOpenTime = WorkDayRuntimeState.getOpenTime();
 
             if (!force && !WorkDayRuntimeState.isSyncing() && WorkDayRuntimeState.isLoaded() && recentlySynced && sameInspector) {
                 renderWorkDayStatusUi_();
@@ -135,9 +177,15 @@
                     return result;
                 })
                 .catch((error) => {
-                    WorkDayRuntimeState.setLoaded(false);
+                    if (hadLoadedState) {
+                        WorkDayRuntimeState.setLoaded(true);
+                        WorkDayRuntimeState.setOpen(previousOpen);
+                        WorkDayRuntimeState.setOpenTime(previousOpenTime || '');
+                    } else {
+                        WorkDayRuntimeState.setLoaded(false);
                     WorkDayRuntimeState.setOpen(false);
                     WorkDayRuntimeState.setOpenTime('');
+                    }
                     WorkDayRuntimeState.setLastError(error?.message || 'Ошибка синхронизации');
                     if (!silent) {
                         showNotification('❌ ' + WorkDayRuntimeState.getLastError(), 'error');
@@ -153,6 +201,9 @@
         function initWorkDayStateForCurrentUser_(options = {}) {
             if (!isInspectorRole_()) {
                 resetWorkDayState_();
+                return Promise.resolve(null);
+            }
+            if (hydrateCurrentWorkDayStateFromData_() && options.force !== true) {
                 return Promise.resolve(null);
             }
             WorkDayRuntimeState.setLoaded(false);

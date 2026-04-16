@@ -1,9 +1,16 @@
 // Map runtime and rendering extracted from app-legacy.js
 
         function getYandexMapsReadyPromise_() {
+            if (window.ymaps && typeof window.ymaps.ready === 'function') {
+                return Promise.resolve(window.ymaps);
+            }
             const readyPromise = window.__M_PRO_YMAPS_READY__;
             if (readyPromise && typeof readyPromise.then === 'function') {
                 return readyPromise;
+            }
+            const ensureLoader = window.__M_PRO_ENSURE_YMAPS__;
+            if (typeof ensureLoader === 'function') {
+                return ensureLoader();
             }
             return Promise.resolve();
         }
@@ -425,16 +432,8 @@ function initObjectManagers_() {
             }
 
             const selectedInspectorsSet = hasInspectorFilters
-                ? new Set(
-                    currentFilters.inspectors
-                        .filter(name => !isUnassignedInspectorFilterValue_(name))
-                        .map(name => normalizeInspectorName_(name))
-                        .filter(Boolean)
-                )
+                ? new Set(currentFilters.inspectors.map(name => normalizeInspectorName_(name)).filter(Boolean))
                 : null;
-            const showUnassignedObjects = hasInspectorFilters
-                ? currentFilters.inspectors.some(name => isUnassignedInspectorFilterValue_(name))
-                : false;
             const selectedListsSet = hasListFilters
                 ? new Set(currentFilters.lists.map(item => `${item.division}::${item.name}`))
                 : null;
@@ -453,22 +452,15 @@ function initObjectManagers_() {
                 if (FiltersState.isOnlyActiveMode()) {
                     // В этом режиме используем только выбранных инспекторов и только активные точки
                     if (!isActive) return;
-                    if (inspectorNorm) {
-                        if (!selectedInspectorsSet || !selectedInspectorsSet.has(inspectorNorm)) return;
-                    } else if (!showUnassignedObjects) {
-                        return;
-                    }
+                    if (!selectedInspectorsSet || !inspectorNorm || !selectedInspectorsSet.has(inspectorNorm)) return;
                     if (selectedListsSet && !selectedListsSet.has(listKey)) return;
                     match = true;
                 } else {
                     // При выбранных инспекторах: пересечение инспектор + список.
-                    if (selectedInspectorsSet || showUnassignedObjects) {
+                    if (selectedInspectorsSet) {
                         if (selectedListsSet && !selectedListsSet.has(listKey)) return;
-                        if (inspectorNorm) {
-                            if (!selectedInspectorsSet || !selectedInspectorsSet.has(inspectorNorm)) return;
-                        } else if (!showUnassignedObjects) {
-                            return;
-                        }
+                        if (inspectorNorm && !selectedInspectorsSet.has(inspectorNorm)) return;
+                        if (!inspectorNorm && !selectedListsSet) return;
                         match = true;
                     } else if (selectedListsSet) {
                         // Без выбранных инспекторов фильтруем только по спискам.

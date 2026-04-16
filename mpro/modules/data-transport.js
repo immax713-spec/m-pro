@@ -124,6 +124,9 @@
 
             debugLog('✅ Загружено инспекторов:', DataState.getInspectorsList().length);
 
+            if (typeof hydrateCurrentWorkDayStateFromData_ === 'function') {
+                hydrateCurrentWorkDayStateFromData_();
+            }
             applyBootstrapRuntimeMetadata_(data, { dateToken: options.dateToken });
             scheduleMapUpdate_();
             updateUserCard();

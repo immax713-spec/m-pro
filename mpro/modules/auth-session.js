@@ -312,6 +312,33 @@
             return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
+        function waitForAuthRetry_(delayMs) {
+            return new Promise((resolve) => {
+                setTimeout(resolve, Math.max(0, Number(delayMs) || 0));
+            });
+        }
+
+        async function authViaSupabaseWithRetry_(params, options = {}) {
+            const attempts = Math.max(1, Number(options.attempts) || 2);
+            const timeoutMs = Math.max(8000, Number(options.timeoutMs) || 18000);
+            let lastError = null;
+
+            for (let attempt = 1; attempt <= attempts; attempt += 1) {
+                try {
+                    return await MproApi.auth(params, timeoutMs);
+                } catch (error) {
+                    lastError = error;
+                    const shouldRetry = attempt < attempts && isRetriableSupabaseTransportError_(error);
+                    if (!shouldRetry) {
+                        throw error;
+                    }
+                    await waitForAuthRetry_(650 * attempt);
+                }
+            }
+
+            throw lastError || new Error('Ошибка соединения с сервером');
+        }
+
         async function doLogin() {
             const identityInput = document.getElementById('authIdentity');
             const passwordInput = document.getElementById('authPassword');
@@ -344,11 +371,14 @@
             try {
                 let authResponse;
                 if (isSupabaseBackendTransport_()) {
-                    authResponse = await MproApi.auth({
+                    authResponse = await authViaSupabaseWithRetry_({
                         identity: identity,
                         password: password,
                         remember: remember
-                    }, 15000);
+                    }, {
+                        attempts: 2,
+                        timeoutMs: 18000
+                    });
                 } else {
                     const nonceResponse = await MproApi.authNonce(10000);
                     if (!nonceResponse?.success || !nonceResponse?.nonceId || !nonceResponse?.nonce) {
@@ -435,12 +465,14 @@
                 markMproShellReady_();
             }
             updateUserCard();
-            initWorkDayStateForCurrentUser_({ force: true, silent: true });
-            initMap();
+            resetWorkDayState_();
             RuntimeState.clearDataLoadPromise();
             loadDataWithRetry_({ attempts: 3, retryDelayMs: 800, reason: 'post-login' })
                 .catch((error) => {
                     console.error('Post-login data load failed:', error);
+                    if (typeof setWorkDayUnavailableState_ === 'function' && !WorkDayRuntimeState.isLoaded()) {
+                        setWorkDayUnavailableState_(error?.message || '');
+                    }
                     showNotification('Ошибка загрузки данных. Попробуйте ещё раз', 'error');
                 })
                 .finally(() => {

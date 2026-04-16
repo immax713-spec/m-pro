@@ -60,6 +60,41 @@
     });
   }
 
+  function loadExternalScript(path) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.charset = 'utf-8';
+      script.src = path;
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error(`Failed to load script: ${path}`));
+      document.body.appendChild(script);
+    });
+  }
+
+  let yandexMapsReadyPromise = null;
+
+  function ensureYandexMapsApi() {
+    if (window.ymaps && typeof window.ymaps.ready === 'function') {
+      return Promise.resolve(window.ymaps);
+    }
+    if (yandexMapsReadyPromise) {
+      return yandexMapsReadyPromise;
+    }
+    yandexMapsReadyPromise = loadExternalScript(
+      `https://api-maps.yandex.ru/2.1/?apikey=${encodeURIComponent(deployConfig.yandexMapsApiKey)}&lang=ru_RU`
+    )
+      .then(() => window.ymaps)
+      .catch((error) => {
+        yandexMapsReadyPromise = null;
+        throw error;
+      });
+    window.__M_PRO_YMAPS_READY__ = yandexMapsReadyPromise;
+    return yandexMapsReadyPromise;
+  }
+
+  window.__M_PRO_ENSURE_YMAPS__ = ensureYandexMapsApi;
+
   async function boot() {
     if (isPlaceholder(supabaseConfig.supabaseUrl) || isPlaceholder(supabaseConfig.supabaseAnonKey)) {
       renderFatalConfigError('Заполните new/mpro/runtime-config.js перед деплоем: укажите URL и publishable key Supabase.');
@@ -70,12 +105,6 @@
       return;
     }
 
-    window.__M_PRO_YMAPS_READY__ = loadScript(
-      `https://api-maps.yandex.ru/2.1/?apikey=${encodeURIComponent(deployConfig.yandexMapsApiKey)}&lang=ru_RU`
-    ).catch((error) => {
-      console.error(error);
-      throw error;
-    });
     await loadScript('mpro/modules/core.js');
     await loadScript('mpro/modules/shared-utils.js');
     await loadScript('mpro/modules/notifications-shell.js');

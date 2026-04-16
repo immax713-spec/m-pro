@@ -187,9 +187,10 @@
                         try {
                             return await fetchBootstrapBundleFromSupabase_(options);
                         } catch (error) {
-                            if (!isMissingSupabaseRpcError_(error)) {
+                            if (!isMissingSupabaseRpcError_(error) && !isRetriableSupabaseTransportError_(error)) {
                                 throw error;
                             }
+                            console.warn('Bootstrap bundle fetch failed, falling back to granular RPCs:', error);
                         }
                     }
                     return fetchDataFromSupabase_(options);

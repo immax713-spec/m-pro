@@ -344,9 +344,6 @@
             BackgroundRefreshState.refreshInFlight = true;
             const activeLoad = RuntimeState.getDataLoadPromise();
             const tasks = [activeLoad || loadData()];
-            if (isInspectorRole_()) {
-                tasks.push(syncWorkDayStateFromServer_({ force: true, silent: true }).catch(() => null));
-            }
 
             Promise.allSettled(tasks)
                 .finally(() => {
@@ -486,11 +483,9 @@
                 });
                 markMproShellReady_();
                 updateUserCard();
-                initWorkDayStateForCurrentUser_({ force: true, silent: true });
-                scheduleMapWarmup_({
-                    delayMs: hydratedFromCache ? 900 : 1400,
-                    timeoutMs: 2400
-                });
+                if (!hydratedFromCache) {
+                    resetWorkDayState_();
+                }
                 loadDataWithRetry_({
                     attempts: hydratedFromCache ? 1 : 3,
                     retryDelayMs: hydratedFromCache ? 300 : 800,
@@ -500,6 +495,9 @@
                     .catch((error) => {
                         console.error('Initial data load failed:', error);
                         if (hydratedFromCache) return;
+                        if (typeof setWorkDayUnavailableState_ === 'function' && !WorkDayRuntimeState.isLoaded()) {
+                            setWorkDayUnavailableState_(error?.message || '');
+                        }
                         showNotification('Ошибка загрузки данных. Проверьте сеть или обновите страницу', 'error');
                     })
                     .finally(() => {
