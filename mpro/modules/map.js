@@ -431,8 +431,16 @@ function initObjectManagers_() {
                 return;
             }
 
+            const showUnassignedObjects = hasInspectorFilters
+                ? currentFilters.inspectors.some(value => isUnassignedInspectorFilterValue_(value))
+                : false;
             const selectedInspectorsSet = hasInspectorFilters
-                ? new Set(currentFilters.inspectors.map(name => normalizeInspectorName_(name)).filter(Boolean))
+                ? new Set(
+                    currentFilters.inspectors
+                        .filter(value => !isUnassignedInspectorFilterValue_(value))
+                        .map(name => normalizeInspectorName_(name))
+                        .filter(Boolean)
+                )
                 : null;
             const selectedListsSet = hasListFilters
                 ? new Set(currentFilters.lists.map(item => `${item.division}::${item.name}`))
@@ -452,15 +460,22 @@ function initObjectManagers_() {
                 if (FiltersState.isOnlyActiveMode()) {
                     // В этом режиме используем только выбранных инспекторов и только активные точки
                     if (!isActive) return;
-                    if (!selectedInspectorsSet || !inspectorNorm || !selectedInspectorsSet.has(inspectorNorm)) return;
                     if (selectedListsSet && !selectedListsSet.has(listKey)) return;
+                    if (!inspectorNorm) {
+                        if (!showUnassignedObjects) return;
+                    } else if (!selectedInspectorsSet || !selectedInspectorsSet.has(inspectorNorm)) {
+                        return;
+                    }
                     match = true;
                 } else {
                     // При выбранных инспекторах: пересечение инспектор + список.
                     if (selectedInspectorsSet) {
                         if (selectedListsSet && !selectedListsSet.has(listKey)) return;
-                        if (inspectorNorm && !selectedInspectorsSet.has(inspectorNorm)) return;
-                        if (!inspectorNorm && !selectedListsSet) return;
+                        if (!inspectorNorm) {
+                            if (!showUnassignedObjects) return;
+                        } else if (!selectedInspectorsSet.has(inspectorNorm)) {
+                            return;
+                        }
                         match = true;
                     } else if (selectedListsSet) {
                         // Без выбранных инспекторов фильтруем только по спискам.
