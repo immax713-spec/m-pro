@@ -16,6 +16,14 @@
     <title>M-PRO</title>
     <link rel="dns-prefetch" href="//api-maps.yandex.ru">
     <link rel="preconnect" href="https://api-maps.yandex.ru" crossorigin>
+    <script>
+        (function () {
+            const pathname = String(window.location.pathname || '').replace(/\/+$/, '');
+            if (/\/mpro\.html$/i.test(pathname)) {
+                window.location.replace('/map/' + window.location.search + window.location.hash);
+            }
+        })();
+    </script>
     
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }

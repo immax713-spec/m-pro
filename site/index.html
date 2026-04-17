@@ -8,6 +8,14 @@
   <link rel="preconnect" href="https://api-maps.yandex.ru" crossorigin>
   <script>
     (function () {
+      const pathname = String(window.location.pathname || '').replace(/\/+$/, '');
+      if (/\/site\/index\.html$/i.test(pathname)) {
+        window.location.replace('/portal/' + window.location.search + window.location.hash);
+      }
+    })();
+  </script>
+  <script>
+    (function () {
       const SHELL_SESSION_STORAGE_KEY = 'smart_filter_shell_session';
       const REGISTRY_SESSION_STORAGE_KEY = 'smart_filter_shell_registry_session';
       const ALLOWED_APPS = new Set(['site', 'mpro']);
