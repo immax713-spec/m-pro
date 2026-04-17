@@ -701,6 +701,7 @@ function openObjectDetails(objectId) {
         const OBJECT_FACT_STORAGE_PREFIX_ = 'mpro:object-facts:';
         const OBJECT_FACT_HIDDEN_SOURCES_ = new Set(['Laboratory', 'ConstructionControl', 'Metro']);
         const OBJECT_FACT_OPTIONAL_DIVISIONS_ = new Set(['Лаборатория', 'СК', 'Метро']);
+        const OBJECT_FACT_OPTIONAL_ID_PREFIXES_ = ['Laboratory_', 'ConstructionControl_', 'Metro_'];
 
         function getObjectFactSourceKey_(obj) {
             return String(obj?.source || '').trim();
@@ -729,6 +730,12 @@ function openObjectDetails(objectId) {
             if (!obj || !status?.isActive) return false;
             if (OBJECT_FACT_HIDDEN_SOURCES_.has(getObjectFactSourceKey_(obj))) return true;
             return OBJECT_FACT_OPTIONAL_DIVISIONS_.has(getObjectFactDivisionKey_(obj));
+        }
+
+        function isObjectFactsOptionalById_(objectId) {
+            const normalizedId = String(objectId || '').trim();
+            if (!normalizedId) return false;
+            return OBJECT_FACT_OPTIONAL_ID_PREFIXES_.some((prefix) => normalizedId.indexOf(prefix) === 0);
         }
 
         function shouldShowObjectFacts_(obj, status = getObjectStatus(obj)) {
@@ -1865,7 +1872,7 @@ function openObjectDetails(objectId) {
             if (!ensureCurrentUserCanInteractWithObjects_()) return;
             const object = DataState.findObjectById(objectId);
             const factsPayload = buildObjectFactsPayload_(objectId);
-            if (object && !areObjectFactsRequired_(object)) {
+            if ((object && !areObjectFactsRequired_(object)) || (!object && isObjectFactsOptionalById_(objectId))) {
                 factsPayload.hasRequiredFields = true;
             }
             if (!factsPayload.hasRequiredFields) {
