@@ -244,7 +244,7 @@
       'lb_1_11',
       'lb_1_12'
     ]);
-    const GOOGLE_OWNED_HTML_FIELD_PREFIXES = ['ksg_', 'suid_'];
+    const GOOGLE_OWNED_HTML_FIELD_PREFIXES = ['suid_'];
     const DIRECTIVE_ENTRY_SPEC = { ids: ['object_directive_entry', 'ro_1_11'], labels: ['Плановый ввод по директивному графику (по дашборду)'] };
     const EVV_ENTRY_SPEC = { ids: ['object_evv_entry', 'ro_1_12'], labels: ['График ВВЕ 26-30'] };
     const EVV_YEAR_SPEC = { ids: ['object_evv_year', 'ro_1_13'], labels: ['График ВВЕ год', 'График ВВЕ'] };
@@ -263,10 +263,7 @@
       date: 'ksg_12_3',
       number: 'ksg_12_4'
     });
-    const SECTION_FIELD_LABEL_OVERRIDES = Object.freeze({
-      ksg_12_3: 'Дата РВ',
-      ksg_12_4: '№РВ'
-    });
+    const SECTION_FIELD_LABEL_OVERRIDES = Object.freeze({});
     const PASSPORT_ITEM_DEFS = [
       { type: 'field', title: 'ГРБС', spec: PINNED_FIELDS[1] },
       { type: 'field', title: 'Заказчик', spec: PINNED_FIELDS[2] },
@@ -610,10 +607,10 @@
         label: 'КСГ',
         sourceKey: '__ksg__',
         excludePinned: false,
-        defaultOption: 'empty',
+        defaultOption: 'all',
         options: [
-          { key: 'empty', dropdownLabel: 'Незаполненные', title: 'КСГ · Незаполненные поля', subtitle: 'РВ', mode: 'empty', fieldIds: ['ksg_12_3', 'ksg_12_4'], collectAllMatches: true },
-          { key: 'all', dropdownLabel: 'Все поля', title: 'КСГ', subtitle: 'РВ', mode: 'all', fieldIds: ['ksg_12_3', 'ksg_12_4'], collectAllMatches: true }
+          { key: 'empty', dropdownLabel: 'Незаполненные', title: 'КСГ · Незаполненные поля', subtitle: 'Незаполненные поля КСГ', mode: 'empty', fieldIds: [] },
+          { key: 'all', dropdownLabel: 'Все поля', title: 'КСГ', subtitle: 'Основные этапы КСГ', mode: 'all', fieldIds: [] }
         ]
       },
       suid_all: {

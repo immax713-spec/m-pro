@@ -1110,6 +1110,7 @@ function canEditSectionField_(field) {
       if (!isCurrentRegistryDatasetEditable_()) return false;
       const fieldId = normalizeText_(field && field.fieldId || '');
       if (!fieldId) return false;
+      if (fieldId.startsWith('ksg_')) return true;
       return !isGoogleOwnedHtmlFieldId_(fieldId);
     }
 
@@ -1661,6 +1662,46 @@ function sortSectionGroupItems_(items) {
             fieldIndexes
           };
           fieldIndexes.forEach(index => map.set(index, rvItem));
+        }
+      }
+      return map;
+    }
+
+function sortSectionGroupItems_(items) {
+      const list = Array.isArray(items) ? items.slice() : [];
+      const priorityByLabel = {
+        'контракт': 0,
+        'план': 1,
+        'факт': 2,
+        '№ рв': 3,
+        '№рв': 3,
+        'номер рв': 3
+      };
+      return list.sort((a, b) => {
+        const labelA = normalizeText_(a && a.shortLabel || '');
+        const labelB = normalizeText_(b && b.shortLabel || '');
+        const priorityA = Object.prototype.hasOwnProperty.call(priorityByLabel, labelA) ? priorityByLabel[labelA] : 99;
+        const priorityB = Object.prototype.hasOwnProperty.call(priorityByLabel, labelB) ? priorityByLabel[labelB] : 99;
+        if (priorityA !== priorityB) return priorityA - priorityB;
+        return Number(a && a.field && a.field.index) - Number(b && b.field && b.field.index);
+      });
+    }
+
+    function buildSpecialSectionCompoundMap_(fields, section, editing) {
+      const map = new Map();
+      if (!section) return map;
+      const list = Array.isArray(fields) ? fields : [];
+      const sourceKey = String(section.sourceKey || '').trim();
+      if (sourceKey === '__objects__') {
+        const anoField = list.find(field => normalizeText_(field && field.fieldId || '') === 'sm_1_1') || null;
+        const checklistField = list.find(field => normalizeText_(field && field.fieldId || '') === 'sm_1_2') || null;
+        if (anoField && checklistField) {
+          map.set(anoField.index, {
+            type: 'linked-field',
+            field: anoField,
+            linkField: checklistField,
+            linkKind: 'checklist'
+          });
         }
       }
       return map;
