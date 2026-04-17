@@ -1253,78 +1253,8 @@ function getRegistryRowCurrentInspectorNames_(rowIndex) {
 
 function renderRegistryPublishInspectorCellHtml_(rowIndex, rowState) {
       const summary = rowState && rowState.summary ? rowState.summary : {};
-      const objectId = String(summary.objectId || getRegistryRowObjectId_(rowIndex) || '').trim();
-      const selectedInspectorNames = objectId && typeof getSelectionPublishInspectorNamesForObject_ === 'function'
-        ? getSelectionPublishInspectorNamesForObject_(objectId)
-        : [];
-      const previewText = buildRegistryInspectorPreviewText_(selectedInspectorNames);
-      const canAssign = !!(
-        rowState &&
-        rowState.isSelectionEditing &&
-        rowState.isSelectionMember &&
-        canCurrentUserManageMproMap_() &&
-        isCurrentRegistryDatasetEditable_() &&
-        objectId
-      );
-      if (!canAssign) {
-        const currentNames = selectedInspectorNames.length ? selectedInspectorNames : getRegistryRowCurrentInspectorNames_(rowIndex);
-        const text = buildRegistryInspectorPreviewText_(currentNames);
-        return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text${text ? '' : ' is-empty'}" title="${escapeHtml_(text || 'Не назначено')}">${escapeHtml_(text || '—')}</span></td>`;
-      }
-      if (state.mapPublishInspectorsLoading) {
-        return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text">Загрузка...</span></td>`;
-      }
-      if (state.mapPublishInspectorsError) {
-        return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text registry-row-publish-inspector-text--error" title="${escapeHtml_(state.mapPublishInspectorsError)}">${escapeHtml_(state.mapPublishInspectorsError)}</span></td>`;
-      }
-      const inspectors = typeof getCurrentDivisionMapPublishInspectors_ === 'function'
-        ? getCurrentDivisionMapPublishInspectors_()
-        : [];
-      if (!inspectors.length) {
-        return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text is-empty">—</span></td>`;
-      }
-      const pickerOpen = typeof isSelectionPublishRowInspectorPickerOpen_ === 'function'
-        ? isSelectionPublishRowInspectorPickerOpen_(objectId)
-        : false;
-      const triggerLabel = previewText || 'Выбрать';
-      return (
-        `<td class="registry-cell-center registry-row-publish-inspector-cell-td">` +
-          `<div class="registry-row-publish-inspector-cell" data-row-publish-inspector-cell="${escapeHtml_(objectId)}">` +
-            `<div class="registry-selection-publish-picker${pickerOpen ? ' is-open' : ''}">` +
-              `<button class="registry-selection-publish-picker-trigger registry-row-publish-inspector-trigger${pickerOpen ? ' is-open' : ''}" type="button" data-row-publish-inspector-toggle="${escapeHtml_(objectId)}" aria-expanded="${pickerOpen ? 'true' : 'false'}">` +
-                `<span class="registry-selection-publish-picker-trigger-main">` +
-                  `<span class="registry-selection-publish-picker-trigger-label">${escapeHtml_(triggerLabel)}</span>` +
-                `</span>` +
-                `<span class="registry-selection-publish-picker-caret" aria-hidden="true"></span>` +
-              `</button>` +
-              (
-                pickerOpen
-                  ? (
-                    `<div class="registry-selection-publish-picker-popover registry-row-publish-inspector-popover">` +
-                      `<div class="registry-selection-publish-picker-head">` +
-                        `<div class="registry-selection-publish-picker-title">Инспекторы</div>` +
-                        `<button class="registry-selection-publish-picker-close" type="button" data-row-publish-inspector-close="1">Готово</button>` +
-                      `</div>` +
-                      `<div class="registry-selection-publish-picker-list">` +
-                        inspectors.map(item => {
-                          const inspectorName = String(item && item.name || '').trim();
-                          const active = selectedInspectorNames.includes(inspectorName);
-                          return (
-                            `<label class="registry-selection-publish-picker-option${active ? ' is-active' : ''}" data-row-publish-inspector-option="${escapeHtml_(objectId)}" data-row-publish-inspector-name="${escapeHtml_(inspectorName)}">` +
-                              `<input class="registry-selection-publish-picker-checkbox" type="checkbox"${active ? ' checked' : ''} tabindex="-1">` +
-                              `<span class="registry-selection-publish-picker-option-name">${escapeHtml_(inspectorName)}</span>` +
-                            `</label>`
-                          );
-                        }).join('') +
-                      `</div>` +
-                    `</div>`
-                  )
-                  : ''
-              ) +
-            `</div>` +
-          `</div>` +
-        `</td>`
-      );
+      const text = String(summary.inspector || '').trim();
+      return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text${text ? '' : ' is-empty'}" title="${escapeHtml_(text || 'Не назначено')}">${escapeHtml_(text || '—')}</span></td>`;
     }
 
 function renderRegistryRowCellHtml_(rowIndex, def, context) {
@@ -2379,11 +2309,6 @@ function renderAdminRegistryUi_() {
             `<button id="btnConfirmSelectionComposer" class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--take" type="button"${count ? '' : ' disabled'}>Сохранить</button>`
           ].filter(Boolean)
         : [];
-      if (isComposerEditing && composerRegistryPublishEnabled && Array.isArray(toolButtons)) {
-        toolButtons.splice(Math.max(0, toolButtons.length - 1), 0,
-          `<button id="btnPublishSelectionComposer" class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--take" type="button"${count && !isPublishingComposer ? '' : ' disabled'}>${escapeHtml_(isPublishingComposer ? 'Добавляю...' : 'На карту')}</button>`
-        );
-      }
       const publishPlanHtml = '';
       if (!isRegistrySelectionEditing_() && !isMapRemovalEditing && !activeItem) {
         node.classList.add('hidden');
