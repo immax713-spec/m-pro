@@ -2079,7 +2079,7 @@ function renderAdminRegistryUi_() {
       const sharedWorkPending = !!sharedWorkPendingAction;
       const headerKicker = isPublishDraftEditing
         ? 'На карту'
-        : (isMapRemovalEditing ? 'На карте' : 'Выборка');
+        : (isMapRemovalEditing ? 'На карте' : 'Проект');
       const headerKickerHtml = (
         `<div class="registry-selection-edit-kicker-row">` +
           `<div class="registry-selection-edit-kicker">${escapeHtml_(headerKicker)}</div>` +
