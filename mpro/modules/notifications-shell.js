@@ -1,6 +1,26 @@
 // Notifications shell extracted from app-legacy.js.
 // Owns toast rendering and the shared showNotification wrapper.
 
+function normalizeNotificationText_(message) {
+            const raw = String(message ?? '').trim();
+            if (!raw) return '';
+
+            const normalized = raw.replace(/\s+/g, ' ').trim();
+            const exactMap = new Map([
+                ['????? ??????? ? ???????? ? ???????', 'Выход отмечен и сохранён в истории'],
+                ['????? ???????', 'Выход отмечен'],
+                ['??? ????????? ????? ??? ??????', 'Нет активного входа для выхода'],
+                ['????????? ???????????? ?????????? ? ???-?? ?????', 'Заполните строительную готовность и кол-во людей'],
+                ['?????? ??????? ??? ????????', 'Объект отмечен как отказано'],
+                ['???????? ??????? ? ???????? ? ???????', 'Недопуск отмечен и сохранён в истории']
+            ]);
+            if (exactMap.has(normalized)) {
+                return exactMap.get(normalized) || normalized;
+            }
+
+            return normalized;
+        }
+
 const GlassNotification = {
             /** @type {HTMLElement|null} Текущее уведомление */
             current: null,
@@ -37,17 +57,21 @@ const GlassNotification = {
                 const icon = icons[type] || icons.info;
                 
                 // Очистить сообщение от эмодзи
-                const cleanMessage = message
+                const cleanMessage = normalizeNotificationText_(message)
                     .replace(/[✅❌⚠️ℹ️🔄]/g, '')
                     .trim();
                 
                 // Создать новое уведомление
                 const el = document.createElement('div');
                 el.className = 'glass-notification';
-                el.innerHTML = `
-                    <span class="glass-notification-icon">${icon}</span>
-                    <span class="glass-notification-text">${cleanMessage}</span>
-                `;
+                const iconNode = document.createElement('span');
+                iconNode.className = 'glass-notification-icon';
+                iconNode.textContent = icon;
+                const textNode = document.createElement('span');
+                textNode.className = 'glass-notification-text';
+                textNode.textContent = cleanMessage;
+                el.appendChild(iconNode);
+                el.appendChild(textNode);
                 
                 document.body.appendChild(el);
                 this.current = el;
