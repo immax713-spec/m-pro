@@ -842,6 +842,46 @@ function formatRegistryFacetActiveChipText_(def, selection) {
       return String(def.title || '').trim();
     }
 
+function renderRegistryMapToolbarActions_() {
+      const node = el('registryMapToolbarActions');
+      if (!node) return;
+      const canShow = !!(
+        canCurrentUserManageMproMap_() &&
+        isCurrentRegistryDatasetEditable_() &&
+        !isRegistrySelectionEditing_() &&
+        !isRegistryMapRemovalMode_() &&
+        !getActiveRegistrySelection_()
+      );
+      node.classList.toggle('hidden', !canShow);
+      if (!canShow) {
+        node.innerHTML = '';
+        return;
+      }
+      const mapRemovalVisibleState = getRegistryMapRemovalVisibleState_();
+      const busy = !!(
+        state.loading ||
+        state.adminRegistryPendingAction ||
+        state.adminRegistryDialogSaving ||
+        state.selectionPublishingId ||
+        state.selectionLoadingId ||
+        state.selectionRemovingId
+      );
+      node.innerHTML = renderSelectionPublishMenuHtml_(getRegistryToolbarMapDraftId_(), {
+        compact: true,
+        busy,
+        allowManualPick: true,
+        allowMapRemoval: true,
+        mapRemovalVisibleCount: mapRemovalVisibleState.visibleCount,
+        mapRemovalSelectedCount: getRegistryMapRemovalSelectedCount_(),
+        mapRemovalAllVisibleSelected: mapRemovalVisibleState.allVisibleSelected,
+        triggerTitle: 'Управление объектами на карте',
+        triggerBaseClassName: 'ghost icon-button registry-filter-button',
+        triggerButtonClassName: 'registry-map-toolbar-trigger',
+        triggerIconClassName: 'registry-map-toolbar-icon'
+      });
+      bindSelectionPublishMenuEvents_(node);
+    }
+
 function buildRegistryTableStructureSignature_(visibleDefs) {
       return (Array.isArray(visibleDefs) ? visibleDefs : [])
         .map(def => [String(def && def.key || ''), String(def && def.width || ''), String(def && def.summaryKey || '')].join(':'))
@@ -1242,10 +1282,112 @@ function getRegistryRowCurrentInspectorNames_(rowIndex) {
       return summaryInspector ? [summaryInspector] : [];
     }
 
-function renderRegistryPublishInspectorCellHtml_(rowIndex, rowState) {
+function renderRegistryPublishInspectorCellHtmlLegacy_(rowIndex, rowState) {
       const summary = rowState && rowState.summary ? rowState.summary : {};
+      const names = getRegistryRowCurrentInspectorNames_(rowIndex);
+      const preview = buildRegistryInspectorPreviewText_(names);
+      if (preview) {
+        return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text" title="${escapeHtml_(names.join(', '))}">${escapeHtml_(preview)}</span></td>`;
+      }
       const text = String(summary.inspector || '').trim();
       return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text${text ? '' : ' is-empty'}" title="${escapeHtml_(text || 'Не назначено')}">${escapeHtml_(text || '—')}</span></td>`;
+    }
+
+function canEditRegistryRowPublishInspector_(rowState) {
+      const context = rowState && typeof rowState === 'object' ? rowState : {};
+      const sharedWorkBatchMode = normalizeSharedSelectionWorkBatchMode_(context.sharedWorkBatchMode);
+      return !!(
+        canCurrentUserManageMproMap_() &&
+        isCurrentRegistryDatasetEditable_() &&
+        !context.mapRemovalMode &&
+        !sharedWorkBatchMode &&
+        !state.loading &&
+        !state.selectionPublishingId &&
+        (
+          context.hasSavedSelection ||
+          isRegistrySelectionPublishDraftOpen_()
+        )
+      );
+    }
+
+function renderRegistryRowPublishInspectorPickerHtml_(objectId, options) {
+      const targetObjectId = String(objectId || '').trim();
+      if (!targetObjectId) return '';
+      const settings = options && typeof options === 'object' ? options : {};
+      const open = !!settings.open;
+      const loading = !!settings.loading;
+      const errorText = String(settings.errorText || '').trim();
+      const inspectors = Array.isArray(settings.inspectors) ? settings.inspectors : [];
+      const selectedNames = Array.isArray(settings.selectedNames) ? settings.selectedNames : [];
+      if (loading || errorText || !inspectors.length) {
+        const text = loading
+          ? 'Загрузка...'
+          : (errorText || 'Нет инспекторов');
+        const errorClass = loading ? '' : ' registry-row-publish-inspector-text--error';
+        return `<span class="registry-row-publish-inspector-text${text ? '' : ' is-empty'}${errorClass}" title="${escapeHtml_(text)}">${escapeHtml_(text)}</span>`;
+      }
+      const triggerLabel = buildRegistryInspectorPreviewText_(selectedNames) || 'Назначить';
+      const triggerTitle = String(settings.triggerTitle || '').trim() || 'Назначить инспектора';
+      return (
+        `<div class="registry-row-publish-inspector-cell" data-row-publish-inspector-cell="1">` +
+          `<div class="registry-selection-publish-picker${open ? ' is-open' : ''}">` +
+            `<button class="registry-selection-publish-picker-trigger registry-row-publish-inspector-trigger${open ? ' is-open' : ''}" type="button" data-row-publish-inspector-toggle="${escapeHtml_(targetObjectId)}" aria-expanded="${open ? 'true' : 'false'}" title="${escapeHtml_(triggerTitle)}">` +
+              `<span class="registry-selection-publish-picker-trigger-main">` +
+                `<span class="registry-selection-publish-picker-trigger-label">${escapeHtml_(triggerLabel)}</span>` +
+              `</span>` +
+              `<span class="registry-selection-publish-picker-caret" aria-hidden="true"></span>` +
+            `</button>` +
+            (
+              open
+                ? (
+                  `<div class="registry-selection-publish-picker-popover registry-row-publish-inspector-popover">` +
+                    `<div class="registry-selection-publish-picker-head">` +
+                      `<div class="registry-selection-publish-picker-title">Инспекторы</div>` +
+                      `<button class="registry-selection-publish-picker-close" type="button" data-row-publish-inspector-close="1">Готово</button>` +
+                    `</div>` +
+                    `<div class="registry-selection-publish-picker-list">` +
+                      inspectors.map(item => {
+                        const inspectorName = String(item && item.name || '').trim();
+                        const active = selectedNames.includes(inspectorName);
+                        return (
+                          `<label class="registry-selection-publish-picker-option${active ? ' is-active' : ''}" data-row-publish-inspector-option="${escapeHtml_(targetObjectId)}" data-row-publish-inspector-name="${escapeHtml_(inspectorName)}">` +
+                            `<input class="registry-selection-publish-picker-checkbox" type="checkbox"${active ? ' checked' : ''} tabindex="-1">` +
+                            `<span class="registry-selection-publish-picker-option-name">${escapeHtml_(inspectorName)}</span>` +
+                          `</label>`
+                        );
+                      }).join('') +
+                    `</div>` +
+                  `</div>`
+                )
+                : ''
+            ) +
+          `</div>` +
+        `</div>`
+      );
+    }
+
+function renderRegistryPublishInspectorCellHtml_(rowIndex, rowState) {
+      const summary = rowState && rowState.summary ? rowState.summary : {};
+      if (!canEditRegistryRowPublishInspector_(rowState)) {
+        return renderRegistryPublishInspectorCellHtmlLegacy_(rowIndex, rowState);
+      }
+      const objectId = String(summary.objectId || getRegistryRowObjectId_(rowIndex) || '').trim();
+      const selectedNames = objectId ? getSelectionPublishInspectorNamesForObject_(objectId) : [];
+      const open = objectId ? isSelectionPublishRowInspectorPickerOpen_(objectId) : false;
+      return (
+        `<td class="registry-cell-center registry-row-publish-inspector-cell-td">` +
+          renderRegistryRowPublishInspectorPickerHtml_(objectId, {
+            open,
+            loading: state.mapPublishInspectorsLoading && !state.mapPublishInspectorsLoaded,
+            errorText: state.mapPublishInspectorsError,
+            inspectors: getCurrentDivisionMapPublishInspectors_(),
+            selectedNames,
+            triggerTitle: rowState && rowState.hasSavedSelection
+              ? 'Назначение сохранится в проекте автоматически'
+              : 'Назначить инспектора для публикации'
+          }) +
+        `</td>`
+      );
     }
 
 function renderRegistryRowCellHtml_(rowIndex, def, context) {
@@ -1423,6 +1565,7 @@ function buildRegistryRowHtml_(rowIndex, viewState) {
       populateRegistryFacetFiltersFast_();
       renderRegistrySelectionEditBar_();
       renderRegistrySharedWorkBar_();
+      renderRegistryMapToolbarActions_();
       renderAdminRegistryEditBar_();
       const refreshNote = el('registryRefreshNote');
       if (refreshNote) {
@@ -2027,15 +2170,19 @@ function renderAdminRegistryUi_() {
       const isPublishDraftEditing = isRegistrySelectionPublishDraftOpen_();
       const isMapRemovalEditing = isRegistryMapRemovalMode_();
       const editingId = getRegistrySelectionEditTargetId_();
+      const isToolbarPublishDraft = isPublishDraftEditing && isRegistryToolbarMapDraftId_(editingId);
       const item = editingId ? findSavedRegistrySelectionById_(editingId) : null;
       const activeItem = getActiveRegistrySelection_();
-      const currentItem = item || activeItem;
+      const currentItem = item || (isToolbarPublishDraft ? {
+        id: editingId,
+        name: 'Реестр объектов'
+      } : activeItem);
       const count = Array.isArray(state.selectionEditDraftUins) ? state.selectionEditDraftUins.length : 0;
       const visibleState = getRegistrySelectionEditVisibleState_();
       const mapRemovalVisibleState = getRegistryMapRemovalVisibleState_();
       const mapRemovalSelectedCount = getRegistryMapRemovalSelectedCount_();
       const mapRemovalPending = String(state.registryMapRemovalPendingAction || '').trim() === 'remove';
-      const canPublish = !!currentItem && canPublishSelectionToMap_(currentItem);
+      const canPublish = !isToolbarPublishDraft && !!currentItem && canPublishSelectionToMap_(currentItem);
       const canEditCurrent = !isRegistrySelectionEditing_() && !!activeItem && canEditSavedSelection_(activeItem);
       const canRemoveCurrent = !isRegistrySelectionEditing_() && !!activeItem && canRemoveSavedSelection_(activeItem);
       const currentSelectionId = String(currentItem && currentItem.id || '').trim();
@@ -2043,7 +2190,7 @@ function renderAdminRegistryUi_() {
       const publishContext = (isComposerEditing || currentSelectionId)
         ? getRegistrySelectionPublishContext_(isComposerEditing ? editingId : currentSelectionId)
         : null;
-      const isPublishingCurrent = canPublish && currentSelectionId && String(state.selectionPublishingId || '').trim() === currentSelectionId;
+      const isPublishingCurrent = !!(currentSelectionId && String(state.selectionPublishingId || '').trim() === currentSelectionId);
       const isPublishingComposer = isComposerEditing && String(state.selectionPublishingId || '').trim() === '__composer__';
       const isRemovingCurrent = canRemoveCurrent && activeSelectionId && String(state.selectionRemovingId || '').trim() === activeSelectionId;
       const canUseSharedWorkBatch = !!(
@@ -2123,9 +2270,13 @@ function renderAdminRegistryUi_() {
             )
         );
       const headerProjectName = String(currentItem ? (currentItem.name || '') : '').trim();
-      const headerInlineTitle = headerProjectName
-        ? `Проект: ${headerProjectName}`
-        : 'Проект';
+      const headerInlineTitle = isToolbarPublishDraft
+        ? 'Реестр объектов'
+        : (
+          headerProjectName
+            ? `Проект: ${headerProjectName}`
+            : 'Проект'
+        );
       const headerTitleHtml = isComposerEditing
         ? (
           `<div id="selectionCompose" class="saved-selection-compose registry-selection-compose-inline">` +
@@ -2227,7 +2378,11 @@ function renderAdminRegistryUi_() {
             `<span class="registry-selection-edit-count-badge registry-selection-edit-count-badge--header registry-selection-edit-count-badge--pick">${escapeHtml_(count ? `${count} для карты` : 'Ничего не выбрано')}</span>` +
           `</span>` +
           `<span class="registry-header-action-group registry-header-action-group--primary">` +
-            `<button class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--take" type="button" data-publish-selection-id="${escapeHtml_(currentSelectionId)}" data-publish-selection-mode="append"${isPublishingCurrent || !count ? ' disabled' : ''}>${escapeHtml_(isPublishingCurrent ? 'Добавляю...' : 'Добавить на карту')}</button>` +
+            (
+              isToolbarPublishDraft
+                ? `<button class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--take" type="button" data-publish-registry-toolbar-draft="1"${isPublishingCurrent || !count ? ' disabled' : ''}>${escapeHtml_(isPublishingCurrent ? 'Добавляю...' : 'Добавить на карту')}</button>`
+                : `<button class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--take" type="button" data-publish-selection-id="${escapeHtml_(currentSelectionId)}" data-publish-selection-mode="append"${isPublishingCurrent || !count ? ' disabled' : ''}>${escapeHtml_(isPublishingCurrent ? 'Добавляю...' : 'Добавить на карту')}</button>`
+            ) +
           `</span>`
         )
         : '';
@@ -2445,6 +2600,12 @@ function renderAdminRegistryUi_() {
             single: !!(publishContext && !publishContext.isSingleObject),
             closePicker: !!(publishContext && !publishContext.isSingleObject)
           });
+        });
+      });
+      node.querySelectorAll('[data-publish-registry-toolbar-draft]').forEach(button => {
+        button.addEventListener('click', evt => {
+          evt.stopPropagation();
+          publishRegistryToolbarDraftToMap_();
         });
       });
       const nameInput = el('selectionNameInput');

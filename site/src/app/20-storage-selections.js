@@ -98,6 +98,90 @@ function loadPersonalRegistrySelections_() {
       }
     }
 
+function getSelectionPublishAssignmentsStorageKey_() {
+      const userName = normalizeText_(state.currentUser && state.currentUser.name || 'guest') || 'guest';
+      const division = normalizeText_(state.currentUser && state.currentUser.division || '');
+      const suffix = [userName, division].filter(Boolean).join('__');
+      return `${REGISTRY_SELECTION_PUBLISH_ASSIGNMENTS_STORAGE_PREFIX}${suffix || 'guest'}`;
+    }
+
+function normalizeSavedSelectionPublishAssignmentsStore_(rawValue) {
+      const source = rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)
+        ? rawValue
+        : {};
+      const out = {};
+      Object.keys(source).forEach(rawSelectionId => {
+        const selectionId = String(rawSelectionId || '').trim();
+        if (!selectionId) return;
+        const assignments = normalizeSelectionPublishInspectorNamesByObjectKey_(source[rawSelectionId]);
+        if (Object.keys(assignments).length) out[selectionId] = assignments;
+      });
+      return out;
+    }
+
+function loadSavedSelectionPublishAssignments_() {
+      if (!state.currentUser) return {};
+      try {
+        const raw = window.localStorage.getItem(getSelectionPublishAssignmentsStorageKey_());
+        const parsed = JSON.parse(raw || '{}');
+        return normalizeSavedSelectionPublishAssignmentsStore_(parsed);
+      } catch (e) {
+        return {};
+      }
+    }
+
+function persistSavedSelectionPublishAssignments_() {
+      if (!state.currentUser) return;
+      try {
+        const payload = normalizeSavedSelectionPublishAssignmentsStore_(state.savedSelectionPublishAssignmentsById);
+        if (Object.keys(payload).length) {
+          window.localStorage.setItem(getSelectionPublishAssignmentsStorageKey_(), JSON.stringify(payload));
+        } else {
+          window.localStorage.removeItem(getSelectionPublishAssignmentsStorageKey_());
+        }
+      } catch (e) {}
+    }
+
+function getSavedSelectionPublishAssignmentsForSelection_(selectionId) {
+      const key = String(selectionId || '').trim();
+      if (!key) return {};
+      const store = normalizeSavedSelectionPublishAssignmentsStore_(state.savedSelectionPublishAssignmentsById);
+      state.savedSelectionPublishAssignmentsById = store;
+      return store[key] ? { ...store[key] } : {};
+    }
+
+function setSavedSelectionPublishAssignmentsForSelection_(selectionId, assignments) {
+      const key = String(selectionId || '').trim();
+      if (!key) return {};
+      const store = normalizeSavedSelectionPublishAssignmentsStore_(state.savedSelectionPublishAssignmentsById);
+      const normalizedAssignments = normalizeSelectionPublishInspectorNamesByObjectKey_(assignments);
+      if (Object.keys(normalizedAssignments).length) store[key] = normalizedAssignments;
+      else delete store[key];
+      state.savedSelectionPublishAssignmentsById = store;
+      persistSavedSelectionPublishAssignments_();
+      return normalizedAssignments;
+    }
+
+function removeSavedSelectionPublishAssignmentsForSelection_(selectionId) {
+      const key = String(selectionId || '').trim();
+      if (!key) return;
+      const store = normalizeSavedSelectionPublishAssignmentsStore_(state.savedSelectionPublishAssignmentsById);
+      if (!Object.prototype.hasOwnProperty.call(store, key)) return;
+      delete store[key];
+      state.savedSelectionPublishAssignmentsById = store;
+      persistSavedSelectionPublishAssignments_();
+    }
+
+function moveSavedSelectionPublishAssignments_(fromSelectionId, toSelectionId) {
+      const sourceId = String(fromSelectionId || '').trim();
+      const targetId = String(toSelectionId || '').trim();
+      if (!sourceId || !targetId || sourceId === targetId) return;
+      const assignments = getSavedSelectionPublishAssignmentsForSelection_(sourceId);
+      if (!Object.keys(assignments).length) return;
+      setSavedSelectionPublishAssignmentsForSelection_(targetId, assignments);
+      removeSavedSelectionPublishAssignmentsForSelection_(sourceId);
+    }
+
 function buildRegistrySessionStatePayload_() {
         return {
           registryDataMode: normalizeRegistryDataMode_(state.registryDataMode),
@@ -442,6 +526,14 @@ function isRegistrySelectionPublishDraftOpen_() {
       return getRegistrySelectionEditMode_() === 'publish';
     }
 
+function getRegistryToolbarMapDraftId_() {
+      return '__registry_toolbar__';
+    }
+
+function isRegistryToolbarMapDraftId_(selectionId) {
+      return String(selectionId || '').trim() === getRegistryToolbarMapDraftId_();
+    }
+
 function getRegistrySelectionEditTargetId_() {
       if (state.selectionComposerOpen) return String(state.selectionComposerSelectionId || '').trim();
       if (state.selectionPublishDraftOpen) return String(state.selectionPublishDraftSelectionId || '').trim();
@@ -536,6 +628,89 @@ function getSelectionPublishInspectorObjectKey_(objectId) {
       return normalizeText_(objectId);
     }
 
+function getSelectionPublishAssignmentOwnerSelectionId_() {
+      const draftId = isRegistrySelectionPublishDraftOpen_()
+        ? String(state.selectionPublishDraftSelectionId || '').trim()
+        : '';
+      if (draftId && !isRegistryToolbarMapDraftId_(draftId)) return draftId;
+      const composerId = state.selectionComposerOpen
+        ? String(state.selectionComposerSelectionId || '').trim()
+        : '';
+      if (composerId) return composerId;
+      const activeId = String(state.activeRegistrySelectionId || '').trim();
+      return activeId && !isRegistryToolbarMapDraftId_(activeId) ? activeId : '';
+    }
+
+function getEffectiveSelectionPublishInspectorNamesByObjectKey_(selectionId) {
+      const ownerSelectionId = String(selectionId || getSelectionPublishAssignmentOwnerSelectionId_() || '').trim();
+      const persisted = ownerSelectionId
+        ? getSavedSelectionPublishAssignmentsForSelection_(ownerSelectionId)
+        : {};
+      const current = normalizeSelectionPublishInspectorNamesByObjectKey_(state.selectionPublishInspectorNamesByObjectKey);
+      if (!Object.keys(current).length) return persisted;
+      return {
+        ...persisted,
+        ...current
+      };
+    }
+
+function getSelectionPublishInspectorNamesFromMapForObject_(objectId, options) {
+      const targetObjectId = String(objectId || '').trim();
+      if (!targetObjectId || typeof getRegistryMapOverlayEntriesForObjectKey_ !== 'function') return [];
+      const settings = options && typeof options === 'object' ? options : {};
+      return Array.from(new Set(
+        getRegistryMapOverlayEntriesForObjectKey_(targetObjectId, settings)
+          .map(entry => String(entry && (entry.inspector || entry.inspectorName) || '').trim())
+          .filter(Boolean)
+      ));
+    }
+
+function getSelectionPublishAssignmentsSyncRowIndexes_(selectionId, options) {
+      const settings = options && typeof options === 'object' ? options : {};
+      const explicitRows = Array.isArray(settings.rowIndexes) ? settings.rowIndexes : null;
+      const activeSelectionId = String(state.activeRegistrySelectionId || '').trim();
+      const ownerSelectionId = String(selectionId || '').trim();
+      const sourceRows = explicitRows || (
+        ownerSelectionId && ownerSelectionId === activeSelectionId && Array.isArray(state.activeRegistrySelectionBaseRowIndexes)
+          ? state.activeRegistrySelectionBaseRowIndexes
+          : state.filteredRowIndexes
+      );
+      return (Array.isArray(sourceRows) ? sourceRows : [])
+        .map(value => Number(value))
+        .filter(value => Number.isFinite(value) && value >= 0)
+        .map(value => Math.floor(value));
+    }
+
+function syncSavedSelectionPublishAssignmentsFromMapOverlay_(selectionId, options) {
+      const ownerSelectionId = String(selectionId || getSelectionPublishAssignmentOwnerSelectionId_() || '').trim();
+      if (!ownerSelectionId || isRegistryToolbarMapDraftId_(ownerSelectionId)) return false;
+      if (!canCurrentUserManageMproMap_() || !isCurrentRegistryDatasetEditable_()) return false;
+      const settings = options && typeof options === 'object' ? options : {};
+      const rowIndexes = getSelectionPublishAssignmentsSyncRowIndexes_(ownerSelectionId, settings);
+      if (!rowIndexes.length) return false;
+      const nextMap = getEffectiveSelectionPublishInspectorNamesByObjectKey_(ownerSelectionId);
+      const mapOptions = Object.prototype.hasOwnProperty.call(settings, 'divisionCode')
+        ? { divisionCode: settings.divisionCode }
+        : {};
+      let changed = false;
+      rowIndexes.forEach(rowIndex => {
+        const objectId = String(getRegistryRowObjectId_(rowIndex) || '').trim();
+        const objectKey = getSelectionPublishInspectorObjectKey_(objectId);
+        if (!objectKey) return;
+        const currentNames = Array.isArray(nextMap[objectKey]) ? nextMap[objectKey].slice() : [];
+        if (currentNames.length && !settings.overwriteExisting) return;
+        const mapNames = getSelectionPublishInspectorNamesFromMapForObject_(objectId, mapOptions);
+        if (!mapNames.length) return;
+        if (currentNames.join('\n') === mapNames.join('\n')) return;
+        nextMap[objectKey] = mapNames;
+        changed = true;
+      });
+      if (!changed) return false;
+      state.selectionPublishInspectorNamesByObjectKey = nextMap;
+      setSavedSelectionPublishAssignmentsForSelection_(ownerSelectionId, nextMap);
+      return true;
+    }
+
 function getSelectionPublishInspectorNamesByObjectKey_() {
       return normalizeSelectionPublishInspectorNamesByObjectKey_(state.selectionPublishInspectorNamesByObjectKey);
     }
@@ -543,19 +718,26 @@ function getSelectionPublishInspectorNamesByObjectKey_() {
 function getSelectionPublishInspectorNamesForObject_(objectId) {
       const key = getSelectionPublishInspectorObjectKey_(objectId);
       if (!key) return [];
-      const map = getSelectionPublishInspectorNamesByObjectKey_();
-      return Array.isArray(map[key]) ? map[key].slice() : [];
+      const map = getEffectiveSelectionPublishInspectorNamesByObjectKey_();
+      if (Array.isArray(map[key]) && map[key].length) return map[key].slice();
+      return getSelectionPublishInspectorNamesFromMapForObject_(objectId);
     }
 
 function setSelectionPublishInspectorNamesForObject_(objectId, items, options) {
       const key = getSelectionPublishInspectorObjectKey_(objectId);
       if (!key) return;
       const settings = options && typeof options === 'object' ? options : {};
-      const nextMap = getSelectionPublishInspectorNamesByObjectKey_();
+      const ownerSelectionId = getSelectionPublishAssignmentOwnerSelectionId_();
+      const nextMap = ownerSelectionId
+        ? getEffectiveSelectionPublishInspectorNamesByObjectKey_(ownerSelectionId)
+        : getSelectionPublishInspectorNamesByObjectKey_();
       const nextValues = normalizeSelectionPublishInspectorNames_(items);
       if (nextValues.length) nextMap[key] = nextValues;
       else delete nextMap[key];
       state.selectionPublishInspectorNamesByObjectKey = nextMap;
+      if (ownerSelectionId) {
+        setSavedSelectionPublishAssignmentsForSelection_(ownerSelectionId, nextMap);
+      }
       if (settings.closePicker) {
         state.selectionPublishRowInspectorPickerKey = '';
       }
@@ -591,12 +773,13 @@ function closeSelectionPublishRowInspectorPicker_() {
     }
 
 function getSelectionPublishInspectorAssignmentsSignature_() {
-      const map = getSelectionPublishInspectorNamesByObjectKey_();
+      const ownerSelectionId = getSelectionPublishAssignmentOwnerSelectionId_();
+      const map = getEffectiveSelectionPublishInspectorNamesByObjectKey_(ownerSelectionId);
       const body = Object.keys(map)
         .sort()
         .map(key => `${key}:${map[key].join('|')}`)
         .join(';');
-      return `${body}::${String(state.selectionPublishRowInspectorPickerKey || '').trim()}`;
+      return `${String(ownerSelectionId || '').trim()}::${body}::${String(state.selectionPublishRowInspectorPickerKey || '').trim()}`;
     }
 
 function isSelectionPublishInspectorPickerOpen_() {
@@ -667,21 +850,27 @@ function getCurrentDivisionMapPublishInspectors_() {
 
 function pruneSelectionPublishInspectorNames_() {
       const allowedNames = new Set(getCurrentDivisionMapPublishInspectors_().map(item => String(item && item.name || '').trim()).filter(Boolean));
+      const ownerSelectionId = getSelectionPublishAssignmentOwnerSelectionId_();
       if (!allowedNames.size) {
         setSelectionPublishInspectorNames_([]);
         state.selectionPublishInspectorNamesByObjectKey = {};
         state.selectionPublishRowInspectorPickerKey = '';
+        if (ownerSelectionId) removeSavedSelectionPublishAssignmentsForSelection_(ownerSelectionId);
         return;
       }
       setSelectionPublishInspectorNames_(
         getSelectionPublishInspectorNames_().filter(name => allowedNames.has(name))
       );
       const nextMap = {};
-      Object.keys(getSelectionPublishInspectorNamesByObjectKey_()).forEach(key => {
-        const nextNames = getSelectionPublishInspectorNamesByObjectKey_()[key].filter(name => allowedNames.has(name));
+      const sourceMap = ownerSelectionId
+        ? getEffectiveSelectionPublishInspectorNamesByObjectKey_(ownerSelectionId)
+        : getSelectionPublishInspectorNamesByObjectKey_();
+      Object.keys(sourceMap).forEach(key => {
+        const nextNames = sourceMap[key].filter(name => allowedNames.has(name));
         if (nextNames.length) nextMap[key] = nextNames;
       });
       state.selectionPublishInspectorNamesByObjectKey = nextMap;
+      if (ownerSelectionId) setSavedSelectionPublishAssignmentsForSelection_(ownerSelectionId, nextMap);
       if (
         String(state.selectionPublishRowInspectorPickerKey || '').trim() &&
         !Object.prototype.hasOwnProperty.call(nextMap, String(state.selectionPublishRowInspectorPickerKey || '').trim())
@@ -844,6 +1033,7 @@ function closeSelectionPublishMenu_() {
       state.selectionPublishMenuId = '';
       renderSavedSelectionsPanel_();
       renderRegistrySelectionEditBar_();
+      if (typeof renderRegistryMapToolbarActions_ === 'function') renderRegistryMapToolbarActions_();
     }
 
 function isSelectionPublishMenuOpen_(selectionId) {
@@ -863,6 +1053,7 @@ function toggleSelectionPublishMenu_(selectionId) {
       }
       renderSavedSelectionsPanel_();
       renderRegistrySelectionEditBar_();
+      if (typeof renderRegistryMapToolbarActions_ === 'function') renderRegistryMapToolbarActions_();
     }
 
 function renderSelectionPublishMenuHtml_(selectionId, options) {
@@ -880,13 +1071,23 @@ function renderSelectionPublishMenuHtml_(selectionId, options) {
       const mapRemovalSelectedCount = Math.max(0, Number(settings.mapRemovalSelectedCount) || 0);
       const mapRemovalAllVisibleSelected = !!settings.mapRemovalAllVisibleSelected;
       const open = isSelectionPublishMenuOpen_(itemId);
+      const triggerBaseClassName = String(settings.triggerBaseClassName || '').trim();
+      const triggerButtonClassName = String(settings.triggerButtonClassName || '').trim();
+      const triggerIconClassName = String(settings.triggerIconClassName || '').trim() || 'saved-selection-action-icon-svg';
       const triggerLabel = String(settings.triggerLabel || 'На карту').trim() || 'На карту';
       const triggerTitle = String(
         settings.triggerTitle || (mapRemovalMode ? 'Управление объектами на карте' : 'Отправить на карту')
       ).trim() || (mapRemovalMode ? 'Управление объектами на карте' : 'Отправить на карту');
       const wrapClassName = compact ? 'selection-publish-menu-wrap compact' : 'selection-publish-menu-wrap';
+      const triggerClassName = [
+        triggerBaseClassName || (compact ? 'saved-selection-action-button' : 'ghost'),
+        'selection-publish-trigger',
+        open ? 'is-open' : '',
+        loading ? 'is-loading' : '',
+        triggerButtonClassName
+      ].filter(Boolean).join(' ');
       const triggerContent = compact
-        ? getMapPublishIconSvgHtml_('saved-selection-action-icon-svg')
+        ? getMapPublishIconSvgHtml_(triggerIconClassName)
         : (
           `<span class="selection-publish-trigger-label">${escapeHtml_(triggerLabel)}</span>` +
           `<span class="selection-publish-trigger-caret" aria-hidden="true"></span>`
@@ -911,7 +1112,7 @@ function renderSelectionPublishMenuHtml_(selectionId, options) {
         );
       return (
         `<div class="${wrapClassName}">` +
-          `<button class="${compact ? 'saved-selection-action-button' : 'ghost'} selection-publish-trigger${open ? ' is-open' : ''}${loading ? ' is-loading' : ''}" type="button" data-toggle-selection-publish-menu="${escapeHtml_(itemId)}"${busy ? ' disabled' : ''} title="${escapeHtml_(triggerTitle)}" aria-label="${escapeHtml_(triggerTitle)}" aria-expanded="${open ? 'true' : 'false'}">` +
+          `<button class="${escapeHtml_(triggerClassName)}" type="button" data-toggle-selection-publish-menu="${escapeHtml_(itemId)}"${busy ? ' disabled' : ''} title="${escapeHtml_(triggerTitle)}" aria-label="${escapeHtml_(triggerTitle)}" aria-expanded="${open ? 'true' : 'false'}">` +
             triggerContent +
           `</button>` +
           `<div class="selection-publish-menu${open ? '' : ' hidden'}" data-selection-publish-menu="${escapeHtml_(itemId)}">` +
@@ -919,6 +1120,25 @@ function renderSelectionPublishMenuHtml_(selectionId, options) {
           `</div>` +
         `</div>`
       );
+    }
+
+function openRegistryToolbarMapPublishDraft_() {
+      if (!canCurrentUserManageMproMap_() || !isCurrentRegistryDatasetEditable_()) return;
+      if (isRegistryMapRemovalMode_()) exitRegistryMapRemovalMode_({ silent: true });
+      if (state.adminRegistryEditMode) disableAdminRegistryEditMode_();
+      closeSelectionPublishMenu_();
+      resetRegistrySelectionComposerTransientState_();
+      state.selectionComposerOpen = false;
+      state.selectionComposerSelectionId = '';
+      state.selectionComposerDraftName = '';
+      state.selectionPublishDraftOpen = true;
+      state.selectionPublishDraftSelectionId = getRegistryToolbarMapDraftId_();
+      resetSelectionPublishDraftOptions_();
+      state.selectionEditDraftAutoSync = false;
+      setRegistrySelectionEditDraftUins_(collectCurrentFilteredSelectionUins_());
+      state.currentView = 'registry';
+      renderAll_();
+      ensureMapPublishInspectorsLoaded_();
     }
 
 function syncRegistrySelectionDraftFromFilteredRows_() {
@@ -1003,6 +1223,10 @@ function switchRegistrySelectionComposerViewMode_(mode) {
     }
 
 function openRegistrySelectionPublishDraft_(selectionId) {
+      if (isRegistryToolbarMapDraftId_(selectionId)) {
+        openRegistryToolbarMapPublishDraft_();
+        return;
+      }
       const item = findSavedRegistrySelectionById_(selectionId);
       if (!item) return;
       if (!canPublishSelectionToMap_(item)) {
@@ -1237,6 +1461,7 @@ function closeRegistrySelectionPublishDraft_(options) {
       state.mapPublishInspectorsError = '';
       state.mapPublishInspectorsDivisionCode = divisionCode;
       renderRegistrySelectionEditBar_();
+      renderRegistryView_();
       return fetchMproInspectorDirectory_()
         .then(result => {
           const rows = Array.isArray(result && result.inspectorsList) ? result.inspectorsList : [];
@@ -1262,6 +1487,7 @@ function closeRegistrySelectionPublishDraft_(options) {
         .finally(() => {
           state.mapPublishInspectorsLoading = false;
           renderRegistrySelectionEditBar_();
+          renderRegistryView_();
         });
     }
 
@@ -1983,6 +2209,7 @@ function removeSavedRegistrySelectionLocally_(item) {
         state.selectionDraftSourceId = '';
       }
       clearSelectionDoneState_(targetId);
+      removeSavedSelectionPublishAssignmentsForSelection_(targetId);
       if (isCollaborativeRegistrySelection_(target)) {
         state.sharedRegistrySelections = state.sharedRegistrySelections.filter(entry => String(entry && entry.id || '').trim() !== targetId);
       } else {
@@ -1999,6 +2226,9 @@ function runRegistrySelectionScopeTransitionSaveFlow_(payload, editingItem, inpu
       if (!editingItem || sourceIsCollaborative === targetIsCollaborative) {
         if (targetIsCollaborative) {
           return runSharedRegistrySelectionSaveFlow_(payload, editingItem, input).then(async item => {
+            if (item && editingItem) {
+              moveSavedSelectionPublishAssignments_(editingItem.id, item.id);
+            }
             if (
               item &&
               editingItem &&
@@ -2017,6 +2247,7 @@ function runRegistrySelectionScopeTransitionSaveFlow_(payload, editingItem, inpu
           });
         }
         const item = upsertPersonalRegistrySelection_(payload, editingItem ? editingItem.id : '');
+        if (item && editingItem) moveSavedSelectionPublishAssignments_(editingItem.id, item.id);
         closeRegistrySelectionComposer_();
         applySavedRegistrySelection_(item.id);
         syncRegistrySelectionComposerUi_();
@@ -2026,6 +2257,7 @@ function runRegistrySelectionScopeTransitionSaveFlow_(payload, editingItem, inpu
       if (!sourceIsCollaborative && targetIsCollaborative) {
         return runSharedRegistrySelectionSaveFlow_(payload, null, input).then(item => {
           if (!item) return null;
+          moveSavedSelectionPublishAssignments_(editingItem && editingItem.id, item.id);
           removeSavedRegistrySelectionLocally_(editingItem);
           renderAll_();
           return item;
@@ -2039,6 +2271,7 @@ function runRegistrySelectionScopeTransitionSaveFlow_(payload, editingItem, inpu
         }
         removeSavedRegistrySelectionLocally_(editingItem);
         const item = upsertPersonalRegistrySelection_(payload, '');
+        if (item && editingItem) moveSavedSelectionPublishAssignments_(editingItem.id, item.id);
         closeRegistrySelectionComposer_();
         applySavedRegistrySelection_(item.id);
         syncRegistrySelectionComposerUi_();
@@ -2224,6 +2457,7 @@ function applySavedRegistrySelection_(id) {
       if (!selectionId) return Promise.resolve(null);
       if (String(state.selectionLoadingId || '') === selectionId) return Promise.resolve(item);
       state.selectionLoadingId = selectionId;
+      resetSelectionPublishDraftOptions_();
       renderSavedSelectionsPanel_();
       if (state.selectionComposerOpen) closeRegistrySelectionComposer_();
       if (state.selectionPublishDraftOpen) resetRegistrySelectionPublishDraftState_();
@@ -2249,8 +2483,14 @@ function applySavedRegistrySelection_(id) {
       syncRegistryBulkUinUi_();
       applyObjectFilters_();
       setActiveRegistrySelectionBaseRowIndexes_(state.filteredRowIndexes);
+      syncSavedSelectionPublishAssignmentsFromMapOverlay_(selectionId, {
+        rowIndexes: state.activeRegistrySelectionBaseRowIndexes
+      });
       ensureObjectSelection_();
       persistRegistrySessionState_();
+      if (canCurrentUserManageMproMap_() && isCurrentRegistryDatasetEditable_()) {
+        ensureMapPublishInspectorsLoaded_();
+      }
       return refreshActiveSharedSelectionWorkState_({ silent: true, skipRender: true })
         .then(() => item)
         .finally(() => {

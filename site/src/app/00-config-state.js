@@ -52,6 +52,7 @@
     const REGISTRY_PERSONAL_SELECTIONS_STORAGE_KEY = 'smart_filter_shell_registry_personal_selections';
     const LEGACY_REGISTRY_SELECTIONS_STORAGE_KEY = 'smart_filter_shell_registry_selections';
     const REGISTRY_SELECTION_PROGRESS_STORAGE_PREFIX = 'smart_filter_shell_registry_progress:';
+    const REGISTRY_SELECTION_PUBLISH_ASSIGNMENTS_STORAGE_PREFIX = 'smart_filter_shell_registry_publish_assignments:';
     const CHANGE_HISTORY_SESSION_STORAGE_KEY = 'smart_filter_shell_change_history';
     const GOOGLE_SYNC_LAST_AT_STORAGE_KEY = 'smart_filter_shell_google_sync_last_at';
     const SHELL_BOOTSTRAP_CACHE_STORAGE_KEY = 'smart_filter_shell_bootstrap_cache_v4';
@@ -853,6 +854,7 @@
       registryFacetQueries: buildEmptyRegistryFacetQueries_(),
       personalRegistrySelections: [],
       sharedRegistrySelections: [],
+      savedSelectionPublishAssignmentsById: {},
       activeRegistrySelectionId: '',
       activeRegistrySelectionBaseRowIndexes: null,
       selectionLoadingId: '',

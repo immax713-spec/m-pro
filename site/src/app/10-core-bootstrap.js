@@ -87,6 +87,8 @@
     }
 
     let siteBootstrapStarted_ = false;
+    let siteMproSyncBroadcastChannel_ = null;
+    let lastExternalMproSyncSignalAt_ = 0;
 
     function startSiteBootstrap_() {
       if (siteBootstrapStarted_) return;
@@ -366,6 +368,7 @@
       window.addEventListener('online', () => scheduleSilentDataWakeRefresh_({ delayMs: 0 }));
       window.addEventListener('resize', () => scheduleRegistryFloatingMenuPositionUpdate_());
       window.addEventListener('scroll', () => scheduleRegistryFloatingMenuPositionUpdate_(), true);
+      initSiteExternalSyncBridge_();
       window.addEventListener('error', evt => {
         reportRuntimeError_(
           evt && evt.error ? evt.error : (evt && evt.message ? evt.message : 'Неожиданная ошибка интерфейса'),
@@ -1168,6 +1171,7 @@
         ? mergeSessionAccessMeta_(normalizedUser, state.currentUser)
         : normalizedUser;
       state.currentUser = effectiveUser ? { ...effectiveUser } : null;
+      state.savedSelectionPublishAssignmentsById = loadSavedSelectionPublishAssignments_();
       state.sessionToken = nextToken;
       state.sessionExpiresAt = String(expiresAt || '').trim();
       state.selectionDoneById = loadSelectionDoneState_();
@@ -1206,6 +1210,7 @@
       state.selectionPublishInspectorNamesByObjectKey = {};
       state.selectionPublishRowInspectorPickerKey = '';
       state.selectionPublishExtraVisits = '0';
+      state.savedSelectionPublishAssignmentsById = {};
       state.mapPublishInspectors = [];
       state.mapPublishInspectorsLoaded = false;
       state.mapPublishInspectorsLoading = false;
@@ -1794,6 +1799,9 @@ function applyMonitoringOverlayPayload_(payload) {
       });
       restoreActiveRegistrySelectionState_();
       applyObjectFilters_();
+      if (typeof syncSavedSelectionPublishAssignmentsFromMapOverlay_ === 'function') {
+        syncSavedSelectionPublishAssignmentsFromMapOverlay_();
+      }
       syncObjectTabsState_();
       ensureObjectSelection_();
       syncSharedSelectionWorkStateForActiveSelection_();
@@ -1960,6 +1968,44 @@ function buildCurrentDataRefreshOptions_(options) {
         hasInteractiveEditingState_() ||
         (!settings.ignoreFocusedControl && hasFocusedInteractiveControl_())
       );
+    }
+
+    function handleExternalMproSyncSignal_(rawSignal, reason) {
+      if (!rawSignal) return;
+      let payload = rawSignal;
+      if (typeof rawSignal === 'string') {
+        try {
+          payload = JSON.parse(rawSignal);
+        } catch (e) {
+          payload = { at: Date.now() };
+        }
+      }
+      if (!payload || typeof payload !== 'object') return;
+      if (String(payload.source || '').trim() === 'site') return;
+      const signalAt = Math.max(0, Number(payload.at) || 0);
+      if (signalAt && signalAt <= lastExternalMproSyncSignalAt_) return;
+      if (signalAt) lastExternalMproSyncSignalAt_ = signalAt;
+      if (!state.sessionToken) return;
+      scheduleSilentDataWakeRefresh_({
+        delayMs: String(reason || '').trim() === 'broadcast-sync' ? 120 : 180
+      });
+    }
+
+    function initSiteExternalSyncBridge_() {
+      window.addEventListener('storage', event => {
+        if (!event || event.key !== MPRO_SYNC_SIGNAL_STORAGE_KEY || !event.newValue) return;
+        handleExternalMproSyncSignal_(event.newValue, 'storage-sync');
+      });
+      try {
+        if ('BroadcastChannel' in window) {
+          siteMproSyncBroadcastChannel_ = new BroadcastChannel('mpro-sync');
+          siteMproSyncBroadcastChannel_.addEventListener('message', event => {
+            handleExternalMproSyncSignal_(event && event.data, 'broadcast-sync');
+          });
+        }
+      } catch (e) {
+        siteMproSyncBroadcastChannel_ = null;
+      }
     }
 
     function triggerSilentDataRefresh_(options) {

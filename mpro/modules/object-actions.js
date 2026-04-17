@@ -216,6 +216,13 @@ function openObjectDetails(objectId) {
                 .then((response) => {
                     if (response.success) {
                         showNotification('✅ ' + (response.message || 'Действие выполнено'), 'success');
+                        if (typeof notifyExternalAppsDataChanged_ === 'function') {
+                            notifyExternalAppsDataChanged_({
+                                event: 'object-action',
+                                action,
+                                objectId: String(objectId || '').trim()
+                            });
+                        }
                         if (onSuccess) onSuccess(response);
                         if (action === 'entry' || action === 'exit' || action === 'cancelEntry' || action === 'denyAccess') {
                             clearObjectFactState_(objectId);
@@ -1937,6 +1944,11 @@ function openObjectDetails(objectId) {
                     'success'
                 );
 
+                if (typeof notifyExternalAppsDataChanged_ === 'function') {
+                    notifyExternalAppsDataChanged_({
+                        event: 'archive-completed'
+                    });
+                }
                 await loadDataWithRetry_({ attempts: 2, retryDelayMs: 600, reason: 'archive-completed' });
             } catch (error) {
                 showNotification('❌ ' + (error?.message || 'Ошибка очистки карты'), 'error');

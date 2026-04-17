@@ -38,6 +38,9 @@ function loadData_(options) {
           state.registryBulkDraftText = preservedBulkDraftText;
           state.registryBulkOpen = preservedBulkOpen;
           applyObjectFilters_();
+          if (typeof syncSavedSelectionPublishAssignmentsFromMapOverlay_ === 'function') {
+            syncSavedSelectionPublishAssignmentsFromMapOverlay_();
+          }
           if (preservedBulkUinOrder.length) {
             state.filteredRowIndexes = sortRegistryRowIndexesByBulkUinOrder_(
               state.filteredRowIndexes,
@@ -260,7 +263,13 @@ function getVisibleRegistryColumnDefs_() {
       const visible = new Set(normalizeStoredRegistryVisibleColumnKeys_(state.registryVisibleColumnKeys));
       const defs = REGISTRY_COLUMN_DEFS.filter(def => visible.has(String(def && def.key || '').trim()));
       if (
-        isRegistrySelectionEditing_() &&
+        (
+          isRegistrySelectionEditing_() ||
+          (
+            hasActiveSavedSelection_() &&
+            !isRegistryMapRemovalMode_()
+          )
+        ) &&
         canCurrentUserManageMproMap_() &&
         isCurrentRegistryDatasetEditable_() &&
         !defs.some(def => String(def && def.key || '').trim() === 'inspector')
@@ -2002,6 +2011,7 @@ function buildRegistrySelectionPublishVisitRequests_(publishContext) {
       const context = publishContext && typeof publishContext === 'object' ? publishContext : null;
       if (!context || !Array.isArray(context.objects) || !context.objects.length) return [];
       const divisionCode = normalizeMproDivisionCode_(context.divisionCode || getCurrentUserMproDivisionCode_() || '') || 'map';
+      const fallbackInspectorNames = getSelectionPublishInspectorNames_();
       let hasExplicitAssignments = false;
       const requests = [];
       context.objects.forEach(item => {
@@ -2015,9 +2025,10 @@ function buildRegistrySelectionPublishVisitRequests_(publishContext) {
         const inspectorNames = typeof getSelectionPublishInspectorNamesForObject_ === 'function'
           ? getSelectionPublishInspectorNamesForObject_(objectId)
           : [];
-        if (inspectorNames.length) {
+        const resolvedInspectorNames = inspectorNames.length ? inspectorNames : fallbackInspectorNames;
+        if (resolvedInspectorNames.length) {
           hasExplicitAssignments = true;
-          inspectorNames.forEach(inspectorName => {
+          resolvedInspectorNames.forEach(inspectorName => {
             requests.push({
               ...baseRequest,
               inspectorName: String(inspectorName || '').trim()
@@ -2178,6 +2189,67 @@ async function publishRegistrySelectionById_(selectionId, requestedMode) {
         }
         renderSavedSelectionsPanel_();
         renderRegistrySelectionEditBar_();
+      }
+    }
+
+async function publishRegistryToolbarDraftToMap_() {
+      const draftId = getRegistrySelectionEditTargetId_();
+      if (!isRegistrySelectionPublishDraftOpen_() || !isRegistryToolbarMapDraftId_(draftId)) return;
+      if (!canCurrentUserManageMproMap_() || !isCurrentRegistryDatasetEditable_()) return;
+      if (state.selectionPublishingId || state.selectionLoadingId || state.selectionRemovingId || state.loading) return;
+      const publishContext = getRegistrySelectionPublishContext_(draftId);
+      const rowIndexes = Array.isArray(publishContext && publishContext.rowIndexes) ? publishContext.rowIndexes : [];
+      if (!rowIndexes.length) {
+        showCopyToast_('Выберите объекты в реестре для публикации на карту', true);
+        return;
+      }
+      const publishToken = getRegistryToolbarMapDraftId_();
+      clearRuntimeError_();
+      closeSelectionPublishMenu_();
+      state.selectionPublishingId = publishToken;
+      renderRegistrySelectionEditBar_();
+      if (typeof renderRegistryMapToolbarActions_ === 'function') renderRegistryMapToolbarActions_();
+      try {
+        const visitRequests = buildRegistrySelectionPublishVisitRequests_(publishContext);
+        const result = await publishSelectionToMpro_({
+          id: publishToken,
+          name: 'Реестр объектов'
+        }, rowIndexes, 'append', {
+          divisionCode: normalizeMproDivisionCode_(publishContext && publishContext.divisionCode || ''),
+          visitRequests
+        });
+        const resolved = Number(result && result.resolvedObjects) || 0;
+        if (resolved > 0) {
+          notifyMproDataChanged_({
+            event: 'points-published',
+            selectionId: publishToken,
+            publishMode: 'append'
+          });
+          resetRegistrySelectionPublishDraftState_();
+          await loadData_(buildCurrentDataRefreshOptions_({
+            silent: true,
+            preserveView: 'registry'
+          }));
+        }
+        showCopyToast_(
+          resolved > 0
+            ? buildSelectionPublishToastText_(result)
+            : 'Не удалось подобрать объекты для публикации',
+          resolved <= 0
+        );
+      } catch (err) {
+        if (isUnauthorizedError_(err)) {
+          handleUnauthorized_();
+          return;
+        }
+        showCopyToast_('Не удалось отправить объекты из реестра на карту', true);
+        reportRuntimeError_(err, 'Ошибка публикации реестра на карту');
+      } finally {
+        if (String(state.selectionPublishingId || '').trim() === publishToken) {
+          state.selectionPublishingId = '';
+        }
+        renderRegistrySelectionEditBar_();
+        if (typeof renderRegistryMapToolbarActions_ === 'function') renderRegistryMapToolbarActions_();
       }
     }
 

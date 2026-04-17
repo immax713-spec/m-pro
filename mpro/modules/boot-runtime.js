@@ -419,6 +419,23 @@
             requestImmediateExternalRefresh_(reason, payload.at);
         }
 
+        function notifyExternalAppsDataChanged_(payload) {
+            const detail = payload && typeof payload === 'object' ? payload : {};
+            const signal = {
+                at: Date.now(),
+                source: 'mpro',
+                event: String(detail.event || 'object-updated').trim() || 'object-updated',
+                action: String(detail.action || '').trim(),
+                objectId: String(detail.objectId || '').trim(),
+                publishMode: String(detail.publishMode || '').trim()
+            };
+            try {
+                window.localStorage.setItem(MPRO_SYNC_SIGNAL_STORAGE_KEY, JSON.stringify(signal));
+            } catch (_) {
+                // no-op
+            }
+        }
+
         function initExternalSyncBridge_() {
             window.addEventListener('storage', (event) => {
                 if (!event || event.key !== MPRO_SYNC_SIGNAL_STORAGE_KEY || !event.newValue) return;
