@@ -10,7 +10,7 @@
 
   const deployConfig = {
     ...currentDeployConfig,
-    assetVersion: '20260417l',
+    assetVersion: '20260417m',
     supabaseUrl: 'https://vsdfxrnkxohsuewyvpih.supabase.co',
     supabaseAnonKey: 'sb_publishable_7deVw5OluDBmYalvdq_13Q_yKrCDT5H'
   };
