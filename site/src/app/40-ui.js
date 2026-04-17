@@ -2131,6 +2131,12 @@ function renderAdminRegistryUi_() {
                 : ''
             )
         );
+      const headerTitleValue = currentItem
+        ? (currentItem.name || 'Выборка')
+        : (isMapRemovalEditing ? 'Снятие с карты' : 'Выборка');
+      const headerInlineTitle = (!isMapRemovalEditing && !isPublishDraftEditing)
+        ? `Проект: ${headerTitleValue}`
+        : headerTitleValue;
       const headerTitleHtml = isComposerEditing
         ? (
           `<div id="selectionCompose" class="saved-selection-compose registry-selection-compose-inline">` +
@@ -2156,8 +2162,8 @@ function renderAdminRegistryUi_() {
         : (
           `<div class="registry-selection-edit-title-row">` +
             `<div class="registry-selection-edit-title-meta">` +
-              `${headerKickerHtml}` +
-              `<span class="registry-selection-edit-title">${escapeHtml_(currentItem ? (currentItem.name || 'Выборка') : (isMapRemovalEditing ? 'Снятие с карты' : 'Выборка'))}</span>` +
+              `${(!isMapRemovalEditing && !isPublishDraftEditing) ? '' : headerKickerHtml}` +
+              `<span class="registry-selection-edit-title">${escapeHtml_(headerInlineTitle)}</span>` +
             `</div>` +
             `${headerModeChipHtml}` +
           `</div>`
