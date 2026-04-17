@@ -2381,7 +2381,7 @@ function renderAdminRegistryUi_() {
         : [];
       if (isComposerEditing && composerRegistryPublishEnabled && Array.isArray(toolButtons)) {
         toolButtons.splice(Math.max(0, toolButtons.length - 1), 0,
-          `<button id="btnPublishSelectionComposer" class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--take" type="button"${count && !isPublishingComposer ? '' : ' disabled'}>${escapeHtml_(isPublishingComposer ? 'Р”РѕР±Р°РІР»СЏСЋ...' : 'РќР° РєР°СЂС‚Сѓ')}</button>`
+          `<button id="btnPublishSelectionComposer" class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--take" type="button"${count && !isPublishingComposer ? '' : ' disabled'}>${escapeHtml_(isPublishingComposer ? 'Добавляю...' : 'На карту')}</button>`
         );
       }
       const publishPlanHtml = '';
