@@ -660,6 +660,25 @@
       }));
   }
 
+  function normalizePublishVisitRequests(bundle, rawRequests) {
+    return (Array.isArray(rawRequests) ? rawRequests : [])
+      .map(item => {
+        const rowIndex = Number(item && item.rowIndex);
+        const normalizedRowIndex = Number.isFinite(rowIndex) && rowIndex >= 0 ? Math.floor(rowIndex) : -1;
+        const objectId = normalizeObjectId(
+          item && item.objectId ||
+          (normalizedRowIndex >= 0 && bundle && bundle.objectIds ? bundle.objectIds[normalizedRowIndex] : '')
+        );
+        return {
+          rowIndex: normalizedRowIndex,
+          objectId,
+          divisionCode: normalizeString(item && item.divisionCode),
+          inspectorName: normalizeString(item && item.inspectorName)
+        };
+      })
+      .filter(item => item.objectId);
+  }
+
   async function auth(options) {
     const password = normalizeString(options && options.password);
     const remember = !!(options && options.remember);
@@ -827,6 +846,16 @@
     return result && typeof result === 'object' ? result : { rows: [] };
   }
 
+  async function getSmartFilterShellMproInspectorDirectory(options) {
+    await requireSession(options && options.sessionToken);
+    const result = await invokeRpc(RPC.getMproInspectorDirectory, {
+      p_session_token: normalizeString(options && options.sessionToken)
+    });
+    return result && typeof result === 'object'
+      ? result
+      : { inspectorsList: [], inspectorsConfig: {}, inspectorsHomes: {} };
+  }
+
   async function createSmartFilterShellLabStudy(options) {
     await requireSession(options && options.sessionToken);
     return invokeRpc(RPC.createLabStudy, {
@@ -870,6 +899,7 @@
       skipRemoteCheck: true
     });
     const resolved = resolveObjectIdsFromRowIndexes(bundle, options && options.rowIndexes);
+    const visitRequests = normalizePublishVisitRequests(bundle, options && options.visitRequests);
     const result = await invokeRpc(RPC.publishSelectionToMpro, {
       p_session_token: normalizeString(options && options.sessionToken),
       p_payload: {
@@ -886,8 +916,21 @@
           ) ||
           normalizeString(session && session.user && session.user.division) ||
           'map',
+        divisionCode:
+          normalizeString(options && options.divisionCode) ||
+          normalizeString(options && options.targetDivision) ||
+          normalizeString(
+            session &&
+            session.user &&
+            session.user.apps &&
+            session.user.apps.mpro &&
+            session.user.apps.mpro.division
+          ) ||
+          normalizeString(session && session.user && session.user.division) ||
+          'map',
         mode: normalizeString(options && options.mode) || 'append',
-        objectIds: resolved.map(item => item.objectId)
+        objectIds: resolved.map(item => item.objectId),
+        visitRequests
       }
     });
     return result && typeof result === 'object'
@@ -911,7 +954,11 @@
     const result = await invokeRpc(RPC.removeRegistryObjectsFromMproMap, {
       p_session_token: normalizeString(options && options.sessionToken),
       p_payload: {
-        objectIds: resolved.map(item => item.objectId)
+        objectIds: resolved.map(item => item.objectId),
+        divisionCode: normalizeString(options && options.divisionCode),
+        visitIds: (Array.isArray(options && options.visitIds) ? options.visitIds : [])
+          .map(value => normalizeString(value))
+          .filter(Boolean)
       }
     });
     return result && typeof result === 'object'
@@ -1018,6 +1065,7 @@
       getSmartFilterShellObjectMonitoringHistory,
       getSmartFilterShellObjectLabStudiesHistory,
       getSmartFilterShellLabStudyInspectors,
+      getSmartFilterShellMproInspectorDirectory,
       createSmartFilterShellLabStudy,
       getSmartFilterShellSharedSelections,
       getSmartFilterShellSharedSelectionWorkState,

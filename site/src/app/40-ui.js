@@ -347,6 +347,8 @@ function getRegistryFloatingMenu_() {
 function renderRegistryFacetControlFast_(facetKey) {
       const def = getRegistryFacetDef_(facetKey);
       if (!def) return;
+      const wrap = document.querySelector(`[data-registry-filter="${String(def.key || '').trim()}"]`);
+      const titleNode = wrap ? wrap.querySelector('[data-role="registry-filter-title"]') : null;
       const button = el(def.buttonId);
       const menu = getRegistryFloatingMenu_();
       const monitoringDateFacet = isMonitoringDateFacetDef_(def);
@@ -374,6 +376,10 @@ function renderRegistryFacetControlFast_(facetKey) {
           ].join('\u0001')
         : [String(def.key || ''), serializeRegistryFacetSelection_(current, def)].join('\u0001');
       state.registryFacetFilters[def.key] = current;
+      const titleText = formatRegistryFacetHeaderText_(def);
+      if (titleNode && titleNode.textContent !== titleText) {
+        titleNode.textContent = titleText;
+      }
       if (button) {
         const buttonTitle = isActive
           ? formatRegistryFacetActiveChipText_(def, current)
@@ -734,7 +740,7 @@ function buildRegistryFilterHeaderHtml_(filterKey) {
       return (
         `<div class="registry-filter registry-filter--${escapeHtml_(def.key)}" data-registry-filter="${escapeHtml_(def.key)}">` +
           `<div class="registry-column-title-row registry-column-title-row--filter">` +
-            `<span class="registry-column-title registry-filter-title" data-role="registry-filter-title">${escapeHtml_(def.title)}</span>` +
+            `<span class="registry-column-title registry-filter-title" data-role="registry-filter-title">${escapeHtml_(formatRegistryFacetHeaderText_(def))}</span>` +
             `<button id="${escapeHtml_(def.buttonId)}" class="registry-filter-trigger registry-filter-trigger--compact" type="button" data-registry-filter-trigger="${escapeHtml_(def.key)}" aria-expanded="false" aria-haspopup="listbox" title="${escapeHtml_(`Фильтр по ${def.title}`)}" aria-label="${escapeHtml_(`Фильтр по ${def.title}`)}">` +
               `${getRegistryFilterIconSvgHtml_()}` +
             `</button>` +
@@ -825,6 +831,17 @@ function formatRegistryFacetActiveChipText_(def, selection) {
       return `${def.title}: ${current[0]}, ${current[1]} +${current.length - 2}`;
     }
 
+    function formatRegistryFacetHeaderText_(def) {
+      if (!def) return '';
+      if (String(def.key || '').trim() === 'mapPlacement') {
+        const count = typeof getRegistryMapPlacementFacetCountFast_ === 'function'
+          ? Math.max(0, Number(getRegistryMapPlacementFacetCountFast_()) || 0)
+          : 0;
+        return `${String(def.title || 'На карте').trim() || 'На карте'}: ${count ? count : '-'}`;
+      }
+      return String(def.title || '').trim();
+    }
+
 function buildRegistryTableStructureSignature_(visibleDefs) {
       return (Array.isArray(visibleDefs) ? visibleDefs : [])
         .map(def => [String(def && def.key || ''), String(def && def.width || ''), String(def && def.summaryKey || '')].join(':'))
@@ -876,6 +893,9 @@ function buildRegistryRowsRenderSignature_(rowIndexes, viewState) {
             })
             .join('|')
         : '';
+      const publishAssignments = typeof getSelectionPublishInspectorAssignmentsSignature_ === 'function'
+        ? String(getSelectionPublishInspectorAssignmentsSignature_() || '')
+        : '';
       return [
         normalizeRegistryDataMode_(state.registryDataMode),
         String(state.lastDataLoadedAt || 0),
@@ -895,6 +915,7 @@ function buildRegistryRowsRenderSignature_(rowIndexes, viewState) {
         sharedItems,
         sharedPending,
         sharedBatch,
+        publishAssignments,
         String(state.registryMapRemovalPendingAction || ''),
         String(state.sharedSelectionWorkBatchPendingAction || '')
       ].join('::');
@@ -1210,6 +1231,102 @@ function isRegistryCenterAlignedColumnKey_(key) {
       ].includes(normalized);
     }
 
+function buildRegistryInspectorPreviewText_(items) {
+      const names = Array.isArray(items)
+        ? items.map(value => String(value || '').trim()).filter(Boolean)
+        : [];
+      if (!names.length) return '';
+      const preview = names.slice(0, 2).join(', ');
+      return names.length > 2 ? `${preview} +${names.length - 2}` : preview;
+    }
+
+function getRegistryRowCurrentInspectorNames_(rowIndex) {
+      const namesFromMap = Array.from(new Set(
+        getRegistryMapOverlayEntriesForRow_(rowIndex)
+          .map(entry => String(entry && (entry.inspector || entry.inspectorName) || '').trim())
+          .filter(Boolean)
+      ));
+      if (namesFromMap.length) return namesFromMap;
+      const summaryInspector = String(getRegistrySummaryValue_(rowIndex, 'inspector') || '').trim();
+      return summaryInspector ? [summaryInspector] : [];
+    }
+
+function renderRegistryPublishInspectorCellHtml_(rowIndex, rowState) {
+      const summary = rowState && rowState.summary ? rowState.summary : {};
+      const objectId = String(summary.objectId || getRegistryRowObjectId_(rowIndex) || '').trim();
+      const selectedInspectorNames = objectId && typeof getSelectionPublishInspectorNamesForObject_ === 'function'
+        ? getSelectionPublishInspectorNamesForObject_(objectId)
+        : [];
+      const previewText = buildRegistryInspectorPreviewText_(selectedInspectorNames);
+      const canAssign = !!(
+        rowState &&
+        rowState.isSelectionEditing &&
+        rowState.isSelectionMember &&
+        canCurrentUserManageMproMap_() &&
+        isCurrentRegistryDatasetEditable_() &&
+        objectId
+      );
+      if (!canAssign) {
+        const currentNames = selectedInspectorNames.length ? selectedInspectorNames : getRegistryRowCurrentInspectorNames_(rowIndex);
+        const text = buildRegistryInspectorPreviewText_(currentNames);
+        return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text${text ? '' : ' is-empty'}" title="${escapeHtml_(text || 'Не назначено')}">${escapeHtml_(text || '—')}</span></td>`;
+      }
+      if (state.mapPublishInspectorsLoading) {
+        return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text">Загрузка...</span></td>`;
+      }
+      if (state.mapPublishInspectorsError) {
+        return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text registry-row-publish-inspector-text--error" title="${escapeHtml_(state.mapPublishInspectorsError)}">${escapeHtml_(state.mapPublishInspectorsError)}</span></td>`;
+      }
+      const inspectors = typeof getCurrentDivisionMapPublishInspectors_ === 'function'
+        ? getCurrentDivisionMapPublishInspectors_()
+        : [];
+      if (!inspectors.length) {
+        return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text is-empty">—</span></td>`;
+      }
+      const pickerOpen = typeof isSelectionPublishRowInspectorPickerOpen_ === 'function'
+        ? isSelectionPublishRowInspectorPickerOpen_(objectId)
+        : false;
+      const triggerLabel = previewText || 'Выбрать';
+      return (
+        `<td class="registry-cell-center registry-row-publish-inspector-cell-td">` +
+          `<div class="registry-row-publish-inspector-cell" data-row-publish-inspector-cell="${escapeHtml_(objectId)}">` +
+            `<div class="registry-selection-publish-picker${pickerOpen ? ' is-open' : ''}">` +
+              `<button class="registry-selection-publish-picker-trigger registry-row-publish-inspector-trigger${pickerOpen ? ' is-open' : ''}" type="button" data-row-publish-inspector-toggle="${escapeHtml_(objectId)}" aria-expanded="${pickerOpen ? 'true' : 'false'}">` +
+                `<span class="registry-selection-publish-picker-trigger-main">` +
+                  `<span class="registry-selection-publish-picker-trigger-label">${escapeHtml_(triggerLabel)}</span>` +
+                `</span>` +
+                `<span class="registry-selection-publish-picker-caret" aria-hidden="true"></span>` +
+              `</button>` +
+              (
+                pickerOpen
+                  ? (
+                    `<div class="registry-selection-publish-picker-popover registry-row-publish-inspector-popover">` +
+                      `<div class="registry-selection-publish-picker-head">` +
+                        `<div class="registry-selection-publish-picker-title">Инспекторы</div>` +
+                        `<button class="registry-selection-publish-picker-close" type="button" data-row-publish-inspector-close="1">Готово</button>` +
+                      `</div>` +
+                      `<div class="registry-selection-publish-picker-list">` +
+                        inspectors.map(item => {
+                          const inspectorName = String(item && item.name || '').trim();
+                          const active = selectedInspectorNames.includes(inspectorName);
+                          return (
+                            `<label class="registry-selection-publish-picker-option${active ? ' is-active' : ''}" data-row-publish-inspector-option="${escapeHtml_(objectId)}" data-row-publish-inspector-name="${escapeHtml_(inspectorName)}">` +
+                              `<input class="registry-selection-publish-picker-checkbox" type="checkbox"${active ? ' checked' : ''} tabindex="-1">` +
+                              `<span class="registry-selection-publish-picker-option-name">${escapeHtml_(inspectorName)}</span>` +
+                            `</label>`
+                          );
+                        }).join('') +
+                      `</div>` +
+                    `</div>`
+                  )
+                  : ''
+              ) +
+            `</div>` +
+          `</div>` +
+        `</td>`
+      );
+    }
+
 function renderRegistryRowCellHtml_(rowIndex, def, context) {
       const rowState = context || {};
       const summary = rowState.summary || {};
@@ -1233,6 +1350,9 @@ function renderRegistryRowCellHtml_(rowIndex, def, context) {
       }
       if (def.key === 'monitoringDate') {
         return `<td class="registry-cell-center">${renderRegistryMonitoringDateCellHtml_(summary)}</td>`;
+      }
+      if (def.key === 'inspector') {
+        return renderRegistryPublishInspectorCellHtml_(rowIndex, rowState);
       }
       if (def.key === 'yandexDisk') {
         return `<td class="registry-cell-center">${renderRegistryActionButtonCellHtml_(summary.yandexDiskUrl, 'Я.Диск', 'Открыть Я.Диск')}</td>`;
@@ -1653,6 +1773,332 @@ function renderAdminRegistryUi_() {
       );
     }
 
+    function renderRegistrySelectionPublishPlanHtmlLegacy_(publishContext) {
+      const context = publishContext && typeof publishContext === 'object' ? publishContext : null;
+      if (!context) return '';
+      const rawDivisionValue = typeof getCurrentUserMproDivisionValue_ === 'function'
+        ? getCurrentUserMproDivisionValue_()
+        : '';
+      const divisionCode = normalizeMproDivisionCode_(context.divisionCode || rawDivisionValue || '');
+      const divisionLabel = getMproDivisionLabel_(divisionCode || rawDivisionValue || '') || 'Без division';
+      const inspectors = getCurrentDivisionMapPublishInspectors_();
+      const selectedInspectorNames = getSelectionPublishInspectorNames_();
+      const assignedVisitsCount = getSelectionPublishAssignedVisitCount_();
+      const inspectorPickerOpen = isSelectionPublishInspectorPickerOpen_();
+      const selectionPublishSingleInspectorMode = !context.isSingleObject;
+      const selectedInspectorPreview = selectedInspectorNames.length
+        ? `${selectedInspectorNames.slice(0, 2).join(', ')}${selectedInspectorNames.length > 2 ? ` +${selectedInspectorNames.length - 2}` : ''}`
+        : 'Можно выбрать сразу нескольких инспекторов.';
+      const existingInspectors = Array.from(new Set(
+        (Array.isArray(context.currentDivisionEntries) ? context.currentDivisionEntries : [])
+          .map(entry => String(entry && entry.inspector || '').trim())
+          .filter(Boolean)
+      ));
+      const headerSummaryHtml = (
+        `<div class="registry-selection-publish-summary">` +
+          `<span class="registry-selection-publish-summary-chip">division: ${escapeHtml_(divisionLabel)}</span>` +
+          (
+            !context.isSingleObject
+              ? `<span class="registry-selection-publish-summary-chip">выбрано объектов: ${escapeHtml_(String(context.uniqueObjectCount || 0))}</span>`
+              : (
+                context.primaryObject && context.primaryObject.summary && context.primaryObject.summary.name
+                  ? `<span class="registry-selection-publish-summary-chip">${escapeHtml_(String(context.primaryObject.summary.name || '').trim())}</span>`
+                  : ''
+              )
+          ) +
+          `<span class="registry-selection-publish-summary-chip">${escapeHtml_(context.isSingleObject ? `уже выездов на карте: ${String(context.currentDivisionVisitCount || 0)}` : `точек на карте: ${String(context.selectedOnMapCount || 0)}`)}</span>` +
+        `</div>`
+      );
+      if (!context.isSingleObject && !context.uniqueObjectCount) return '';
+      const existingVisitsNote = context.currentDivisionVisitCount
+        ? (
+          existingInspectors.length
+            ? `Уже есть выезды в этом division: ${context.currentDivisionVisitCount}. Инспекторы: ${existingInspectors.join(', ')}.`
+            : `Уже есть выезды в этом division: ${context.currentDivisionVisitCount}.`
+        )
+        : 'В текущем division эта точка еще не публиковалась.';
+      const pickerTriggerLabel = selectedInspectorNames.length
+        ? `Выбрано инспекторов: ${selectedInspectorNames.length}`
+        : 'Выбрать инспекторов';
+      const inspectorsHtml = state.mapPublishInspectorsLoading
+        ? `<div class="registry-selection-publish-note">Загружаем список инспекторов division...</div>`
+        : state.mapPublishInspectorsError
+          ? `<div class="registry-selection-publish-note registry-selection-publish-note--error">${escapeHtml_(state.mapPublishInspectorsError)}</div>`
+          : inspectors.length
+            ? (
+              `<div class="registry-selection-publish-picker${inspectorPickerOpen ? ' is-open' : ''}">` +
+                `<button class="registry-selection-publish-picker-trigger${inspectorPickerOpen ? ' is-open' : ''}" type="button" data-selection-publish-picker-toggle="1" aria-expanded="${inspectorPickerOpen ? 'true' : 'false'}">` +
+                  `<span class="registry-selection-publish-picker-trigger-main">` +
+                    `<span class="registry-selection-publish-picker-trigger-label">${escapeHtml_(pickerTriggerLabel)}</span>` +
+                    (
+                      selectedInspectorNames.length
+                        ? `<span class="registry-selection-publish-picker-trigger-meta">${escapeHtml_(selectedInspectorPreview)}</span>`
+                        : ''
+                    ) +
+                  `</span>` +
+                  `<span class="registry-selection-publish-picker-caret" aria-hidden="true"></span>` +
+                `</button>` +
+                (
+                  inspectorPickerOpen
+                    ? (
+                      `<div class="registry-selection-publish-picker-popover">` +
+                        `<div class="registry-selection-publish-picker-head">` +
+                          `<div class="registry-selection-publish-picker-title">Инспекторы «${escapeHtml_(divisionLabel)}»</div>` +
+                          `<button class="registry-selection-publish-picker-close" type="button" data-selection-publish-picker-close="1">Готово</button>` +
+                        `</div>` +
+                        `<div class="registry-selection-publish-picker-list">` +
+                          inspectors.map(item => {
+                            const inspectorName = String(item && item.name || '').trim();
+                            const active = selectedInspectorNames.includes(inspectorName);
+                            return (
+                              `<label class="registry-selection-publish-picker-option${active ? ' is-active' : ''}">` +
+                                `<input class="registry-selection-publish-picker-checkbox" type="checkbox"${active ? ' checked' : ''} data-selection-publish-inspector-checkbox="${escapeHtml_(inspectorName)}">` +
+                                `<span class="registry-selection-publish-picker-option-name">${escapeHtml_(inspectorName)}</span>` +
+                              `</label>`
+                            );
+                          }).join('') +
+                        `</div>` +
+                      `</div>`
+                    )
+                    : ''
+                ) +
+              `</div>`
+            )
+            : `<div class="registry-selection-publish-note">В этом division не найдено инспекторов для назначения.</div>`;
+      return (
+        `<div class="registry-selection-publish-plan">` +
+          headerSummaryHtml +
+          `<div class="registry-selection-publish-grid">` +
+            `<div class="registry-selection-publish-field">` +
+              `<div class="registry-selection-publish-label">Назначенные инспекторы</div>` +
+              `${inspectorsHtml}` +
+            `</div>` +
+            `<label class="registry-selection-publish-field">` +
+              `<span class="registry-selection-publish-label">Еще выездов без назначения</span>` +
+              `<input class="registry-selection-publish-number" type="number" min="0" step="1" inputmode="numeric" value="${escapeHtml_(String(state.selectionPublishExtraVisits == null ? '' : state.selectionPublishExtraVisits))}" placeholder="0" data-selection-publish-extra-visits="1">` +
+            `</label>` +
+          `</div>` +
+          `<div class="registry-selection-publish-note">` +
+            (
+              totalVisits
+                ? `Будет создано дополнительных выездов: ${totalVisits}.`
+                : ''
+            ) +
+          `</div>` +
+        `</div>`
+      );
+    }
+
+    function renderRegistrySelectionPublishPlanHtml_(publishContext) {
+      const context = publishContext && typeof publishContext === 'object' ? publishContext : null;
+      if (!context) return '';
+      const rawDivisionValue = typeof getCurrentUserMproDivisionValue_ === 'function'
+        ? getCurrentUserMproDivisionValue_()
+        : '';
+      const divisionCode = normalizeMproDivisionCode_(context.divisionCode || rawDivisionValue || '');
+      const divisionLabel = getMproDivisionLabel_(divisionCode || rawDivisionValue || '') || 'Без division';
+      const inspectors = getCurrentDivisionMapPublishInspectors_();
+      const selectedInspectorNames = getSelectionPublishInspectorNames_();
+      const assignedVisitsCount = getSelectionPublishAssignedVisitCount_();
+      const inspectorPickerOpen = isSelectionPublishInspectorPickerOpen_();
+      const selectedInspectorPreview = selectedInspectorNames.length
+        ? `${selectedInspectorNames.slice(0, 2).join(', ')}${selectedInspectorNames.length > 2 ? ` +${selectedInspectorNames.length - 2}` : ''}`
+        : 'Можно выбрать сразу нескольких инспекторов.';
+      const existingInspectors = Array.from(new Set(
+        (Array.isArray(context.currentDivisionEntries) ? context.currentDivisionEntries : [])
+          .map(entry => String(entry && entry.inspector || '').trim())
+          .filter(Boolean)
+      ));
+      const headerSummaryHtml = (
+        `<div class="registry-selection-publish-summary">` +
+          `<span class="registry-selection-publish-summary-chip">division: ${escapeHtml_(divisionLabel)}</span>` +
+          (
+            !context.isSingleObject
+              ? `<span class="registry-selection-publish-summary-chip">выбрано объектов: ${escapeHtml_(String(context.uniqueObjectCount || 0))}</span>`
+              : (
+                context.primaryObject && context.primaryObject.summary && context.primaryObject.summary.name
+                  ? `<span class="registry-selection-publish-summary-chip">${escapeHtml_(String(context.primaryObject.summary.name || '').trim())}</span>`
+                  : ''
+              )
+          ) +
+          `<span class="registry-selection-publish-summary-chip">${escapeHtml_(context.isSingleObject ? `уже выездов на карте: ${String(context.currentDivisionVisitCount || 0)}` : `точек на карте: ${String(context.selectedOnMapCount || 0)}`)}</span>` +
+        `</div>`
+      );
+      if (!context.isSingleObject) {
+        return (
+          `<div class="registry-selection-publish-plan">` +
+            headerSummaryHtml +
+          `</div>`
+        );
+      }
+      const existingVisitsNote = context.currentDivisionVisitCount
+        ? (
+          existingInspectors.length
+            ? `Уже есть выезды в этом division: ${context.currentDivisionVisitCount}. Инспекторы: ${existingInspectors.join(', ')}.`
+            : `Уже есть выезды в этом division: ${context.currentDivisionVisitCount}.`
+        )
+        : 'В текущем division эта точка еще не публиковалась.';
+      const pickerTriggerLabel = selectedInspectorNames.length
+        ? `Выбрано инспекторов: ${selectedInspectorNames.length}`
+        : 'Выбрать инспекторов';
+      const inspectorsHtml = state.mapPublishInspectorsLoading
+        ? `<div class="registry-selection-publish-note">Загружаем список инспекторов division...</div>`
+        : state.mapPublishInspectorsError
+          ? `<div class="registry-selection-publish-note registry-selection-publish-note--error">${escapeHtml_(state.mapPublishInspectorsError)}</div>`
+          : inspectors.length
+            ? (
+              `<div class="registry-selection-publish-picker${inspectorPickerOpen ? ' is-open' : ''}">` +
+                `<button class="registry-selection-publish-picker-trigger${inspectorPickerOpen ? ' is-open' : ''}" type="button" data-selection-publish-picker-toggle="1" aria-expanded="${inspectorPickerOpen ? 'true' : 'false'}">` +
+                  `<span class="registry-selection-publish-picker-trigger-main">` +
+                    `<span class="registry-selection-publish-picker-trigger-label">${escapeHtml_(pickerTriggerLabel)}</span>` +
+                    (
+                      selectedInspectorNames.length
+                        ? `<span class="registry-selection-publish-picker-trigger-meta">${escapeHtml_(selectedInspectorPreview)}</span>`
+                        : ''
+                    ) +
+                  `</span>` +
+                  `<span class="registry-selection-publish-picker-caret" aria-hidden="true"></span>` +
+                `</button>` +
+                (
+                  inspectorPickerOpen
+                    ? (
+                      `<div class="registry-selection-publish-picker-popover">` +
+                        `<div class="registry-selection-publish-picker-head">` +
+                          `<div class="registry-selection-publish-picker-title">Инспекторы «${escapeHtml_(divisionLabel)}»</div>` +
+                          `<button class="registry-selection-publish-picker-close" type="button" data-selection-publish-picker-close="1">Готово</button>` +
+                        `</div>` +
+                        `<div class="registry-selection-publish-picker-list">` +
+                          inspectors.map(item => {
+                            const inspectorName = String(item && item.name || '').trim();
+                            const active = selectedInspectorNames.includes(inspectorName);
+                            return (
+                              `<label class="registry-selection-publish-picker-option${active ? ' is-active' : ''}">` +
+                                `<input class="registry-selection-publish-picker-checkbox" type="checkbox"${active ? ' checked' : ''} data-selection-publish-inspector-checkbox="${escapeHtml_(inspectorName)}">` +
+                                `<span class="registry-selection-publish-picker-option-name">${escapeHtml_(inspectorName)}</span>` +
+                              `</label>`
+                            );
+                          }).join('') +
+                        `</div>` +
+                      `</div>`
+                    )
+                    : ''
+                ) +
+              `</div>`
+            )
+            : `<div class="registry-selection-publish-note">В этом division не найдено инспекторов для назначения.</div>`;
+      return (
+        `<div class="registry-selection-publish-plan">` +
+          headerSummaryHtml +
+          `<div class="registry-selection-publish-grid">` +
+            `<div class="registry-selection-publish-field">` +
+              `${inspectorsHtml}` +
+            `</div>` +
+          `</div>` +
+        `</div>`
+      );
+    }
+
+    function renderRegistrySelectionPublishPlanHtml_(publishContext) {
+      const context = publishContext && typeof publishContext === 'object' ? publishContext : null;
+      if (!context || !context.uniqueObjectCount) return '';
+      const rawDivisionValue = typeof getCurrentUserMproDivisionValue_ === 'function'
+        ? getCurrentUserMproDivisionValue_()
+        : '';
+      const divisionCode = normalizeMproDivisionCode_(context.divisionCode || rawDivisionValue || '');
+      const divisionLabel = getMproDivisionLabel_(divisionCode || rawDivisionValue || '') || 'Без division';
+      const inspectors = getCurrentDivisionMapPublishInspectors_();
+      const selectedInspectorNames = getSelectionPublishInspectorNames_();
+      const inspectorPickerOpen = isSelectionPublishInspectorPickerOpen_();
+      const singleInspectorMode = !context.isSingleObject;
+      const selectedInspectorPreview = selectedInspectorNames.length
+        ? `${selectedInspectorNames.slice(0, 2).join(', ')}${selectedInspectorNames.length > 2 ? ` +${selectedInspectorNames.length - 2}` : ''}`
+        : '';
+      const headerSummaryHtml = (
+        `<div class="registry-selection-publish-summary">` +
+          `<span class="registry-selection-publish-summary-chip">division: ${escapeHtml_(divisionLabel)}</span>` +
+          (
+            !context.isSingleObject
+              ? `<span class="registry-selection-publish-summary-chip">выбрано объектов: ${escapeHtml_(String(context.uniqueObjectCount || 0))}</span>`
+              : (
+                context.primaryObject && context.primaryObject.summary && context.primaryObject.summary.name
+                  ? `<span class="registry-selection-publish-summary-chip">${escapeHtml_(String(context.primaryObject.summary.name || '').trim())}</span>`
+                  : ''
+              )
+          ) +
+          `<span class="registry-selection-publish-summary-chip">${escapeHtml_(context.isSingleObject ? `уже выездов на карте: ${String(context.currentDivisionVisitCount || 0)}` : `точек на карте: ${String(context.selectedOnMapCount || 0)}`)}</span>` +
+        `</div>`
+      );
+      const pickerTriggerLabel = singleInspectorMode
+        ? (
+          selectedInspectorNames[0]
+            ? `Инспектор: ${selectedInspectorNames[0]}`
+            : 'Назначить инспектора'
+        )
+        : (
+          selectedInspectorNames.length
+            ? `Выбрано инспекторов: ${selectedInspectorNames.length}`
+            : 'Выбрать инспекторов'
+        );
+      const pickerTitle = singleInspectorMode
+        ? 'Инспектор для выбранных точек'
+        : `Инспекторы «${divisionLabel}»`;
+      const inspectorsHtml = state.mapPublishInspectorsLoading
+        ? `<div class="registry-selection-publish-note">Загружаем список инспекторов division...</div>`
+        : state.mapPublishInspectorsError
+          ? `<div class="registry-selection-publish-note registry-selection-publish-note--error">${escapeHtml_(state.mapPublishInspectorsError)}</div>`
+          : inspectors.length
+            ? (
+              `<div class="registry-selection-publish-picker${inspectorPickerOpen ? ' is-open' : ''}">` +
+                `<button class="registry-selection-publish-picker-trigger${inspectorPickerOpen ? ' is-open' : ''}" type="button" data-selection-publish-picker-toggle="1" aria-expanded="${inspectorPickerOpen ? 'true' : 'false'}">` +
+                  `<span class="registry-selection-publish-picker-trigger-main">` +
+                    `<span class="registry-selection-publish-picker-trigger-label">${escapeHtml_(pickerTriggerLabel)}</span>` +
+                    (
+                      selectedInspectorPreview
+                        ? `<span class="registry-selection-publish-picker-trigger-meta">${escapeHtml_(selectedInspectorPreview)}</span>`
+                        : ''
+                    ) +
+                  `</span>` +
+                  `<span class="registry-selection-publish-picker-caret" aria-hidden="true"></span>` +
+                `</button>` +
+                (
+                  inspectorPickerOpen
+                    ? (
+                      `<div class="registry-selection-publish-picker-popover">` +
+                        `<div class="registry-selection-publish-picker-head">` +
+                          `<div class="registry-selection-publish-picker-title">${escapeHtml_(pickerTitle)}</div>` +
+                          `<button class="registry-selection-publish-picker-close" type="button" data-selection-publish-picker-close="1">Готово</button>` +
+                        `</div>` +
+                        `<div class="registry-selection-publish-picker-list">` +
+                          inspectors.map(item => {
+                            const inspectorName = String(item && item.name || '').trim();
+                            const active = selectedInspectorNames.includes(inspectorName);
+                            return (
+                              `<label class="registry-selection-publish-picker-option${active ? ' is-active' : ''}">` +
+                                `<input class="registry-selection-publish-picker-checkbox" type="checkbox"${active ? ' checked' : ''} data-selection-publish-inspector-checkbox="${escapeHtml_(inspectorName)}">` +
+                                `<span class="registry-selection-publish-picker-option-name">${escapeHtml_(inspectorName)}</span>` +
+                              `</label>`
+                            );
+                          }).join('') +
+                        `</div>` +
+                      `</div>`
+                    )
+                    : ''
+                ) +
+              `</div>`
+            )
+            : `<div class="registry-selection-publish-note">В этом division не найдено инспекторов для назначения.</div>`;
+      return (
+        `<div class="registry-selection-publish-plan">` +
+          headerSummaryHtml +
+          `<div class="registry-selection-publish-grid">` +
+            `<div class="registry-selection-publish-field">` +
+              `${inspectorsHtml}` +
+            `</div>` +
+          `</div>` +
+        `</div>`
+      );
+    }
+
     function renderRegistrySelectionEditBar_() {
       const node = el('registrySelectionEditBar');
       if (!node) return;
@@ -1673,7 +2119,11 @@ function renderAdminRegistryUi_() {
       const canRemoveCurrent = !isRegistrySelectionEditing_() && !!activeItem && canRemoveSavedSelection_(activeItem);
       const currentSelectionId = String(currentItem && currentItem.id || '').trim();
       const activeSelectionId = String(activeItem && activeItem.id || '').trim();
+      const publishContext = (isComposerEditing || currentSelectionId)
+        ? getRegistrySelectionPublishContext_(isComposerEditing ? editingId : currentSelectionId)
+        : null;
       const isPublishingCurrent = canPublish && currentSelectionId && String(state.selectionPublishingId || '').trim() === currentSelectionId;
+      const isPublishingComposer = isComposerEditing && String(state.selectionPublishingId || '').trim() === '__composer__';
       const isRemovingCurrent = canRemoveCurrent && activeSelectionId && String(state.selectionRemovingId || '').trim() === activeSelectionId;
       const canUseSharedWorkBatch = !!(
         activeItem &&
@@ -1727,6 +2177,12 @@ function renderAdminRegistryUi_() {
         (item ? (item.name || '') : buildRegistrySelectionLabel_())
       ).trim() || buildRegistrySelectionLabel_();
       const composerViewMode = getRegistrySelectionComposerViewMode_();
+      const composerRegistryPublishEnabled = !!(
+        isComposerEditing &&
+        composerViewMode === 'registry' &&
+        canCurrentUserManageMproMap_() &&
+        isCurrentRegistryDatasetEditable_()
+      );
       const composerViewMenuHtml = isComposerEditing && String(state.selectionComposerSelectionId || '').trim()
         ? (
           `<button class="ghost registry-shared-work-batch-button registry-selection-compose-view-toggle" type="button" data-toggle-selection-compose-view="1" title="${escapeHtml_(composerViewMode === 'registry' ? 'Показать только текущий проект' : 'Показать общий реестр')}" aria-label="${escapeHtml_(composerViewMode === 'registry' ? 'Показать только текущий проект' : 'Показать общий реестр')}">` +
@@ -1804,9 +2260,12 @@ function renderAdminRegistryUi_() {
         : '';
       const publishMenuHeaderActionsHtml = isPublishMenuExpanded
         ? (
-          `<span class="registry-shared-work-mode-group registry-shared-work-mode-group--header registry-shared-work-mode-group--active">` +
+          `<span class="registry-header-action-group registry-header-action-group--secondary">` +
             `<button class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--take" type="button" data-open-selection-publish-draft="${escapeHtml_(currentSelectionId)}">Выбрать объекты</button>` +
             `<button class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--release" type="button" data-registry-map-removal-start="1"${mapRemovalVisibleState.visibleCount ? '' : ' disabled'}>Снять с карты</button>` +
+          `</span>` +
+          `<span class="registry-header-action-group registry-header-action-group--primary">` +
+            `<button class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--take" type="button" data-publish-selection-id="${escapeHtml_(currentSelectionId)}" data-publish-selection-mode="append"${isPublishingCurrent || !count ? ' disabled' : ''}>${escapeHtml_(isPublishingCurrent ? 'Добавляю...' : 'Добавить на карту')}</button>` +
           `</span>`
         )
         : '';
@@ -1920,6 +2379,12 @@ function renderAdminRegistryUi_() {
             `<button id="btnConfirmSelectionComposer" class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--take" type="button"${count ? '' : ' disabled'}>Сохранить</button>`
           ].filter(Boolean)
         : [];
+      if (isComposerEditing && composerRegistryPublishEnabled && Array.isArray(toolButtons)) {
+        toolButtons.splice(Math.max(0, toolButtons.length - 1), 0,
+          `<button id="btnPublishSelectionComposer" class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--take" type="button"${count && !isPublishingComposer ? '' : ' disabled'}>${escapeHtml_(isPublishingComposer ? 'Р”РѕР±Р°РІР»СЏСЋ...' : 'РќР° РєР°СЂС‚Сѓ')}</button>`
+        );
+      }
+      const publishPlanHtml = '';
       if (!isRegistrySelectionEditing_() && !isMapRemovalEditing && !activeItem) {
         node.classList.add('hidden');
         node.classList.remove('is-editing');
@@ -1935,6 +2400,11 @@ function renderAdminRegistryUi_() {
             (
               headerSubtitle
                 ? `<div class="registry-selection-edit-sub">${escapeHtml_(headerSubtitle)}</div>`
+                : ''
+            ) +
+            (
+              publishPlanHtml
+                ? `<div class="registry-selection-edit-publish-inline">${publishPlanHtml}</div>`
                 : ''
             ) +
           `</div>` +
@@ -2017,6 +2487,44 @@ function renderAdminRegistryUi_() {
           closeRegistrySelectionPublishDraft_();
         });
       });
+      node.querySelectorAll('[data-selection-publish-inspector]').forEach(button => {
+        button.addEventListener('click', evt => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          toggleSelectionPublishInspectorName_(String(button.getAttribute('data-selection-publish-inspector') || ''), {
+            single: !!(publishContext && !publishContext.isSingleObject),
+            closePicker: !!(publishContext && !publishContext.isSingleObject)
+          });
+        });
+      });
+      node.querySelectorAll('[data-selection-publish-extra-visits]').forEach(input => {
+        input.addEventListener('change', evt => {
+          updateSelectionPublishExtraVisits_(evt.target && evt.target.value);
+        });
+      });
+      node.querySelectorAll('[data-selection-publish-picker-toggle]').forEach(button => {
+        button.addEventListener('click', evt => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          toggleSelectionPublishInspectorPicker_();
+        });
+      });
+      node.querySelectorAll('[data-selection-publish-picker-close]').forEach(button => {
+        button.addEventListener('click', evt => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          closeSelectionPublishInspectorPicker_();
+        });
+      });
+      node.querySelectorAll('[data-selection-publish-inspector-checkbox]').forEach(input => {
+        input.addEventListener('change', evt => {
+          evt.stopPropagation();
+          toggleSelectionPublishInspectorName_(String(input.getAttribute('data-selection-publish-inspector-checkbox') || ''), {
+            single: !!(publishContext && !publishContext.isSingleObject),
+            closePicker: !!(publishContext && !publishContext.isSingleObject)
+          });
+        });
+      });
       const nameInput = el('selectionNameInput');
       if (nameInput) {
         nameInput.addEventListener('input', evt => {
@@ -2035,6 +2543,8 @@ function renderAdminRegistryUi_() {
       }
       const saveButton = el('btnConfirmSelectionComposer');
       if (saveButton) saveButton.addEventListener('click', () => saveCurrentRegistrySelection_());
+      const publishComposerButton = el('btnPublishSelectionComposer');
+      if (publishComposerButton) publishComposerButton.addEventListener('click', () => publishRegistrySelectionComposerDraft_('append'));
       const closeButton = el('btnSelectionComposerClose');
       if (closeButton) closeButton.addEventListener('click', () => closeRegistrySelectionComposer_());
       const personalButton = el('btnSelectionScopePersonal');
@@ -2141,12 +2651,14 @@ function syncRegistrySelectionComposerUi_() {
       const compose = el('selectionCompose');
       const input = el('selectionNameInput');
       const saveButton = el('btnConfirmSelectionComposer');
+      const publishButton = el('btnPublishSelectionComposer');
       const personalButton = el('btnSelectionScopePersonal');
       const divisionButton = el('btnSelectionScopeDivision');
       const sharedButton = el('btnSelectionScopeShared');
       const closeButton = el('btnSelectionComposerClose');
       const scope = getRegistrySelectionComposerScope_();
       const divisionScopeBlocked = scope === 'division' && !canUseDivisionRegistrySelectionScope_();
+      const draftCount = Array.isArray(state.selectionEditDraftUins) ? state.selectionEditDraftUins.length : 0;
       if (compose) compose.classList.toggle('is-busy', isBusy);
       if (input) {
         if (String(input.value || '') !== String(state.selectionComposerDraftName || '')) {
@@ -2163,6 +2675,10 @@ function syncRegistrySelectionComposerUi_() {
             ? 'Сохраняю'
             : (isEditing ? 'Сохранить изменения' : 'Сохранить')));
         saveButton.setAttribute('aria-label', saveButton.getAttribute('title') || 'Сохранить');
+      }
+      if (publishButton) {
+        publishButton.disabled = isBusy || !draftCount;
+        publishButton.classList.toggle('is-loading', String(state.selectionPublishingId || '').trim() === '__composer__');
       }
       if (closeButton) {
         closeButton.disabled = isBusy;

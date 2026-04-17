@@ -372,18 +372,15 @@ function resetActiveObjectCardUiState_() {
         if (!result || !result.success) {
           throw new Error(result && result.error ? result.error : 'Не удалось назначить исследование');
         }
-        const objectKey = normalizeMonitoringObjectKey_(objectId);
-        if (objectKey) {
-          state.registryMapOverlayByObjectKey[objectKey] = {
-            objectId,
-            divisionCode: String(result && result.divisionCode || 'laboratory').trim(),
-            visitId: String(result && result.visitId || '').trim(),
-            visitStatus: String(result && result.visitStatus || 'planned').trim(),
-            inspector: String(result && result.inspectorName || payload.inspectorName).trim(),
-            routeListName: String(result && result.routeListName || '').trim(),
-            visitDate: String(result && result.visitDate || '').trim()
-          };
-        }
+        upsertRegistryMapOverlayEntry_({
+          objectId,
+          divisionCode: String(result && result.divisionCode || 'laboratory').trim(),
+          visitId: String(result && result.visitId || '').trim(),
+          visitStatus: String(result && result.visitStatus || 'planned').trim(),
+          inspector: String(result && result.inspectorName || payload.inspectorName).trim(),
+          routeListName: String(result && result.routeListName || '').trim(),
+          visitDate: String(result && result.visitDate || '').trim()
+        });
         state.labStudyCreateDialogOpen = false;
         state.labStudyCreateDialogSaving = false;
         state.labStudyCreateDialogError = '';

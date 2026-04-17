@@ -424,6 +424,13 @@ function initObjectManagers_() {
                 return;
             }
 
+            // Если выбран список, но не выбран ни один инспектор, ничего не показываем.
+            if (hasListFilters && !hasInspectorFilters) {
+                debugLog('ℹ️ Выбран список, но не выбран инспектор');
+                applyEmptyMapState_('lists-no-inspectors');
+                return;
+            }
+
             // Режим "Только в работе" требует выбранных инспекторов
             if (FiltersState.isOnlyActiveMode() && !hasInspectorFilters) {
                 debugLog('ℹ️ Режим "Только в работе": нет выбранных инспекторов');
@@ -454,7 +461,9 @@ function initObjectManagers_() {
                 let match = false;
                 const isActive = obj.entryTime && !obj.exitTime;
                 const isCompleted = !!obj.exitTime;
-                const inspectorNorm = normalizeInspectorName_(obj?.inspector);
+                const inspectorNorm = isUnassignedInspectorName_(obj?.inspector)
+                    ? ''
+                    : normalizeInspectorName_(obj?.inspector);
                 const listKey = obj.__listDivisionKey || getObjectListDivisionKey_(obj);
 
                 if (FiltersState.isOnlyActiveMode()) {

@@ -130,9 +130,6 @@
                     case 'mark-denied':
                         if (actionNode.dataset.objectId) markDenied(actionNode.dataset.objectId);
                         break;
-                    case 'save-object-facts':
-                        if (actionNode.dataset.objectId) saveObjectFacts(actionNode.dataset.objectId);
-                        break;
                     case 'copy-coordinates':
                         if (actionNode.dataset.coordinates) copyCoordinates(actionNode.dataset.coordinates);
                         break;

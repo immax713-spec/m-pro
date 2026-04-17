@@ -189,20 +189,41 @@ function getRegistryColumnDef_(key) {
       return getMonitoringOverlayForObjectKey_(objectKey);
     }
 
-    function getRegistryMapOverlayForObjectKey_(objectKey) {
+    function getRegistryMapOverlayEntriesForObjectKey_(objectKey, options) {
       const key = normalizeMonitoringObjectKey_(objectKey);
-      if (!key) return null;
-      return state.registryMapOverlayByObjectKey && state.registryMapOverlayByObjectKey[key]
-        ? state.registryMapOverlayByObjectKey[key]
-        : null;
+      if (!key) return [];
+      const settings = options || {};
+      const allEntries = normalizeRegistryMapOverlayEntries_(
+        state.registryMapOverlayByObjectKey && state.registryMapOverlayByObjectKey[key]
+      );
+      if (settings.includeAllDivisions) return allEntries;
+      const targetDivisionCode = normalizeMproDivisionCode_(
+        Object.prototype.hasOwnProperty.call(settings, 'divisionCode')
+          ? settings.divisionCode
+          : getCurrentUserMproDivisionCode_()
+      );
+      if (!targetDivisionCode) return allEntries;
+      return allEntries.filter(entry => normalizeMproDivisionCode_(entry && entry.divisionCode || '') === targetDivisionCode);
     }
 
-    function getRegistryMapOverlayForRow_(rowIndex) {
-      return getRegistryMapOverlayForObjectKey_(getRegistryRowObjectId_(rowIndex));
+    function getRegistryMapOverlayEntriesForRow_(rowIndex, options) {
+      return getRegistryMapOverlayEntriesForObjectKey_(getRegistryRowObjectId_(rowIndex), options);
     }
 
-    function isRegistryRowPlacedOnMap_(rowIndex) {
-      return !!getRegistryMapOverlayForRow_(rowIndex);
+    function getRegistryMapOverlayForObjectKey_(objectKey, options) {
+      return getRegistryMapOverlayEntriesForObjectKey_(objectKey, options)[0] || null;
+    }
+
+    function getRegistryMapOverlayForRow_(rowIndex, options) {
+      return getRegistryMapOverlayForObjectKey_(getRegistryRowObjectId_(rowIndex), options);
+    }
+
+    function getRegistryMapOverlayVisitCountForRow_(rowIndex, options) {
+      return getRegistryMapOverlayEntriesForRow_(rowIndex, options).length;
+    }
+
+    function isRegistryRowPlacedOnMap_(rowIndex, options) {
+      return getRegistryMapOverlayVisitCountForRow_(rowIndex, options) > 0;
     }
 
     function canRegistryRowBeRemovedFromMap_(rowIndex) {
@@ -218,6 +239,9 @@ function getRegistryColumnSpec_(def) {
 function isRegistryColumnAvailable_(def) {
       if (!def) return false;
       if (def.required) return true;
+      if (String(def && def.key || '').trim() === 'inspector') {
+        return canCurrentUserManageMproMap_() && isCurrentRegistryDatasetEditable_();
+      }
       if (typeof def.isAvailable === 'function') return !!def.isAvailable();
       if (!state.columns.length) return def.defaultVisible !== false;
       const spec = getRegistryColumnSpec_(def);
@@ -234,7 +258,17 @@ function getAvailableRegistryColumnDefs_() {
 
 function getVisibleRegistryColumnDefs_() {
       const visible = new Set(normalizeStoredRegistryVisibleColumnKeys_(state.registryVisibleColumnKeys));
-      return REGISTRY_COLUMN_DEFS.filter(def => visible.has(String(def && def.key || '').trim()));
+      const defs = REGISTRY_COLUMN_DEFS.filter(def => visible.has(String(def && def.key || '').trim()));
+      if (
+        isRegistrySelectionEditing_() &&
+        canCurrentUserManageMproMap_() &&
+        isCurrentRegistryDatasetEditable_() &&
+        !defs.some(def => String(def && def.key || '').trim() === 'inspector')
+      ) {
+        const inspectorDef = getRegistryColumnDef_('inspector');
+        if (inspectorDef) defs.push(inspectorDef);
+      }
+      return defs;
     }
 
 function getRegistryTableColumnCount_() {
@@ -896,6 +930,28 @@ function getRegistryFacetAvailableValuesFast_(facetKey) {
       return collectRegistryFacetValuesFast_(facetKey);
     }
 
+    function getRegistryMapPlacementFacetCountFast_() {
+      const baseRows = getRegistryBaseFilteredRowIndexes_();
+      const seenObjectKeys = new Set();
+      let total = 0;
+      for (let index = 0; index < baseRows.length; index += 1) {
+        const rowIndex = Number(baseRows[index]);
+        if (!Number.isFinite(rowIndex) || rowIndex < 0) continue;
+        if (!matchesRegistryFacetFiltersExcept_(rowIndex, state.registryFacetFilters, 'mapPlacement')) continue;
+        if (!isRegistryRowPlacedOnMap_(rowIndex)) continue;
+        const objectKey = normalizeMonitoringObjectKey_(
+          getRegistryRowObjectId_(rowIndex) ||
+          getRegistrySummaryValue_(rowIndex, 'uin') ||
+          `row:${rowIndex}`
+        );
+        const safeObjectKey = objectKey || `row:${rowIndex}`;
+        if (seenObjectKeys.has(safeObjectKey)) continue;
+        seenObjectKeys.add(safeObjectKey);
+        total += 1;
+      }
+      return total;
+    }
+
 function getRegistryFacetDef_(facetKey) {
       return REGISTRY_FILTER_DEFS.find(def => def.key === facetKey) || null;
     }
@@ -1380,10 +1436,13 @@ function pruneRegistryMapRemovalSelection_() {
         const objectKeyNorm = normalizeText_(objectId);
         const existing = objectKeyNorm ? (state.registryMapRemovalSelectedByKey || {})[objectKeyNorm] : null;
         if (!objectKeyNorm || !existing) return;
+        const overlayEntries = getRegistryMapOverlayEntriesForRow_(rowIndex);
         next[objectKeyNorm] = {
           objectId,
           rowIndex: Number(rowIndex),
-          uin: String(getRegistryRowSummary_(rowIndex).uin || existing.uin || '').trim()
+          uin: String(getRegistryRowSummary_(rowIndex).uin || existing.uin || '').trim(),
+          divisionCode: normalizeMproDivisionCode_(existing.divisionCode || getCurrentUserMproDivisionCode_() || overlayEntries[0] && overlayEntries[0].divisionCode || ''),
+          visitIds: overlayEntries.map(entry => String(entry && entry.visitId || '').trim()).filter(Boolean)
         };
       });
       state.registryMapRemovalSelectedByKey = next;
@@ -1406,10 +1465,13 @@ function toggleRegistryRowMapRemovalSelection_(rowIndex) {
       if (next[objectKeyNorm]) {
         delete next[objectKeyNorm];
       } else {
+        const overlayEntries = getRegistryMapOverlayEntriesForRow_(targetIndex);
         next[objectKeyNorm] = {
           objectId,
           rowIndex: targetIndex,
-          uin: String(getRegistryRowSummary_(targetIndex).uin || '').trim()
+          uin: String(getRegistryRowSummary_(targetIndex).uin || '').trim(),
+          divisionCode: normalizeMproDivisionCode_(getCurrentUserMproDivisionCode_() || overlayEntries[0] && overlayEntries[0].divisionCode || ''),
+          visitIds: overlayEntries.map(entry => String(entry && entry.visitId || '').trim()).filter(Boolean)
         };
       }
       state.registryMapRemovalSelectedByKey = next;
@@ -1429,10 +1491,13 @@ function toggleRegistryMapRemovalVisibleRows_() {
           const objectId = String(getRegistryRowObjectId_(rowIndex) || '').trim();
           const objectKeyNorm = normalizeText_(objectId);
           if (!objectKeyNorm) return;
+          const overlayEntries = getRegistryMapOverlayEntriesForRow_(rowIndex);
           next[objectKeyNorm] = {
             objectId,
             rowIndex: Number(rowIndex),
-            uin: String(getRegistryRowSummary_(rowIndex).uin || '').trim()
+            uin: String(getRegistryRowSummary_(rowIndex).uin || '').trim(),
+            divisionCode: normalizeMproDivisionCode_(getCurrentUserMproDivisionCode_() || overlayEntries[0] && overlayEntries[0].divisionCode || ''),
+            visitIds: overlayEntries.map(entry => String(entry && entry.visitId || '').trim()).filter(Boolean)
           };
         });
         state.registryMapRemovalSelectedByKey = next;
@@ -1487,7 +1552,13 @@ async function removeSelectedRegistryMapObjects_() {
           spreadsheetId: state.runtimeOptions.spreadsheetId || DEFAULT_SPREADSHEET_ID,
           sheetName: state.runtimeOptions.sheetName || DEFAULT_SHEET_NAME,
           headerRow: state.runtimeOptions.headerRow || DEFAULT_HEADER_ROW,
-          rowIndexes: entries.map(entry => Number(entry && entry.rowIndex)).filter(value => Number.isFinite(value) && value >= 0)
+          divisionCode: normalizeMproDivisionCode_(getCurrentUserMproDivisionCode_() || ''),
+          rowIndexes: entries.map(entry => Number(entry && entry.rowIndex)).filter(value => Number.isFinite(value) && value >= 0),
+          visitIds: entries.flatMap(entry => (
+            Array.isArray(entry && entry.visitIds)
+              ? entry.visitIds.map(value => String(value || '').trim()).filter(Boolean)
+              : []
+          ))
         }]);
         const removed = Number(result && result.removedObjects) || 0;
         clearRegistryMapRemovalState_();
@@ -1873,7 +1944,11 @@ function getSelectionPublishModeLabel_(mode) {
 function getRegistrySelectionPublishRowIndexes_(selectionId) {
       const targetId = String(selectionId || '').trim();
       const editingId = getRegistrySelectionEditTargetId_();
-      if (isRegistrySelectionEditing_() && targetId && editingId && targetId === editingId) {
+      const useDraftSelection = isRegistrySelectionEditing_() && (
+        (targetId && editingId && targetId === editingId) ||
+        (!targetId && !editingId)
+      );
+      if (useDraftSelection) {
         const draftSet = getRegistrySelectionEditDraftSet_();
         if (!draftSet.size) return [];
         return state.rows.reduce((acc, row, rowIndex) => {
@@ -1883,6 +1958,76 @@ function getRegistrySelectionPublishRowIndexes_(selectionId) {
         }, []);
       }
       return Array.isArray(state.filteredRowIndexes) ? state.filteredRowIndexes.slice() : [];
+    }
+
+function getRegistrySelectionPublishContext_(selectionId) {
+      const rowIndexes = getRegistrySelectionPublishRowIndexes_(selectionId);
+      const seenObjectKeys = new Set();
+      const objects = [];
+      rowIndexes.forEach(rowIndex => {
+        const normalizedRowIndex = Number(rowIndex);
+        if (!Number.isFinite(normalizedRowIndex) || normalizedRowIndex < 0) return;
+        const objectId = String(getRegistryRowObjectId_(normalizedRowIndex) || '').trim();
+        const objectKey = normalizeText_(objectId);
+        if (!objectId || !objectKey || seenObjectKeys.has(objectKey)) return;
+        seenObjectKeys.add(objectKey);
+        objects.push({
+          rowIndex: normalizedRowIndex,
+          objectId,
+          summary: getRegistryRowSummary_(normalizedRowIndex)
+        });
+      });
+      const primaryObject = objects[0] || null;
+      const divisionCode = normalizeMproDivisionCode_(getCurrentUserMproDivisionCode_() || '');
+      const currentDivisionEntries = primaryObject
+        ? getRegistryMapOverlayEntriesForObjectKey_(primaryObject.objectId, { divisionCode })
+        : [];
+      const selectedOnMapCount = objects.reduce((total, item) => (
+        total + (getRegistryMapOverlayVisitCountForRow_(item.rowIndex, { divisionCode }) > 0 ? 1 : 0)
+      ), 0);
+      return {
+        rowIndexes,
+        objects,
+        uniqueObjectCount: objects.length,
+        isSingleObject: objects.length === 1,
+        primaryObject,
+        divisionCode,
+        currentDivisionEntries,
+        currentDivisionVisitCount: currentDivisionEntries.length,
+        selectedOnMapCount
+      };
+    }
+
+function buildRegistrySelectionPublishVisitRequests_(publishContext) {
+      const context = publishContext && typeof publishContext === 'object' ? publishContext : null;
+      if (!context || !Array.isArray(context.objects) || !context.objects.length) return [];
+      const divisionCode = normalizeMproDivisionCode_(context.divisionCode || getCurrentUserMproDivisionCode_() || '') || 'map';
+      let hasExplicitAssignments = false;
+      const requests = [];
+      context.objects.forEach(item => {
+        const objectId = String(item && item.objectId || '').trim();
+        if (!objectId) return;
+        const baseRequest = {
+          rowIndex: Number(item && item.rowIndex),
+          objectId,
+          divisionCode
+        };
+        const inspectorNames = typeof getSelectionPublishInspectorNamesForObject_ === 'function'
+          ? getSelectionPublishInspectorNamesForObject_(objectId)
+          : [];
+        if (inspectorNames.length) {
+          hasExplicitAssignments = true;
+          inspectorNames.forEach(inspectorName => {
+            requests.push({
+              ...baseRequest,
+              inspectorName: String(inspectorName || '').trim()
+            });
+          });
+          return;
+        }
+        requests.push(baseRequest);
+      });
+      return hasExplicitAssignments ? requests : [];
     }
 
 function getMproFiltersStorageKey_() {
@@ -1963,7 +2108,8 @@ async function publishRegistrySelectionById_(selectionId, requestedMode) {
         return;
       }
       if (state.selectionPublishingId || state.selectionLoadingId || state.selectionRemovingId || state.loading) return;
-      const rowIndexes = getRegistrySelectionPublishRowIndexes_(item.id);
+      const publishContext = getRegistrySelectionPublishContext_(item.id);
+      const rowIndexes = Array.isArray(publishContext && publishContext.rowIndexes) ? publishContext.rowIndexes : [];
       if (!rowIndexes.length) {
         showCopyToast_(
           isRegistrySelectionPublishDraftOpen_()
@@ -1987,7 +2133,11 @@ async function publishRegistrySelectionById_(selectionId, requestedMode) {
       renderSavedSelectionsPanel_();
       renderRegistrySelectionEditBar_();
       try {
-        const result = await publishSelectionToMpro_(item, rowIndexes, publishMode);
+        const visitRequests = buildRegistrySelectionPublishVisitRequests_(publishContext);
+        const result = await publishSelectionToMpro_(item, rowIndexes, publishMode, {
+          divisionCode: normalizeMproDivisionCode_(publishContext && publishContext.divisionCode || ''),
+          visitRequests
+        });
         const resolved = Number(result && result.resolvedObjects) || 0;
         if (resolved > 0) {
           if (publishMode === 'replace') clearPersistedMproFilters_();
@@ -2001,6 +2151,8 @@ async function publishRegistrySelectionById_(selectionId, requestedMode) {
             String(state.selectionPublishDraftSelectionId || '').trim() === String(item.id || '').trim()
           ) {
             resetRegistrySelectionPublishDraftState_();
+          } else {
+            resetSelectionPublishDraftOptions_();
           }
           await loadData_(buildCurrentDataRefreshOptions_({
             silent: true,
@@ -2022,6 +2174,72 @@ async function publishRegistrySelectionById_(selectionId, requestedMode) {
         reportRuntimeError_(err, 'Ошибка публикации на карту');
       } finally {
         if (String(state.selectionPublishingId || '').trim() === String(item.id || '').trim()) {
+          state.selectionPublishingId = '';
+        }
+        renderSavedSelectionsPanel_();
+        renderRegistrySelectionEditBar_();
+      }
+    }
+
+async function publishRegistrySelectionComposerDraft_(requestedMode) {
+      if (!state.selectionComposerOpen || getRegistrySelectionComposerViewMode_() !== 'registry') return;
+      if (!canCurrentUserManageMproMap_() || !isCurrentRegistryDatasetEditable_()) return;
+      if (state.selectionPublishingId || state.selectionLoadingId || state.selectionRemovingId || state.loading) return;
+      const publishContext = getRegistrySelectionPublishContext_(getRegistrySelectionEditTargetId_());
+      const rowIndexes = Array.isArray(publishContext && publishContext.rowIndexes) ? publishContext.rowIndexes : [];
+      if (!rowIndexes.length) {
+        showCopyToast_('Выберите объекты в реестре для публикации на карту', true);
+        return;
+      }
+      const requestedModeKey = String(requestedMode || '').trim();
+      const publishMode = requestedModeKey === 'replace'
+        ? 'replace'
+        : (requestedModeKey === 'append' ? 'append' : 'append');
+      const draftSelectionId = String(state.selectionComposerSelectionId || '').trim();
+      const draftSelectionName = String(state.selectionComposerDraftName || '').trim() || buildRegistrySelectionLabel_();
+      const publishToken = '__composer__';
+      clearRuntimeError_();
+      closeSelectionPublishMenu_();
+      state.selectionPublishingId = publishToken;
+      renderSavedSelectionsPanel_();
+      renderRegistrySelectionEditBar_();
+      try {
+        const visitRequests = buildRegistrySelectionPublishVisitRequests_(publishContext);
+        const result = await publishSelectionToMpro_({
+          id: draftSelectionId,
+          name: draftSelectionName
+        }, rowIndexes, publishMode, {
+          divisionCode: normalizeMproDivisionCode_(publishContext && publishContext.divisionCode || ''),
+          visitRequests
+        });
+        const resolved = Number(result && result.resolvedObjects) || 0;
+        if (resolved > 0) {
+          if (publishMode === 'replace') clearPersistedMproFilters_();
+          notifyMproDataChanged_({
+            event: 'points-published',
+            selectionId: draftSelectionId,
+            publishMode
+          });
+          await loadData_(buildCurrentDataRefreshOptions_({
+            silent: true,
+            preserveView: 'registry'
+          }));
+        }
+        showCopyToast_(
+          resolved > 0
+            ? buildSelectionPublishToastText_(result)
+            : 'Не удалось подобрать объекты для публикации',
+          resolved <= 0
+        );
+      } catch (err) {
+        if (isUnauthorizedError_(err)) {
+          handleUnauthorized_();
+          return;
+        }
+        showCopyToast_('Не удалось отправить выборку на карту', true);
+        reportRuntimeError_(err, 'Ошибка публикации на карту');
+      } finally {
+        if (String(state.selectionPublishingId || '').trim() === publishToken) {
           state.selectionPublishingId = '';
         }
         renderSavedSelectionsPanel_();

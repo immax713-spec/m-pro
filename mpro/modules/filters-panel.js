@@ -576,7 +576,9 @@
                 allowedListKeys = new Set();
                 const scopedObjects = getRoleScopedObjects_(DataState.getObjectsData());
                 scopedObjects.forEach(obj => {
-                    const objInspectorNorm = normalizeInspectorName_(obj?.inspector);
+                    const objInspectorNorm = isUnassignedInspectorName_(obj?.inspector)
+                        ? ''
+                        : normalizeInspectorName_(obj?.inspector);
                     if (objInspectorNorm) {
                         if (!selectedNormSet.has(objInspectorNorm)) return;
                     } else if (!includeUnassigned) {

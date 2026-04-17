@@ -488,10 +488,213 @@ function clearRegistrySelectionEditDraft_() {
       state.selectionEditDraftAutoSync = false;
     }
 
+function normalizeSelectionPublishInspectorNames_(rawValue) {
+      return Array.from(new Set(
+        (Array.isArray(rawValue) ? rawValue : [])
+          .map(value => String(value || '').trim())
+          .filter(Boolean)
+      )).sort((left, right) => left.localeCompare(right, 'ru'));
+    }
+
+function resetSelectionPublishDraftOptions_() {
+      state.selectionPublishInspectorNames = [];
+      state.selectionPublishInspectorPickerOpen = false;
+      state.selectionPublishInspectorNamesByObjectKey = {};
+      state.selectionPublishRowInspectorPickerKey = '';
+      state.selectionPublishExtraVisits = '0';
+    }
+
+function resetMapPublishInspectorsState_() {
+      state.mapPublishInspectors = [];
+      state.mapPublishInspectorsLoaded = false;
+      state.mapPublishInspectorsLoading = false;
+      state.mapPublishInspectorsError = '';
+      state.mapPublishInspectorsDivisionCode = '';
+    }
+
+function getSelectionPublishInspectorNames_() {
+      return normalizeSelectionPublishInspectorNames_(state.selectionPublishInspectorNames);
+    }
+
+function setSelectionPublishInspectorNames_(items) {
+      state.selectionPublishInspectorNames = normalizeSelectionPublishInspectorNames_(items);
+    }
+
+function normalizeSelectionPublishInspectorNamesByObjectKey_(rawValue) {
+      const source = rawValue && typeof rawValue === 'object' ? rawValue : {};
+      const next = {};
+      Object.keys(source).forEach(rawKey => {
+        const key = normalizeText_(rawKey);
+        const names = normalizeSelectionPublishInspectorNames_(source[rawKey]);
+        if (!key || !names.length) return;
+        next[key] = names;
+      });
+      return next;
+    }
+
+function getSelectionPublishInspectorObjectKey_(objectId) {
+      return normalizeText_(objectId);
+    }
+
+function getSelectionPublishInspectorNamesByObjectKey_() {
+      return normalizeSelectionPublishInspectorNamesByObjectKey_(state.selectionPublishInspectorNamesByObjectKey);
+    }
+
+function getSelectionPublishInspectorNamesForObject_(objectId) {
+      const key = getSelectionPublishInspectorObjectKey_(objectId);
+      if (!key) return [];
+      const map = getSelectionPublishInspectorNamesByObjectKey_();
+      return Array.isArray(map[key]) ? map[key].slice() : [];
+    }
+
+function setSelectionPublishInspectorNamesForObject_(objectId, items, options) {
+      const key = getSelectionPublishInspectorObjectKey_(objectId);
+      if (!key) return;
+      const settings = options && typeof options === 'object' ? options : {};
+      const nextMap = getSelectionPublishInspectorNamesByObjectKey_();
+      const nextValues = normalizeSelectionPublishInspectorNames_(items);
+      if (nextValues.length) nextMap[key] = nextValues;
+      else delete nextMap[key];
+      state.selectionPublishInspectorNamesByObjectKey = nextMap;
+      if (settings.closePicker) {
+        state.selectionPublishRowInspectorPickerKey = '';
+      }
+    }
+
+function toggleSelectionPublishInspectorNameForObject_(objectId, name) {
+      const inspectorName = String(name || '').trim();
+      if (!inspectorName) return;
+      const current = getSelectionPublishInspectorNamesForObject_(objectId);
+      const nextValues = current.includes(inspectorName)
+        ? current.filter(value => value !== inspectorName)
+        : current.concat(inspectorName);
+      setSelectionPublishInspectorNamesForObject_(objectId, nextValues);
+      renderRegistryView_();
+    }
+
+function isSelectionPublishRowInspectorPickerOpen_(objectId) {
+      const key = getSelectionPublishInspectorObjectKey_(objectId);
+      return !!key && String(state.selectionPublishRowInspectorPickerKey || '').trim() === key;
+    }
+
+function toggleSelectionPublishRowInspectorPicker_(objectId) {
+      const key = getSelectionPublishInspectorObjectKey_(objectId);
+      if (!key) return;
+      state.selectionPublishRowInspectorPickerKey = isSelectionPublishRowInspectorPickerOpen_(objectId) ? '' : key;
+      renderRegistryView_();
+    }
+
+function closeSelectionPublishRowInspectorPicker_() {
+      if (!String(state.selectionPublishRowInspectorPickerKey || '').trim()) return;
+      state.selectionPublishRowInspectorPickerKey = '';
+      renderRegistryView_();
+    }
+
+function getSelectionPublishInspectorAssignmentsSignature_() {
+      const map = getSelectionPublishInspectorNamesByObjectKey_();
+      const body = Object.keys(map)
+        .sort()
+        .map(key => `${key}:${map[key].join('|')}`)
+        .join(';');
+      return `${body}::${String(state.selectionPublishRowInspectorPickerKey || '').trim()}`;
+    }
+
+function isSelectionPublishInspectorPickerOpen_() {
+      return !!state.selectionPublishInspectorPickerOpen;
+    }
+
+function toggleSelectionPublishInspectorPicker_() {
+      state.selectionPublishInspectorPickerOpen = !state.selectionPublishInspectorPickerOpen;
+      renderRegistrySelectionEditBar_();
+    }
+
+function closeSelectionPublishInspectorPicker_() {
+      if (!state.selectionPublishInspectorPickerOpen) return;
+      state.selectionPublishInspectorPickerOpen = false;
+      renderRegistrySelectionEditBar_();
+    }
+
+function toggleSelectionPublishInspectorName_(name, options) {
+      const settings = options && typeof options === 'object' ? options : null;
+      const inspectorName = String(name || '').trim();
+      if (!inspectorName) return;
+      const current = getSelectionPublishInspectorNames_();
+      const nextValues = settings && settings.single
+        ? (
+          current.length === 1 && current[0] === inspectorName
+            ? []
+            : [inspectorName]
+        )
+        : (
+          current.includes(inspectorName)
+            ? current.filter(value => value !== inspectorName)
+            : current.concat(inspectorName)
+        );
+      setSelectionPublishInspectorNames_(nextValues);
+      if (settings && settings.closePicker) {
+        state.selectionPublishInspectorPickerOpen = false;
+      }
+      renderRegistrySelectionEditBar_();
+    }
+
+function getSelectionPublishAssignedVisitCount_() {
+      return getSelectionPublishInspectorNames_().length;
+    }
+
+function getSelectionPublishExtraVisitsCount_() {
+      const rawValue = String(state.selectionPublishExtraVisits == null ? '' : state.selectionPublishExtraVisits).trim();
+      if (!rawValue) return 0;
+      const numeric = Number(rawValue.replace(',', '.'));
+      if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+      return Math.max(0, Math.floor(numeric));
+    }
+
+function updateSelectionPublishExtraVisits_(value) {
+      const text = String(value == null ? '' : value).trim();
+      if (!text) {
+        state.selectionPublishExtraVisits = '';
+        renderRegistrySelectionEditBar_();
+        return;
+      }
+      const normalized = text.replace(/[^\d]/g, '');
+      state.selectionPublishExtraVisits = normalized ? String(Math.max(0, Math.floor(Number(normalized) || 0))) : '';
+      renderRegistrySelectionEditBar_();
+    }
+
+function getCurrentDivisionMapPublishInspectors_() {
+      return Array.isArray(state.mapPublishInspectors) ? state.mapPublishInspectors.slice() : [];
+    }
+
+function pruneSelectionPublishInspectorNames_() {
+      const allowedNames = new Set(getCurrentDivisionMapPublishInspectors_().map(item => String(item && item.name || '').trim()).filter(Boolean));
+      if (!allowedNames.size) {
+        setSelectionPublishInspectorNames_([]);
+        state.selectionPublishInspectorNamesByObjectKey = {};
+        state.selectionPublishRowInspectorPickerKey = '';
+        return;
+      }
+      setSelectionPublishInspectorNames_(
+        getSelectionPublishInspectorNames_().filter(name => allowedNames.has(name))
+      );
+      const nextMap = {};
+      Object.keys(getSelectionPublishInspectorNamesByObjectKey_()).forEach(key => {
+        const nextNames = getSelectionPublishInspectorNamesByObjectKey_()[key].filter(name => allowedNames.has(name));
+        if (nextNames.length) nextMap[key] = nextNames;
+      });
+      state.selectionPublishInspectorNamesByObjectKey = nextMap;
+      if (
+        String(state.selectionPublishRowInspectorPickerKey || '').trim() &&
+        !Object.prototype.hasOwnProperty.call(nextMap, String(state.selectionPublishRowInspectorPickerKey || '').trim())
+      ) {
+        state.selectionPublishRowInspectorPickerKey = '';
+      }
+    }
+
 function resetRegistrySelectionPublishDraftState_(options) {
       const settings = options || {};
       state.selectionPublishDraftOpen = false;
       state.selectionPublishDraftSelectionId = '';
+      resetSelectionPublishDraftOptions_();
       if (!settings.preserveDraft) clearRegistrySelectionEditDraft_();
     }
 
@@ -650,7 +853,14 @@ function isSelectionPublishMenuOpen_(selectionId) {
 function toggleSelectionPublishMenu_(selectionId) {
       const nextId = String(selectionId || '').trim();
       if (!nextId) return;
-      state.selectionPublishMenuId = isSelectionPublishMenuOpen_(nextId) ? '' : nextId;
+      const open = isSelectionPublishMenuOpen_(nextId);
+      if (open) {
+        state.selectionPublishMenuId = '';
+      } else {
+        resetSelectionPublishDraftOptions_();
+        state.selectionPublishMenuId = nextId;
+        ensureMapPublishInspectorsLoaded_();
+      }
       renderSavedSelectionsPanel_();
       renderRegistrySelectionEditBar_();
     }
@@ -809,6 +1019,7 @@ function openRegistrySelectionPublishDraft_(selectionId) {
       setRegistrySelectionComposerScope_('personal');
       state.selectionPublishDraftOpen = true;
       state.selectionPublishDraftSelectionId = String(item.id || '').trim();
+      resetSelectionPublishDraftOptions_();
       state.selectionEditDraftAutoSync = false;
       setRegistrySelectionEditDraftUins_(getEditableRegistrySelectionUins_(item));
       state.savedSelectionPanelOpen = true;
@@ -816,6 +1027,7 @@ function openRegistrySelectionPublishDraft_(selectionId) {
       state.sidebarActivePanel = 'projects';
       state.currentView = 'registry';
       renderAll_();
+      ensureMapPublishInspectorsLoaded_();
     }
 
 function closeRegistrySelectionPublishDraft_(options) {
@@ -859,6 +1071,9 @@ function closeRegistrySelectionPublishDraft_(options) {
           : 'personal'
       );
       syncRegistrySelectionComposerUi_();
+      if (canCurrentUserManageMproMap_() && isCurrentRegistryDatasetEditable_()) {
+        ensureMapPublishInspectorsLoaded_();
+      }
       window.requestAnimationFrame(() => {
         const input = el('selectionNameInput');
         if (!input) return;
@@ -876,6 +1091,7 @@ function closeRegistrySelectionPublishDraft_(options) {
       state.selectionComposerDraftName = '';
       state.selectionPublishDraftOpen = false;
       state.selectionPublishDraftSelectionId = '';
+      resetSelectionPublishDraftOptions_();
       clearRegistrySelectionEditDraft_();
       setRegistrySelectionComposerScope_('personal');
       syncRegistrySelectionComposerUi_();
@@ -914,24 +1130,74 @@ function closeRegistrySelectionPublishDraft_(options) {
 
     function normalizeMproDivisionCode_(value) {
       const normalized = normalizeText_(value).toLowerCase();
+      const compact = normalized.replace(/[\s_-]+/g, '');
       if (!normalized) return '';
-      if (normalized === 'laboratory' || normalized === 'lab' || normalized === 'лаборатория') return 'laboratory';
-      if (normalized === 'map' || normalized === 'гс' || normalized === 'гражданское строительство') return 'map';
-      if (normalized === 'dms' || normalized === 'дмс') return 'dms';
-      if (normalized === 'constructioncontrol' || normalized === 'construction-control' || normalized === 'construction control' || normalized === 'ск' || normalized === 'строительный контроль') return 'constructioncontrol';
-      if (normalized === 'metro' || normalized === 'метро') return 'metro';
+      if (normalized === 'laboratory' || compact === 'laboratory' || normalized === 'lab' || compact === 'lab' || normalized === 'лаборатория' || compact === 'лаборатория') return 'laboratory';
+      if (
+        normalized === 'map' ||
+        compact === 'map' ||
+        normalized === 'гс' ||
+        compact === 'гс' ||
+        normalized === 'гражданское строительство' ||
+        compact === 'гражданскоестроительство' ||
+        normalized === 'строймониторинг' ||
+        compact === 'строймониторинг' ||
+        normalized === 'строительный мониторинг' ||
+        compact === 'строительныймониторинг' ||
+        normalized === 'construction monitoring' ||
+        compact === 'constructionmonitoring'
+      ) return 'map';
+      if (normalized === 'dms' || compact === 'dms' || normalized === 'дмс' || compact === 'дмс') return 'dms';
+      if (
+        normalized === 'constructioncontrol' ||
+        compact === 'constructioncontrol' ||
+        normalized === 'construction-control' ||
+        normalized === 'construction control' ||
+        normalized === 'ск' ||
+        compact === 'ск' ||
+        normalized === 'строительный контроль' ||
+        compact === 'строительныйконтроль' ||
+        normalized === 'стройконтроль' ||
+        compact === 'стройконтроль'
+      ) return 'constructioncontrol';
+      if (
+        normalized === 'metro' ||
+        compact === 'metro' ||
+        normalized === 'метро' ||
+        compact === 'метро' ||
+        normalized === 'метрополитен' ||
+        compact === 'метрополитен' ||
+        normalized === 'mip' ||
+        compact === 'mip' ||
+        normalized === 'мип' ||
+        compact === 'мип'
+      ) return 'metro';
       return '';
     }
 
-    function getCurrentUserMproDivisionCode_() {
+    function getCurrentUserMproDivisionValue_() {
       const mproProfile = typeof getCurrentUserAppProfile_ === 'function'
         ? getCurrentUserAppProfile_('mpro')
         : null;
-      return normalizeMproDivisionCode_(
+      return normalizeText_(
         (mproProfile && mproProfile.division) ||
         (state.currentUser && state.currentUser.division) ||
         ''
       );
+    }
+
+    function getCurrentUserMproDivisionCode_() {
+      return normalizeMproDivisionCode_(getCurrentUserMproDivisionValue_());
+    }
+
+    function getMproDivisionLabel_(value) {
+      const divisionCode = normalizeMproDivisionCode_(value);
+      if (divisionCode === 'laboratory') return 'Лаборатория';
+      if (divisionCode === 'map') return 'Гражданское строительство';
+      if (divisionCode === 'dms') return 'ДМС';
+      if (divisionCode === 'constructioncontrol') return 'Строительный контроль';
+      if (divisionCode === 'metro') return 'Метро';
+      return String(value || '').trim();
     }
 
     function canCurrentUserManageMproMap_() {
@@ -945,10 +1211,58 @@ function closeRegistrySelectionPublishDraft_(options) {
     function syncRegistryMapAccessState_() {
       if (canCurrentUserManageMproMap_() && isCurrentRegistryDatasetEditable_()) return;
       closeSelectionPublishMenu_();
+      resetSelectionPublishDraftOptions_();
+      resetMapPublishInspectorsState_();
       if (state.selectionPublishDraftOpen) resetRegistrySelectionPublishDraftState_();
       if (isRegistryMapRemovalMode_() || getRegistryMapRemovalSelectedCount_()) {
         exitRegistryMapRemovalMode_({ silent: true });
       }
+    }
+
+    function ensureMapPublishInspectorsLoaded_(options) {
+      const settings = options || {};
+      const divisionCode = getCurrentUserMproDivisionCode_();
+      if (!canCurrentUserManageMproMap_() || !state.currentUser || !state.sessionToken || !divisionCode) {
+        resetMapPublishInspectorsState_();
+        return Promise.resolve([]);
+      }
+      if (!settings.force && state.mapPublishInspectorsLoaded && state.mapPublishInspectorsDivisionCode === divisionCode) {
+        return Promise.resolve(getCurrentDivisionMapPublishInspectors_());
+      }
+      if (state.mapPublishInspectorsLoading && state.mapPublishInspectorsDivisionCode === divisionCode) {
+        return Promise.resolve(getCurrentDivisionMapPublishInspectors_());
+      }
+      state.mapPublishInspectorsLoading = true;
+      state.mapPublishInspectorsLoaded = false;
+      state.mapPublishInspectorsError = '';
+      state.mapPublishInspectorsDivisionCode = divisionCode;
+      renderRegistrySelectionEditBar_();
+      return fetchMproInspectorDirectory_()
+        .then(result => {
+          const rows = Array.isArray(result && result.inspectorsList) ? result.inspectorsList : [];
+          state.mapPublishInspectors = rows
+            .map(item => ({
+              name: String(item && item.name || '').trim(),
+              role: String(item && item.role || '').trim(),
+              divisionCode: normalizeMproDivisionCode_(item && (item.divisionCode || item.division) || '')
+            }))
+            .filter(item => item.name && item.divisionCode === divisionCode && !/admin|админ/i.test(item.role))
+            .sort((left, right) => String(left && left.name || '').localeCompare(String(right && right.name || ''), 'ru'));
+          state.mapPublishInspectorsLoaded = true;
+          pruneSelectionPublishInspectorNames_();
+          return getCurrentDivisionMapPublishInspectors_();
+        })
+        .catch(error => {
+          state.mapPublishInspectors = [];
+          state.mapPublishInspectorsLoaded = false;
+          state.mapPublishInspectorsError = error && error.message ? error.message : String(error || 'Ошибка загрузки инспекторов');
+          pruneSelectionPublishInspectorNames_();
+          return [];
+        })
+        .finally(() => {
+          state.mapPublishInspectorsLoading = false;
+          renderRegistrySelectionEditBar_();
+        });
     }
 
     function syncLabStudyCreateAccessState_() {

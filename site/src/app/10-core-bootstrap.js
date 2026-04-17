@@ -233,6 +233,12 @@
       bindRegistryTableEvents_(el('registryTableBody'));
       bindRegistryTableWrapEvents_(getRegistryTableWrap_());
       document.addEventListener('click', evt => {
+        if (evt.target.closest('[data-row-publish-inspector-cell]')) return;
+        if (String(state.selectionPublishRowInspectorPickerKey || '').trim()) {
+          closeSelectionPublishRowInspectorPicker_();
+        }
+      });
+      document.addEventListener('click', evt => {
         if (evt.target.closest('.registry-floating-menu')) return;
         const filterTrigger = evt.target.closest('[data-registry-filter-trigger]');
         if (!filterTrigger) return;
@@ -416,6 +422,34 @@
           const action = String(workButton.getAttribute('data-registry-work-action') || '').trim();
           if (!Number.isFinite(rowIndex) || rowIndex < 0 || !action) return;
           saveSharedSelectionWorkStateForRow_(rowIndex, action);
+          return;
+        }
+        const publishInspectorToggle = evt.target.closest('[data-row-publish-inspector-toggle]');
+        if (publishInspectorToggle) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          toggleSelectionPublishRowInspectorPicker_(String(publishInspectorToggle.getAttribute('data-row-publish-inspector-toggle') || ''));
+          return;
+        }
+        const publishInspectorClose = evt.target.closest('[data-row-publish-inspector-close]');
+        if (publishInspectorClose) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          closeSelectionPublishRowInspectorPicker_();
+          return;
+        }
+        const publishInspectorOption = evt.target.closest('[data-row-publish-inspector-option]');
+        if (publishInspectorOption) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          toggleSelectionPublishInspectorNameForObject_(
+            String(publishInspectorOption.getAttribute('data-row-publish-inspector-option') || ''),
+            String(publishInspectorOption.getAttribute('data-row-publish-inspector-name') || '')
+          );
+          return;
+        }
+        if (evt.target.closest('[data-row-publish-inspector-cell]')) {
+          evt.stopPropagation();
           return;
         }
         if (evt.target.closest('a[href]')) return;
@@ -843,6 +877,16 @@
       state.selectionPublishingId = '';
       state.selectionPublishDraftOpen = false;
       state.selectionPublishDraftSelectionId = '';
+      state.selectionPublishInspectorNames = [];
+      state.selectionPublishInspectorPickerOpen = false;
+      state.selectionPublishInspectorNamesByObjectKey = {};
+      state.selectionPublishRowInspectorPickerKey = '';
+      state.selectionPublishExtraVisits = '0';
+      state.mapPublishInspectors = [];
+      state.mapPublishInspectorsLoaded = false;
+      state.mapPublishInspectorsLoading = false;
+      state.mapPublishInspectorsError = '';
+      state.mapPublishInspectorsDivisionCode = '';
       state.registryMapRemovalMode = '';
       state.registryMapRemovalPendingAction = '';
       state.registryMapRemovalSelectedByKey = {};
@@ -1163,6 +1207,16 @@
       state.registryMapRemovalMode = '';
       state.registryMapRemovalPendingAction = '';
       state.registryMapRemovalSelectedByKey = {};
+      state.selectionPublishInspectorNames = [];
+      state.selectionPublishInspectorPickerOpen = false;
+      state.selectionPublishInspectorNamesByObjectKey = {};
+      state.selectionPublishRowInspectorPickerKey = '';
+      state.selectionPublishExtraVisits = '0';
+      state.mapPublishInspectors = [];
+      state.mapPublishInspectorsLoaded = false;
+      state.mapPublishInspectorsLoading = false;
+      state.mapPublishInspectorsError = '';
+      state.mapPublishInspectorsDivisionCode = '';
       state.filteredRowIndexes = [];
       state.objectTabRowIndexes = [];
       state.selectedRowIndex = -1;
@@ -1536,22 +1590,93 @@ function applyMonitoringOverlayPayload_(payload) {
       invalidateRegistryDerivedCaches_();
     }
 
+    function normalizeRegistryMapOverlayEntry_(item) {
+      const objectId = String(item && item.objectId || '').trim();
+      if (!objectId) return null;
+      const normalizeDivision = typeof normalizeMproDivisionCode_ === 'function'
+        ? normalizeMproDivisionCode_
+        : value => String(value || '').trim();
+      return {
+        objectId,
+        divisionCode: normalizeDivision(item && item.divisionCode || ''),
+        visitId: String(item && item.visitId || '').trim(),
+        visitStatus: String(item && item.visitStatus || '').trim(),
+        inspector: String(item && item.inspector || item && item.inspectorName || '').trim(),
+        routeListName: String(item && item.routeListName || '').trim(),
+        visitDate: String(item && item.visitDate || '').trim()
+      };
+    }
+
+    function normalizeRegistryMapOverlayEntries_(rawValue) {
+      return (
+        Array.isArray(rawValue)
+          ? rawValue
+          : (rawValue && typeof rawValue === 'object' ? [rawValue] : [])
+      )
+        .map(normalizeRegistryMapOverlayEntry_)
+        .filter(Boolean)
+        .sort(compareRegistryMapOverlayEntries_);
+    }
+
+    function getRegistryMapOverlayEntrySortTime_(entry) {
+      const time = Date.parse(String(entry && entry.visitDate || '').trim());
+      return Number.isFinite(time) ? time : 0;
+    }
+
+    function compareRegistryMapOverlayEntries_(left, right) {
+      const leftEntry = left && typeof left === 'object' ? left : {};
+      const rightEntry = right && typeof right === 'object' ? right : {};
+      const divisionCompare = String(leftEntry.divisionCode || '').localeCompare(String(rightEntry.divisionCode || ''), 'ru');
+      if (divisionCompare) return divisionCompare;
+      const timeCompare = getRegistryMapOverlayEntrySortTime_(rightEntry) - getRegistryMapOverlayEntrySortTime_(leftEntry);
+      if (timeCompare) return timeCompare;
+      const inspectorCompare = String(leftEntry.inspector || '').localeCompare(String(rightEntry.inspector || ''), 'ru');
+      if (inspectorCompare) return inspectorCompare;
+      return String(leftEntry.visitId || '').localeCompare(String(rightEntry.visitId || ''), 'ru');
+    }
+
+    function buildRegistryMapOverlayEntryKey_(entry) {
+      const item = normalizeRegistryMapOverlayEntry_(entry);
+      if (!item) return '';
+      if (item.visitId) return `visit:${item.visitId}`;
+      return [
+        normalizeMonitoringObjectKey_(item.objectId),
+        String(item.divisionCode || ''),
+        normalizeText_(item.inspector || ''),
+        String(item.visitDate || ''),
+        normalizeText_(item.routeListName || ''),
+        normalizeText_(item.visitStatus || '')
+      ].join('|');
+    }
+
+    function mergeRegistryMapOverlayEntryIntoMap_(targetMap, entry) {
+      const normalizedEntry = normalizeRegistryMapOverlayEntry_(entry);
+      if (!normalizedEntry) return targetMap;
+      const objectKey = normalizeMonitoringObjectKey_(normalizedEntry.objectId);
+      if (!objectKey) return targetMap;
+      const currentEntries = normalizeRegistryMapOverlayEntries_(targetMap && targetMap[objectKey]);
+      const nextEntryKey = buildRegistryMapOverlayEntryKey_(normalizedEntry);
+      let replaced = false;
+      const nextEntries = currentEntries.map(currentEntry => {
+        if (!nextEntryKey || buildRegistryMapOverlayEntryKey_(currentEntry) !== nextEntryKey) return currentEntry;
+        replaced = true;
+        return normalizedEntry;
+      });
+      if (!replaced) nextEntries.push(normalizedEntry);
+      targetMap[objectKey] = nextEntries.sort(compareRegistryMapOverlayEntries_);
+      return targetMap;
+    }
+
+    function upsertRegistryMapOverlayEntry_(entry) {
+      mergeRegistryMapOverlayEntryIntoMap_(state.registryMapOverlayByObjectKey, entry);
+      invalidateRegistryDerivedCaches_();
+    }
+
     function normalizeRegistryMapOverlayPayload_(payload) {
       const rows = Array.isArray(payload && payload.rows) ? payload.rows : [];
       const map = {};
       rows.forEach(item => {
-        const objectId = String(item && item.objectId || '').trim();
-        const objectKey = normalizeMonitoringObjectKey_(objectId);
-        if (!objectKey) return;
-        map[objectKey] = {
-          objectId,
-          divisionCode: String(item && item.divisionCode || '').trim(),
-          visitId: String(item && item.visitId || '').trim(),
-          visitStatus: String(item && item.visitStatus || '').trim(),
-          inspector: String(item && item.inspector || '').trim(),
-          routeListName: String(item && item.routeListName || '').trim(),
-          visitDate: String(item && item.visitDate || '').trim()
-        };
+        mergeRegistryMapOverlayEntryIntoMap_(map, item);
       });
       return map;
     }
@@ -1745,29 +1870,45 @@ function buildCurrentDataRefreshOptions_(options) {
       ));
     }
 
+    function fetchMproInspectorDirectory_() {
+      return runServer_('getSmartFilterShellMproInspectorDirectory', [{}]).then(result => (
+        result && typeof result === 'object'
+          ? result
+          : { inspectorsList: [], inspectorsConfig: {}, inspectorsHomes: {} }
+      ));
+    }
+
     function createLabStudy_(payload) {
       return runServer_('createSmartFilterShellLabStudy', [payload && typeof payload === 'object' ? payload : {}]).then(result => (
         result && typeof result === 'object' ? result : { success: false }
       ));
     }
 
-    function publishSelectionToMpro_(selection, rowIndexes, mode) {
+    function publishSelectionToMpro_(selection, rowIndexes, mode, publishOptions) {
       const item = selection || getActiveRegistrySelection_();
       const rows = Array.isArray(rowIndexes) ? rowIndexes.slice() : [];
       const mproProfile = typeof getCurrentUserAppProfile_ === 'function'
         ? getCurrentUserAppProfile_('mpro')
         : null;
-      const targetDivision = String(
+      const rawTargetDivision = String(
         (mproProfile && mproProfile.division) ||
         (state.currentUser && state.currentUser.division) ||
         ''
       ).trim() || 'map';
+      const targetDivision = typeof normalizeMproDivisionCode_ === 'function'
+        ? (normalizeMproDivisionCode_(rawTargetDivision) || rawTargetDivision)
+        : rawTargetDivision;
+      const extraOptions = publishOptions && typeof publishOptions === 'object'
+        ? { ...publishOptions }
+        : {};
       return runServer_('publishSmartFilterShellSelectionToMpro', [{
         selectionId: String(item && item.id || '').trim(),
         selectionName: String(item && item.name || '').trim(),
         targetDivision,
+        divisionCode: targetDivision,
         mode: String(mode || 'append').trim() || 'append',
-        rowIndexes: rows
+        rowIndexes: rows,
+        ...extraOptions
       }]).then(result => (result && typeof result === 'object' ? result : { success: true }));
     }
 

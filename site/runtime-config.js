@@ -25,7 +25,8 @@
     schema: 'api',
     rpc: {
       ...(currentSupabaseConfig.rpc || {}),
-      getDataBundle: 'sf_get_data_bundle_v2'
+      getDataBundle: 'sf_get_data_bundle_v2',
+      getMproInspectorDirectory: 'mpro_get_inspector_directory'
     }
   };
 })();

@@ -24,6 +24,7 @@
       'getSmartFilterShellObjectMonitoringHistory',
       'getSmartFilterShellObjectLabStudiesHistory',
       'getSmartFilterShellLabStudyInspectors',
+      'getSmartFilterShellMproInspectorDirectory',
       'createSmartFilterShellLabStudy',
       'getSmartFilterShellSharedSelections',
       'getSmartFilterShellSharedSelectionWorkState',
@@ -86,13 +87,13 @@
           key: 'constructionControl',
           title: 'Строительный контроль',
           plan: 258,
-          fact: 303
+          fact: 258
         },
         {
           key: 'metroMonitoring',
           title: 'Метрополитен',
-          plan: 48,
-          fact: 48
+          plan: 47,
+          fact: 47
         },
         {
           key: 'uniqueMonitoring',
@@ -103,7 +104,7 @@
         {
           key: 'labStudies',
           title: 'Лаборатория',
-          plan: 203,
+          plan: 72,
           fact: 275
         }
       ]
@@ -113,26 +114,26 @@
       snapshotLabel: 'мониторинг 01.04–15.04.2026',
       overall: {
         plan: 526,
-        fact: 486
+        fact: 746
       },
       tracks: [
         {
           key: 'constructionMonitoring',
           title: 'Строймониторинг',
           plan: 526,
-          fact: 486
+          fact: 746
         },
         {
           key: 'constructionControl',
           title: 'Строительный контроль',
-          plan: 190,
-          fact: 10
+          plan: 195,
+          fact: 12
         },
         {
           key: 'metroMonitoring',
           title: 'Метрополитен',
           plan: 48,
-          fact: 48
+          fact: 31
         },
         {
           key: 'uniqueMonitoring',
@@ -144,7 +145,7 @@
           key: 'labStudies',
           title: 'Лаборатория',
           plan: 240,
-          fact: 49
+          fact: 61
         }
       ]
     });
@@ -228,7 +229,21 @@
     const KSG_START_SMR_FACT_SPEC = { ids: ['ksg_5_2'], labels: ['Начало СМР Дата начала план (этал.график)', 'Дата начала план (этал.график)'] };
     const KSG_RV_DATE_SPEC = { ids: ['ksg_12_3'], labels: ['Фактическая дата окончания  (этал.график)'] };
     const KSG_RV_NUMBER_SPEC = { ids: ['ksg_12_4'], labels: ['№ РВ'] };
-    const GOOGLE_OWNED_HTML_FIELD_IDS = new Set(['sm_1_5', 'sm_1_6', 'sm_1_7', 'sm_1_10']);
+    const GOOGLE_OWNED_HTML_FIELD_IDS = new Set([
+      'sm_1_5',
+      'sm_1_6',
+      'sm_1_7',
+      'sm_1_10',
+      'ppr_1_8',
+      'lb_1_5',
+      'lb_1_6',
+      'lb_1_7',
+      'lb_1_8',
+      'lb_1_9',
+      'lb_1_10',
+      'lb_1_11',
+      'lb_1_12'
+    ]);
     const GOOGLE_OWNED_HTML_FIELD_PREFIXES = ['ksg_', 'suid_'];
     const DIRECTIVE_ENTRY_SPEC = { ids: ['object_directive_entry', 'ro_1_11'], labels: ['Плановый ввод по директивному графику (по дашборду)'] };
     const EVV_ENTRY_SPEC = { ids: ['object_evv_entry', 'ro_1_12'], labels: ['График ВВЕ 26-30'] };
@@ -843,6 +858,16 @@
       selectionComposerSelectionId: '',
       selectionPublishDraftOpen: false,
       selectionPublishDraftSelectionId: '',
+      selectionPublishInspectorNames: [],
+      selectionPublishInspectorPickerOpen: false,
+      selectionPublishInspectorNamesByObjectKey: {},
+      selectionPublishRowInspectorPickerKey: '',
+      selectionPublishExtraVisits: '0',
+      mapPublishInspectors: [],
+      mapPublishInspectorsLoaded: false,
+      mapPublishInspectorsLoading: false,
+      mapPublishInspectorsError: '',
+      mapPublishInspectorsDivisionCode: '',
       selectionComposerBusyState: '',
       selectionComposerDraftName: '',
       selectionComposerScope: 'personal',

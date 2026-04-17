@@ -126,7 +126,9 @@ function getSelectedInspectorFilters_() {
             return objectsData.filter(obj => {
                 const listKey = obj.__listDivisionKey || getObjectListDivisionKey_(obj);
                 if (!listSet.has(listKey)) return false;
-                const inspectorNorm = normalizeInspectorName_(obj?.inspector);
+                const inspectorNorm = isUnassignedInspectorName_(obj?.inspector)
+                    ? ''
+                    : normalizeInspectorName_(obj?.inspector);
                 if (!inspectorNorm) return showUnassignedObjects;
                 return inspectorSet.has(inspectorNorm);
             });
@@ -312,7 +314,7 @@ function getSelectedInspectorFilters_() {
             const pin = row.querySelector('[data-role="pin"]');
 
             if (iconEl) iconEl.textContent = icon;
-            if (title) title.textContent = `#${obj.id} • ${getObjectListName_(obj)}`;
+            if (title) title.textContent = `#${Utils.extractDisplayId(obj.originalId || obj.id)} • ${getObjectListName_(obj)}`;
             if (address) address.textContent = obj.address || 'Без адреса';
             if (inspector) {
                 inspector.textContent = `${obj.inspector || 'Не назначен'} • ${obj.__divisionResolved || resolveObjectDivision_(obj)}`;

@@ -26,6 +26,7 @@
       getObjectMonitoringHistory: 'sf_get_object_monitoring_history',
       getObjectLabStudiesHistory: 'sf_get_object_lab_studies_history',
       getLabStudyInspectors: 'sf_get_lab_study_inspectors',
+      getMproInspectorDirectory: 'mpro_get_inspector_directory',
       createLabStudy: 'sf_create_lab_study',
       getSessionUser: 'sf_get_session_user',
       getSharedSelections: 'sf_get_shared_selections',
