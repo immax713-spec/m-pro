@@ -2124,7 +2124,7 @@ function renderAdminRegistryUi_() {
         ? `<span class="registry-selection-edit-kicker-scope">${escapeHtml_(getRegistrySelectionScopeChipLabel_(activeItem.scope))}</span>`
         : (
           isPublishDraftEditing
-            ? `<span class="registry-selection-edit-scope registry-selection-edit-scope--pick">Выбор объектов</span>`
+            ? `<span class="registry-selection-edit-scope registry-selection-edit-scope--pick">Добавление объектов</span>`
             : (
               isMapRemovalEditing
                 ? `<span class="registry-selection-edit-scope registry-selection-edit-scope--remove">Снятие объектов</span>`
