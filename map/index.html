@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>m-pro</title>
+  <title>M-PRO Map</title>
 </head>
 <body>
   <script>
     (function () {
-      const PORTAL_ENTRY_URL = 'portal/';
-      const PORTAL_SOURCE_URL = 'site/index.html';
-      const PORTAL_BASE_HREF = '/site/';
-      const MAP_ENTRY_URL = 'map/';
+      const MAP_SOURCE_URL = '../mpro.html';
+      const MAP_BASE_HREF = '/';
+      const MAP_FALLBACK_URL = '../mpro.html';
+      const PORTAL_ENTRY_URL = '../portal/';
       const SITE_SESSION_KEYS = ['smart_filter_shell_session', 'smart_filter_shell_session_persist'];
       const MPRO_SESSION_KEYS = ['mpro_user', 'mpro_user_persist'];
 
@@ -20,14 +20,6 @@
           return storage.getItem(key);
         } catch (_error) {
           return '';
-        }
-      }
-
-      function writeStorageValue(storage, key, value) {
-        try {
-          storage.setItem(key, value);
-        } catch (_error) {
-          // no-op
         }
       }
 
@@ -54,13 +46,7 @@
           for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
             const raw = readStorageValue(storage, keys[keyIndex]);
             const parsed = parseSession(raw);
-            if (parsed) {
-              return {
-                payload: parsed,
-                raw,
-                storage
-              };
-            }
+            if (parsed) return parsed;
           }
         }
         return null;
@@ -100,52 +86,40 @@
         });
       }
 
-      function openShellAtCurrentLocation(sourceUrl, baseHref, fallbackUrl) {
-        return window.fetch(sourceUrl, {
+      function openMap() {
+        return window.fetch(MAP_SOURCE_URL, {
           credentials: 'same-origin',
           cache: 'no-store'
         })
           .then(function (response) {
-            if (!response || !response.ok) {
-              throw new Error('Failed to load site shell');
-            }
+            if (!response || !response.ok) throw new Error('Failed to load map shell');
             return response.text();
           })
           .then(function (html) {
-            const shellHtml = injectBaseHref(html, baseHref);
-            if (!shellHtml) throw new Error('Empty site shell');
+            const shellHtml = injectBaseHref(html, MAP_BASE_HREF);
+            if (!shellHtml) throw new Error('Empty map shell');
             document.open();
             document.write(shellHtml);
             document.close();
           })
           .catch(function () {
-            redirect(fallbackUrl);
+            redirect(MAP_FALLBACK_URL);
           });
       }
 
       const siteSession = readSession(SITE_SESSION_KEYS);
       const mproSession = readSession(MPRO_SESSION_KEYS);
-      const preferredSession = siteSession || mproSession;
+      const preferredSession = mproSession || siteSession;
 
-      if (preferredSession && preferredSession.payload && preferredSession.payload.user) {
-        const allowedApps = normalizeAllowedApps(preferredSession.payload.user);
-        if (allowedApps.indexOf('site') !== -1) {
-          if (!siteSession && preferredSession.raw) {
-            writeStorageValue(window.sessionStorage, SITE_SESSION_KEYS[0], preferredSession.raw);
-          }
-          openShellAtCurrentLocation(PORTAL_SOURCE_URL, PORTAL_BASE_HREF, PORTAL_ENTRY_URL);
-          return;
-        }
-        if (allowedApps.indexOf('mpro') !== -1) {
-          if (!mproSession && preferredSession.raw) {
-            writeStorageValue(window.sessionStorage, MPRO_SESSION_KEYS[0], preferredSession.raw);
-          }
-          redirect(MAP_ENTRY_URL);
+      if (preferredSession && preferredSession.user) {
+        const allowedApps = normalizeAllowedApps(preferredSession.user);
+        if (allowedApps.indexOf('mpro') === -1 && allowedApps.indexOf('site') !== -1) {
+          redirect(PORTAL_ENTRY_URL);
           return;
         }
       }
 
-      openShellAtCurrentLocation(PORTAL_SOURCE_URL, PORTAL_BASE_HREF, PORTAL_ENTRY_URL);
+      openMap();
     })();
   </script>
 </body>

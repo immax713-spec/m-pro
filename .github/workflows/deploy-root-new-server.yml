@@ -7,6 +7,8 @@ on:
     paths:
       - index.html
       - mpro.html
+      - portal/**
+      - map/**
       - build-manifest.json
       - README.md
       - site/**
@@ -84,6 +86,8 @@ jobs:
             -czf "$ARCHIVE_NAME" \
             index.html \
             mpro.html \
+            portal \
+            map \
             build-manifest.json \
             README.md \
             site \

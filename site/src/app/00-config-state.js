@@ -42,7 +42,7 @@
     const SHELL_SESSION_PERSIST_STORAGE_KEY = 'smart_filter_shell_session_persist';
     const MPRO_SESSION_STORAGE_KEY = 'mpro_user';
     const MPRO_SESSION_PERSIST_STORAGE_KEY = 'mpro_user_persist';
-    const MPRO_APP_ENTRY_URL = '../mpro.html';
+    const MPRO_APP_ENTRY_URL = '../map/';
     const MPRO_SYNC_SIGNAL_STORAGE_KEY = 'mpro_sync_signal';
     const LEGACY_AUTH_PASSWORD_STORAGE_KEY = 'smart_filter_shell_auth_password';
     const REGISTRY_SESSION_STORAGE_KEY = 'smart_filter_shell_registry_session';

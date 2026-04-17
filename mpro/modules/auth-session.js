@@ -3,7 +3,7 @@
 
         const SITE_SESSION_STORAGE_KEY = 'smart_filter_shell_session';
         const SITE_SESSION_PERSIST_STORAGE_KEY = 'smart_filter_shell_session_persist';
-        const SITE_APP_ENTRY_URL = 'index.html';
+        const SITE_APP_ENTRY_URL = 'portal/';
 
         function sanitizeSessionUserMetaText_(value) {
             const text = String(value == null ? '' : value).trim();
@@ -554,7 +554,7 @@
                     if (false) {
                         throw new Error(
                             normalizedUser && Array.isArray(normalizedUser.allowedApps) && normalizedUser.allowedApps.includes('site')
-                                ? 'У вас нет доступа к M-PRO. Для этого пользователя открыт только Site.'
+                ? 'У вас нет доступа к карте. Для этого пользователя открыт только Portal.'
                                 : 'У вас нет доступа к M-PRO'
                         );
                     }

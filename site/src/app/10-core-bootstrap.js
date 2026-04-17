@@ -1090,7 +1090,7 @@
             return;
           }
           throw new Error(
-            'У вас нет доступа к Site'
+            'У вас нет доступа к Portal'
           );
         }
         setCurrentUserSession_(normalizedUser, authResponse.sessionToken, authResponse.expiresAt || '');
@@ -1252,8 +1252,8 @@
       const title = !hasSession
         ? 'Войдите в систему'
         : canOpenMpro
-          ? 'Открыть M-PRO'
-          : 'Нет доступа к M-PRO';
+          ? 'Открыть карту'
+          : 'Нет доступа к карте';
       if (navItem) navItem.classList.toggle('hidden', !canOpenMpro);
       else button.classList.toggle('hidden', !canOpenMpro);
       button.disabled = !canOpenMpro;
@@ -1289,7 +1289,7 @@
 
       if (code === 'mpro') {
         if (!hasCurrentUserAppAccess_('mpro')) {
-          showCopyToast_('Нет доступа к M-PRO', true);
+          showCopyToast_('Нет доступа к карте', true);
           return;
         }
         const sessionPayload = buildCrossAppSessionPayload_();

@@ -7,6 +7,8 @@ on:
     paths:
       - index.html
       - mpro.html
+      - portal/**
+      - map/**
       - build-manifest.json
       - README.md
       - site/**
@@ -80,6 +82,8 @@ jobs:
           tar --exclude='site/src/app/40-ui.js.bak_test' -czf deploy-root-compat.tar.gz \
             index.html \
             mpro.html \
+            portal \
+            map \
             build-manifest.json \
             README.md \
             site \
@@ -124,26 +128,36 @@ jobs:
             cp "'"$DEPLOY_RELEASE_PATH"'/build-manifest.json" "'"$DEPLOY_PATH"'/build-manifest.json"
             cp "'"$DEPLOY_RELEASE_PATH"'/README.md" "'"$DEPLOY_PATH"'/README.md"
 
-            rm -rf "'"$DEPLOY_PATH"'/site.new" "'"$DEPLOY_PATH"'/mpro.new" "'"$DEPLOY_PATH"'/vendor.new"
+            rm -rf "'"$DEPLOY_PATH"'/site.new" "'"$DEPLOY_PATH"'/mpro.new" "'"$DEPLOY_PATH"'/vendor.new" "'"$DEPLOY_PATH"'/portal.new" "'"$DEPLOY_PATH"'/map.new"
             cp -a "'"$DEPLOY_RELEASE_PATH"'/site" "'"$DEPLOY_PATH"'/site.new"
             cp -a "'"$DEPLOY_RELEASE_PATH"'/mpro" "'"$DEPLOY_PATH"'/mpro.new"
             cp -a "'"$DEPLOY_RELEASE_PATH"'/vendor" "'"$DEPLOY_PATH"'/vendor.new"
+            cp -a "'"$DEPLOY_RELEASE_PATH"'/portal" "'"$DEPLOY_PATH"'/portal.new"
+            cp -a "'"$DEPLOY_RELEASE_PATH"'/map" "'"$DEPLOY_PATH"'/map.new"
 
-            rm -rf "'"$DEPLOY_PATH"'/site.bak" "'"$DEPLOY_PATH"'/mpro.bak" "'"$DEPLOY_PATH"'/vendor.bak"
+            rm -rf "'"$DEPLOY_PATH"'/site.bak" "'"$DEPLOY_PATH"'/mpro.bak" "'"$DEPLOY_PATH"'/vendor.bak" "'"$DEPLOY_PATH"'/portal.bak" "'"$DEPLOY_PATH"'/map.bak"
             if [ -d "'"$DEPLOY_PATH"'/site" ]; then mv "'"$DEPLOY_PATH"'/site" "'"$DEPLOY_PATH"'/site.bak"; fi
             if [ -d "'"$DEPLOY_PATH"'/mpro" ]; then mv "'"$DEPLOY_PATH"'/mpro" "'"$DEPLOY_PATH"'/mpro.bak"; fi
             if [ -d "'"$DEPLOY_PATH"'/vendor" ]; then mv "'"$DEPLOY_PATH"'/vendor" "'"$DEPLOY_PATH"'/vendor.bak"; fi
+            if [ -d "'"$DEPLOY_PATH"'/portal" ]; then mv "'"$DEPLOY_PATH"'/portal" "'"$DEPLOY_PATH"'/portal.bak"; fi
+            if [ -d "'"$DEPLOY_PATH"'/map" ]; then mv "'"$DEPLOY_PATH"'/map" "'"$DEPLOY_PATH"'/map.bak"; fi
 
             mv "'"$DEPLOY_PATH"'/site.new" "'"$DEPLOY_PATH"'/site"
             mv "'"$DEPLOY_PATH"'/mpro.new" "'"$DEPLOY_PATH"'/mpro"
             mv "'"$DEPLOY_PATH"'/vendor.new" "'"$DEPLOY_PATH"'/vendor"
+            mv "'"$DEPLOY_PATH"'/portal.new" "'"$DEPLOY_PATH"'/portal"
+            mv "'"$DEPLOY_PATH"'/map.new" "'"$DEPLOY_PATH"'/map"
 
             find "'"$DEPLOY_PATH"'/site" -type d -exec chmod 755 {} +
             find "'"$DEPLOY_PATH"'/mpro" -type d -exec chmod 755 {} +
             find "'"$DEPLOY_PATH"'/vendor" -type d -exec chmod 755 {} +
+            find "'"$DEPLOY_PATH"'/portal" -type d -exec chmod 755 {} +
+            find "'"$DEPLOY_PATH"'/map" -type d -exec chmod 755 {} +
             find "'"$DEPLOY_PATH"'/site" -type f -exec chmod 644 {} +
             find "'"$DEPLOY_PATH"'/mpro" -type f -exec chmod 644 {} +
             find "'"$DEPLOY_PATH"'/vendor" -type f -exec chmod 644 {} +
+            find "'"$DEPLOY_PATH"'/portal" -type f -exec chmod 644 {} +
+            find "'"$DEPLOY_PATH"'/map" -type f -exec chmod 644 {} +
             chmod 644 "'"$DEPLOY_PATH"'/index.html" "'"$DEPLOY_PATH"'/bmw.html" "'"$DEPLOY_PATH"'/mpro.html" "'"$DEPLOY_PATH"'/build-manifest.json" "'"$DEPLOY_PATH"'/README.md"
 
             rm -rf "'"$DEPLOY_RELEASE_PATH"'"
