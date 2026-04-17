@@ -240,7 +240,7 @@ function isRegistryColumnAvailable_(def) {
       if (!def) return false;
       if (def.required) return true;
       if (String(def && def.key || '').trim() === 'inspector') {
-        return canCurrentUserManageMproMap_() && isCurrentRegistryDatasetEditable_();
+        return true;
       }
       if (typeof def.isAvailable === 'function') return !!def.isAvailable();
       if (!state.columns.length) return def.defaultVisible !== false;
