@@ -409,12 +409,6 @@
           toggleRegistryRowSharedWorkBatchSelection_(Number(sharedWorkBatchButton.getAttribute('data-shared-work-batch-select')));
           return;
         }
-        const doneButton = evt.target.closest('[data-toggle-done]');
-        if (doneButton) {
-          evt.stopPropagation();
-          toggleRegistryRowDone_(Number(doneButton.getAttribute('data-toggle-done')));
-          return;
-        }
         const workButton = evt.target.closest('[data-registry-work-action]');
         if (workButton) {
           evt.stopPropagation();

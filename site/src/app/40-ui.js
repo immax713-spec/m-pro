@@ -1147,7 +1147,6 @@ function renderRegistryUinCellHtml_(rowIndex, context) {
       const canSelectSharedWorkBatch = !!rowState.canSelectSharedWorkBatch;
       const hasSavedSelection = !!rowState.hasSavedSelection;
       const sharedSelectionActive = !!rowState.sharedSelectionActive;
-      const isDone = !!rowState.isDone;
       const uinText = String(summary.uin || '').trim();
       const dashboardUrl = String(summary.dashboardUrl || '').trim();
       const uinLabelHtml = uinText
@@ -1193,15 +1192,7 @@ function renderRegistryUinCellHtml_(rowIndex, context) {
                     `<span class="registry-row-check-mark" aria-hidden="true"></span>` +
                   `</button>`
                 )
-                : (
-                  hasSavedSelection && !sharedSelectionActive
-                    ? (
-                      `<button class="registry-row-check${isDone ? ' checked' : ''}" type="button" data-toggle-done="${rowIndex}" aria-pressed="${isDone ? 'true' : 'false'}" title="${isDone ? 'Снять отметку &quot;выполнено&quot;' : 'Отметить как выполненный'}">` +
-                        `<span class="registry-row-check-mark" aria-hidden="true"></span>` +
-                      `</button>`
-                    )
-                    : ''
-                )
+                : ''
             ) +
             uinLabelHtml +
             `${uinText ? renderCopyActionButtonHtml_(uinText, 'Скопировать УИН', 'registry-copy-button') : ''}` +
