@@ -244,7 +244,7 @@
       'lb_1_11',
       'lb_1_12'
     ]);
-    const GOOGLE_OWNED_HTML_FIELD_PREFIXES = ['suid_'];
+    const GOOGLE_OWNED_HTML_FIELD_PREFIXES = [];
     const DIRECTIVE_ENTRY_SPEC = { ids: ['object_directive_entry', 'ro_1_11'], labels: ['Плановый ввод по директивному графику (по дашборду)'] };
     const EVV_ENTRY_SPEC = { ids: ['object_evv_entry', 'ro_1_12'], labels: ['График ВВЕ 26-30'] };
     const EVV_YEAR_SPEC = { ids: ['object_evv_year', 'ro_1_13'], labels: ['График ВВЕ год', 'График ВВЕ'] };
@@ -607,10 +607,18 @@
         label: 'КСГ',
         sourceKey: '__ksg__',
         excludePinned: false,
-        defaultOption: 'all',
+        multiSelect: true,
+        defaultOption: '__all__',
         options: [
-          { key: 'empty', dropdownLabel: 'Незаполненные', title: 'КСГ · Незаполненные поля', subtitle: 'Незаполненные поля КСГ', mode: 'empty', fieldIds: [] },
-          { key: 'all', dropdownLabel: 'Все поля', title: 'КСГ', subtitle: 'Основные этапы КСГ', mode: 'all', fieldIds: [] }
+          { key: '__all__', dropdownLabel: 'Все позиции', title: 'КСГ', subtitle: 'Выбранные позиции блока КСГ', mode: 'all', fieldIds: [] },
+          { key: 'ksg_2_2', dropdownLabel: 'Разрешение на строительство', title: 'КСГ · Разрешение на строительство', subtitle: 'Получение разрешения на строительство', mode: 'all', fieldIds: ['ksg_2_2'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_4_2', dropdownLabel: 'Передача стройплощадки подрядчику', title: 'КСГ · Передача стройплощадки подрядчику', subtitle: 'Передача строительной площадки подрядчику', mode: 'all', fieldIds: ['ksg_4_2'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_5_1', dropdownLabel: 'Начало СМР', title: 'КСГ · Начало СМР', subtitle: 'Начало СМР', mode: 'all', fieldIds: ['ksg_5_1'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_6_1', dropdownLabel: 'Окончание СМР', title: 'КСГ · Окончание СМР', subtitle: 'Окончание СМР', mode: 'all', fieldIds: ['ksg_6_1'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_8_2', dropdownLabel: 'Акты технологического присоединения', title: 'КСГ · Акты технологического присоединения', subtitle: 'Получение актов технологического присоединения', mode: 'all', fieldIds: ['ksg_8_2'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_9_2', dropdownLabel: 'Папка ЗОС', title: 'КСГ · Папка ЗОС', subtitle: 'Формирование папки ЗОС', mode: 'all', fieldIds: ['ksg_9_2'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_10_2', dropdownLabel: 'Получение ЗОС', title: 'КСГ · Получение ЗОС', subtitle: 'Получение ЗОС', mode: 'all', fieldIds: ['ksg_10_2'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_12_1', dropdownLabel: 'Получение РВ', title: 'КСГ · Получение РВ', subtitle: 'Получение РВ', mode: 'all', fieldIds: ['ksg_12_1'], collectAllMatches: true, matchGroupedTitle: true }
         ]
       },
       suid_all: {
@@ -751,7 +759,10 @@
         const normalized = list
           .map(item => normalizePresetSelectionKey_(key, item))
           .filter(item => allowed.has(item));
-        return Array.from(new Set(normalized));
+        const unique = Array.from(new Set(normalized));
+        if (unique.length) return unique;
+        const fallback = normalizePresetSelectionKey_(key, def && def.defaultOption || '');
+        return allowed.has(fallback) ? [fallback] : [];
       }
       const single = normalizePresetSelectionKey_(key, rawValue || def && def.defaultOption || '');
       return allowed.has(single) ? [single] : [];

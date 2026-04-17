@@ -1616,7 +1616,7 @@ function buildSectionRenderItems_(fields, section, editing) {
       ));
     }
 
-function sortSectionGroupItems_(items) {
+function sortSectionGroupItemsLegacy_(items) {
       const list = Array.isArray(items) ? items.slice() : [];
       const priorityByLabel = { 'план': 0, 'факт': 1 };
       return list.sort((a, b) => {
@@ -1629,7 +1629,7 @@ function sortSectionGroupItems_(items) {
       });
     }
 
-    function buildSpecialSectionCompoundMap_(fields, section, editing) {
+    function buildSpecialSectionCompoundMapLegacy_(fields, section, editing) {
       const map = new Map();
       if (!section) return map;
       const list = Array.isArray(fields) ? fields : [];
@@ -1705,6 +1705,46 @@ function sortSectionGroupItems_(items) {
         }
       }
       return map;
+    }
+
+function sortSectionGroupItems_(items) {
+      const list = Array.isArray(items) ? items.slice() : [];
+      const priorityByLabel = {
+        'контракт': 0,
+        'план': 1,
+        'факт': 2,
+        '№ рв': 3,
+        '№рв': 3,
+        'номер рв': 3
+      };
+      return list.sort((a, b) => {
+        const labelA = normalizeText_(a && a.shortLabel || '');
+        const labelB = normalizeText_(b && b.shortLabel || '');
+        const priorityA = Object.prototype.hasOwnProperty.call(priorityByLabel, labelA) ? priorityByLabel[labelA] : 99;
+        const priorityB = Object.prototype.hasOwnProperty.call(priorityByLabel, labelB) ? priorityByLabel[labelB] : 99;
+        if (priorityA !== priorityB) return priorityA - priorityB;
+        return Number(a && a.field && a.field.index) - Number(b && b.field && b.field.index);
+      });
+    }
+
+function sortSectionGroupItems_(items) {
+      const list = Array.isArray(items) ? items.slice() : [];
+      const priorityByLabel = {
+        '\u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442': 0,
+        '\u043f\u043b\u0430\u043d': 1,
+        '\u0444\u0430\u043a\u0442': 2,
+        '\u2116 \u0440\u0432': 3,
+        '\u2116\u0440\u0432': 3,
+        '\u043d\u043e\u043c\u0435\u0440 \u0440\u0432': 3
+      };
+      return list.sort((a, b) => {
+        const labelA = normalizeText_(a && a.shortLabel || '');
+        const labelB = normalizeText_(b && b.shortLabel || '');
+        const priorityA = Object.prototype.hasOwnProperty.call(priorityByLabel, labelA) ? priorityByLabel[labelA] : 99;
+        const priorityB = Object.prototype.hasOwnProperty.call(priorityByLabel, labelB) ? priorityByLabel[labelB] : 99;
+        if (priorityA !== priorityB) return priorityA - priorityB;
+        return Number(a && a.field && a.field.index) - Number(b && b.field && b.field.index);
+      });
     }
 
     function renderSectionLinkedValueHtml_(value, href, linkKind) {
