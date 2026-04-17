@@ -2191,7 +2191,7 @@ function renderAdminRegistryUi_() {
       const publishMenuHeaderActionsHtml = isPublishMenuExpanded
         ? (
           `<span class="registry-header-action-group registry-header-action-group--secondary">` +
-            `<button class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--take" type="button" data-open-selection-publish-draft="${escapeHtml_(currentSelectionId)}">Выбрать объекты</button>` +
+            `<button class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--take" type="button" data-open-selection-publish-draft="${escapeHtml_(currentSelectionId)}">Добавить объекты</button>` +
             `<button class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--release" type="button" data-registry-map-removal-start="1"${mapRemovalVisibleState.visibleCount ? '' : ' disabled'}>Снять с карты</button>` +
           `</span>` +
           `<span class="registry-header-action-group registry-header-action-group--primary">` +
