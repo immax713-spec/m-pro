@@ -1196,6 +1196,7 @@ function isRegistryCenterAlignedColumnKey_(key) {
         'status',
         'grbs',
         'customer',
+        'evvYear',
         'contractor',
         'anoSmgCode',
         'coordinates',

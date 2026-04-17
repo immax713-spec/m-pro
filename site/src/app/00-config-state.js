@@ -232,6 +232,7 @@
     const GOOGLE_OWNED_HTML_FIELD_PREFIXES = ['ksg_', 'suid_'];
     const DIRECTIVE_ENTRY_SPEC = { ids: ['object_directive_entry', 'ro_1_11'], labels: ['Плановый ввод по директивному графику (по дашборду)'] };
     const EVV_ENTRY_SPEC = { ids: ['object_evv_entry', 'ro_1_12'], labels: ['График ВВЕ 26-30'] };
+    const EVV_YEAR_SPEC = { ids: ['object_evv_year', 'ro_1_13'], labels: ['График ВВЕ год', 'График ВВЕ'] };
     const CONTACT_OWNER_SPEC = { ids: ['ppr_1_1', 'object_project_lead', 'koo_1_6'], labels: ['ФИО', 'Руководитель проекта (Заказчик)'] };
     const CONTACT_DETAILS_SPEC = { ids: ['ppr_1_2', 'object_contact_details', 'koo_1_7'], labels: ['Телефон', 'Контактные данные'] };
     const PPR_DEADLINE_RISK_SPEC = { ids: ['ppr_1_6'], labels: ['Риск срыва сроков'] };
@@ -282,6 +283,7 @@
       { key: 'grbs', title: 'ГРБС', width: '86px', filterKey: 'grbs', summaryKey: 'grbs', defaultVisible: true },
       { key: 'customer', title: 'Заказчик', width: '170px', filterKey: 'customer', summaryKey: 'customer', defaultVisible: true },
       { key: 'contractor', title: 'Генподрядчик', width: '176px', filterKey: 'contractor', summaryKey: 'contractor', defaultVisible: true },
+      { key: 'evvYear', title: 'График ВВЕ', width: '136px', summaryKey: 'evvYear', spec: EVV_YEAR_SPEC, defaultVisible: false },
       { key: 'anoSmgCode', title: 'Код АНО СМГ', width: '132px', summaryKey: 'anoSmgCode', spec: SM_ANO_CODE_SPEC, defaultVisible: false },
       { key: 'peopleCount', title: 'Кол-во людей', width: '144px', summaryKey: 'peopleCountFact', spec: SM_PEOPLE_FACT_SPEC, defaultVisible: false, isAvailable: () => hasAnyRegistryColumnSpecs_([SM_PEOPLE_PLAN_SPEC, SM_PEOPLE_FACT_SPEC]) },
       { key: 'constructionReadiness', title: 'Строительная готовность', width: '160px', filterKey: 'constructionReadiness', summaryKey: 'constructionReadinessFact', spec: SM_READINESS_FACT_SPEC, defaultVisible: false, isAvailable: () => hasAnyRegistryColumnSpecs_([SM_READINESS_PLAN_SPEC, SM_READINESS_FACT_SPEC]) },
@@ -306,10 +308,11 @@
       grbs: PINNED_FIELDS[1],
       customer: PINNED_FIELDS[2],
       contractor: PINNED_FIELDS[3],
-        anoSmgCode: SM_ANO_CODE_SPEC,
-        coordinates: SM_COORDINATES_SPEC,
-        inspector: ARCHIVE_INSPECTOR_SPEC,
-        checklistUrl: SM_CHECKLIST_SPEC,
+      evvYear: EVV_YEAR_SPEC,
+      anoSmgCode: SM_ANO_CODE_SPEC,
+      coordinates: SM_COORDINATES_SPEC,
+      inspector: ARCHIVE_INSPECTOR_SPEC,
+      checklistUrl: SM_CHECKLIST_SPEC,
       monitoringDate: SM_MONITORING_DATE_SPEC,
       yandexDiskUrl: SM_YANDEX_DISK_SPEC,
       autosliderUrl: SM_AUTOSLIDER_SPEC,
