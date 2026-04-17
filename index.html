@@ -9,6 +9,7 @@
   <script>
     (function () {
       const SITE_ENTRY_URL = 'site/index.html';
+      const SITE_BASE_HREF = '/site/';
       const MPRO_ENTRY_URL = 'mpro.html';
       const SITE_SESSION_KEYS = ['smart_filter_shell_session', 'smart_filter_shell_session_persist'];
       const MPRO_SESSION_KEYS = ['mpro_user', 'mpro_user_persist'];
@@ -89,6 +90,38 @@
         window.location.replace(url);
       }
 
+      function injectSiteBaseHref(html) {
+        const markup = String(html || '');
+        if (!markup) return markup;
+        if (/<base[\s>]/i.test(markup)) return markup;
+        return markup.replace(/<head(\s[^>]*)?>/i, function (match) {
+          return match + '\n  <base href="' + SITE_BASE_HREF + '">';
+        });
+      }
+
+      function openSiteAtRoot() {
+        return window.fetch(SITE_ENTRY_URL, {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        })
+          .then(function (response) {
+            if (!response || !response.ok) {
+              throw new Error('Failed to load site shell');
+            }
+            return response.text();
+          })
+          .then(function (html) {
+            const siteHtml = injectSiteBaseHref(html);
+            if (!siteHtml) throw new Error('Empty site shell');
+            document.open();
+            document.write(siteHtml);
+            document.close();
+          })
+          .catch(function () {
+            redirect(SITE_ENTRY_URL);
+          });
+      }
+
       const siteSession = readSession(SITE_SESSION_KEYS);
       const mproSession = readSession(MPRO_SESSION_KEYS);
       const preferredSession = siteSession || mproSession;
@@ -99,7 +132,7 @@
           if (!siteSession && preferredSession.raw) {
             writeStorageValue(window.sessionStorage, SITE_SESSION_KEYS[0], preferredSession.raw);
           }
-          redirect(SITE_ENTRY_URL);
+          openSiteAtRoot();
           return;
         }
         if (allowedApps.indexOf('mpro') !== -1) {
@@ -111,7 +144,7 @@
         }
       }
 
-      redirect(SITE_ENTRY_URL);
+      openSiteAtRoot();
     })();
   </script>
 </body>
