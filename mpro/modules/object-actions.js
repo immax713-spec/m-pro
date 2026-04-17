@@ -700,18 +700,45 @@ function openObjectDetails(objectId) {
         const OBJECT_FACT_SESSION_VALUES_ = new Map();
         const OBJECT_FACT_STORAGE_PREFIX_ = 'mpro:object-facts:';
         const OBJECT_FACT_HIDDEN_SOURCES_ = new Set(['Laboratory', 'ConstructionControl', 'Metro']);
+        const OBJECT_FACT_OPTIONAL_DIVISIONS_ = new Set(['Лаборатория', 'СК', 'Метро']);
 
         function getObjectFactSourceKey_(obj) {
             return String(obj?.source || '').trim();
         }
 
+        function getObjectFactDivisionKey_(obj) {
+            const cachedDivision = typeof normalizeDivisionName_ === 'function'
+                ? normalizeDivisionName_(obj?.__divisionResolved)
+                : '';
+            if (cachedDivision) return cachedDivision;
+
+            if (typeof resolveObjectDivision_ === 'function') {
+                const resolvedDivision = normalizeDivisionName_(resolveObjectDivision_(obj));
+                if (resolvedDivision) return resolvedDivision;
+            }
+
+            const sourceLabel = obj?.source && CONFIG?.SOURCES
+                ? String(CONFIG.SOURCES[obj.source] || obj.source)
+                : String(obj?.source || '');
+            return typeof normalizeDivisionName_ === 'function'
+                ? normalizeDivisionName_(sourceLabel)
+                : '';
+        }
+
+        function isObjectFactsOptional_(obj, status = getObjectStatus(obj)) {
+            if (!obj || !status?.isActive) return false;
+            if (OBJECT_FACT_HIDDEN_SOURCES_.has(getObjectFactSourceKey_(obj))) return true;
+            return OBJECT_FACT_OPTIONAL_DIVISIONS_.has(getObjectFactDivisionKey_(obj));
+        }
+
         function shouldShowObjectFacts_(obj, status = getObjectStatus(obj)) {
             if (!obj || !status?.isActive) return false;
-            return !OBJECT_FACT_HIDDEN_SOURCES_.has(getObjectFactSourceKey_(obj));
+            return !isObjectFactsOptional_(obj, status);
         }
 
         function areObjectFactsRequired_(obj, status = getObjectStatus(obj)) {
-            return shouldShowObjectFacts_(obj, status);
+            if (!obj || !status?.isActive) return false;
+            return !isObjectFactsOptional_(obj, status);
         }
 
         function getObjectFactsExitMeta_(obj, facts, status = getObjectStatus(obj)) {
@@ -890,7 +917,8 @@ function openObjectDetails(objectId) {
                 : committed.peopleCount;
             const missingReadiness = !normalizeObjectFactText_(readinessValue);
             const missingPeopleCount = !normalizeObjectFactText_(peopleCountValue);
-            const hasRequiredFields = !missingReadiness && !missingPeopleCount;
+            const factsAreRequired = areObjectFactsRequired_(obj);
+            const hasRequiredFields = !factsAreRequired || (!missingReadiness && !missingPeopleCount);
             const isDirty = readinessValue !== committed.readiness || peopleCountValue !== committed.peopleCount;
 
             return {
