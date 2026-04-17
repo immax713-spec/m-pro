@@ -2124,10 +2124,10 @@ function renderAdminRegistryUi_() {
         ? `<span class="registry-selection-edit-kicker-scope">${escapeHtml_(getRegistrySelectionScopeChipLabel_(activeItem.scope))}</span>`
         : (
           isPublishDraftEditing
-            ? `<span class="registry-selection-edit-scope">Выбор объектов</span>`
+            ? `<span class="registry-selection-edit-scope registry-selection-edit-scope--pick">Выбор объектов</span>`
             : (
               isMapRemovalEditing
-                ? `<span class="registry-selection-edit-scope">Снятие объектов</span>`
+                ? `<span class="registry-selection-edit-scope registry-selection-edit-scope--remove">Снятие объектов</span>`
                 : ''
             )
         );
@@ -2226,11 +2226,11 @@ function renderAdminRegistryUi_() {
       const publishDraftHeaderActionsHtml = isPublishDraftEditing
         ? (
           `<span class="registry-header-action-group registry-header-action-group--secondary">` +
-            `<button class="ghost registry-selection-toggle-all registry-shared-work-batch-button registry-shared-work-batch-button--toggle-all${visibleState.allVisibleSelected ? ' is-active' : ''}" type="button" data-selection-edit-toggle-all="1"${visibleState.visibleCount ? '' : ' disabled'} aria-pressed="${visibleState.allVisibleSelected ? 'true' : 'false'}" title="${escapeHtml_(toggleAllLabel)}">` +
+            `<button class="ghost registry-selection-toggle-all registry-shared-work-batch-button registry-shared-work-batch-button--toggle-all registry-shared-work-batch-button--selection-draft${visibleState.allVisibleSelected ? ' is-active' : ''}" type="button" data-selection-edit-toggle-all="1"${visibleState.visibleCount ? '' : ' disabled'} aria-pressed="${visibleState.allVisibleSelected ? 'true' : 'false'}" title="${escapeHtml_(toggleAllLabel)}">` +
               `<span class="registry-selection-toggle-all-mark" aria-hidden="true"></span>` +
               `<span>${escapeHtml_(toggleAllLabel)}</span>` +
             `</button>` +
-            `<span class="registry-selection-edit-count-badge registry-selection-edit-count-badge--header">${escapeHtml_(count ? `${count} для карты` : 'Ничего не выбрано')}</span>` +
+            `<span class="registry-selection-edit-count-badge registry-selection-edit-count-badge--header registry-selection-edit-count-badge--pick">${escapeHtml_(count ? `${count} для карты` : 'Ничего не выбрано')}</span>` +
           `</span>` +
           `<span class="registry-header-action-group registry-header-action-group--primary">` +
             `<button class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--take" type="button" data-publish-selection-id="${escapeHtml_(currentSelectionId)}" data-publish-selection-mode="append"${isPublishingCurrent || !count ? ' disabled' : ''}>${escapeHtml_(isPublishingCurrent ? 'Добавляю...' : 'Добавить на карту')}</button>` +
@@ -2240,11 +2240,11 @@ function renderAdminRegistryUi_() {
       const mapRemovalHeaderActionsHtml = isMapRemovalEditing
         ? (
           `<span class="registry-header-action-group registry-header-action-group--secondary">` +
-            `<button class="ghost registry-selection-toggle-all registry-shared-work-batch-button registry-shared-work-batch-button--toggle-all${mapRemovalVisibleState.allVisibleSelected ? ' is-active' : ''}" type="button" data-registry-map-removal-toggle-all="1"${mapRemovalVisibleState.visibleCount && !mapRemovalPending ? '' : ' disabled'} aria-pressed="${mapRemovalVisibleState.allVisibleSelected ? 'true' : 'false'}" title="${escapeHtml_(mapRemovalVisibleState.allVisibleSelected ? 'Снять выбор' : 'Выбрать все')}">` +
+            `<button class="ghost registry-selection-toggle-all registry-shared-work-batch-button registry-shared-work-batch-button--toggle-all registry-shared-work-batch-button--map-removal${mapRemovalVisibleState.allVisibleSelected ? ' is-active' : ''}" type="button" data-registry-map-removal-toggle-all="1"${mapRemovalVisibleState.visibleCount && !mapRemovalPending ? '' : ' disabled'} aria-pressed="${mapRemovalVisibleState.allVisibleSelected ? 'true' : 'false'}" title="${escapeHtml_(mapRemovalVisibleState.allVisibleSelected ? 'Снять выбор' : 'Выбрать все')}">` +
               `<span class="registry-selection-toggle-all-mark" aria-hidden="true"></span>` +
               `<span>${escapeHtml_(mapRemovalVisibleState.allVisibleSelected ? 'Снять выбор' : 'Выбрать все')}</span>` +
             `</button>` +
-            `<span class="registry-selection-edit-count-badge registry-selection-edit-count-badge--header">${escapeHtml_(mapRemovalSelectedCount ? `${mapRemovalSelectedCount} к снятию` : 'Ничего не выбрано')}</span>` +
+            `<span class="registry-selection-edit-count-badge registry-selection-edit-count-badge--header registry-selection-edit-count-badge--remove">${escapeHtml_(mapRemovalSelectedCount ? `${mapRemovalSelectedCount} к снятию` : 'Ничего не выбрано')}</span>` +
           `</span>` +
           `<span class="registry-header-action-group registry-header-action-group--primary">` +
             `<button class="ghost registry-shared-work-batch-button registry-shared-work-batch-button--primary registry-shared-work-batch-button--release" type="button" data-registry-map-removal-confirm="1"${mapRemovalPending || !mapRemovalSelectedCount ? ' disabled' : ''}>${escapeHtml_(mapRemovalPending ? 'Снимаю...' : 'Снять с карты')}</button>` +
@@ -2313,11 +2313,14 @@ function renderAdminRegistryUi_() {
       if (!isRegistrySelectionEditing_() && !isMapRemovalEditing && !activeItem) {
         node.classList.add('hidden');
         node.classList.remove('is-editing');
+        node.classList.remove('registry-selection-edit--publish-draft', 'registry-selection-edit--map-removal');
         node.innerHTML = '';
         return;
       }
       node.classList.remove('hidden');
       node.classList.toggle('is-editing', isComposerEditing || isPublishDraftEditing || isMapRemovalEditing || !!sharedWorkBatchMode);
+      node.classList.toggle('registry-selection-edit--publish-draft', isPublishDraftEditing);
+      node.classList.toggle('registry-selection-edit--map-removal', isMapRemovalEditing);
       node.innerHTML = (
         `<div class="registry-selection-edit-header">` +
           `<div class="registry-selection-edit-main">` +

@@ -1021,7 +1021,7 @@ function openRegistrySelectionPublishDraft_(selectionId) {
       state.selectionPublishDraftSelectionId = String(item.id || '').trim();
       resetSelectionPublishDraftOptions_();
       state.selectionEditDraftAutoSync = false;
-      setRegistrySelectionEditDraftUins_(getEditableRegistrySelectionUins_(item));
+      setRegistrySelectionEditDraftUins_([]);
       state.savedSelectionPanelOpen = true;
       state.sidebarExpanded = true;
       state.sidebarActivePanel = 'projects';
