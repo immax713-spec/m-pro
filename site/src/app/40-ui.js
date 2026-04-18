@@ -845,12 +845,16 @@ function formatRegistryFacetActiveChipText_(def, selection) {
 function renderRegistryMapToolbarActions_() {
       const node = el('registryMapToolbarActions');
       if (!node) return;
+      const activeSelection = getActiveRegistrySelection_();
+      const selectionId = activeSelection
+        ? String(activeSelection.id || '').trim()
+        : getRegistryToolbarMapDraftId_();
       const canShow = !!(
         canCurrentUserManageMproMap_() &&
         isCurrentRegistryDatasetEditable_() &&
         !isRegistrySelectionEditing_() &&
         !isRegistryMapRemovalMode_() &&
-        !getActiveRegistrySelection_()
+        selectionId
       );
       node.classList.toggle('hidden', !canShow);
       if (!canShow) {
@@ -866,7 +870,7 @@ function renderRegistryMapToolbarActions_() {
         state.selectionLoadingId ||
         state.selectionRemovingId
       );
-      node.innerHTML = renderSelectionPublishMenuHtml_(getRegistryToolbarMapDraftId_(), {
+      node.innerHTML = renderSelectionPublishMenuHtml_(selectionId, {
         compact: true,
         busy,
         allowManualPick: true,
