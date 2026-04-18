@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - mpro7
     paths:
       - mpro_ss.html
       - .github/workflows/deploy-ss.yml

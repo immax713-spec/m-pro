@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - mpro7
     paths:
       - mpro.html
       - .github/workflows/deploy.yml
