@@ -848,6 +848,23 @@ function getCurrentDivisionMapPublishInspectors_() {
       return Array.isArray(state.mapPublishInspectors) ? state.mapPublishInspectors.slice() : [];
     }
 
+function normalizeMapPublishInspectorDirectoryRows_(rows, divisionCode) {
+      const targetDivisionCode = normalizeMproDivisionCode_(divisionCode);
+      const allRows = (Array.isArray(rows) ? rows : [])
+        .map(item => ({
+          name: String(item && item.name || '').trim(),
+          role: String(item && item.role || '').trim(),
+          divisionCode: normalizeMproDivisionCode_(item && (item.divisionCode || item.division) || '')
+        }))
+        .filter(item => item.name && !/admin|админ/i.test(item.role))
+        .sort((left, right) => String(left && left.name || '').localeCompare(String(right && right.name || ''), 'ru'));
+      if (!targetDivisionCode) return allRows;
+      // The backend already scopes visible inspectors for the current mpro session.
+      // If the local session division is stale or missing, do not blank the entire picker.
+      const matchedRows = allRows.filter(item => !item.divisionCode || item.divisionCode === targetDivisionCode);
+      return matchedRows.length ? matchedRows : allRows;
+    }
+
 function pruneSelectionPublishInspectorNames_() {
       const allowedNames = new Set(getCurrentDivisionMapPublishInspectors_().map(item => String(item && item.name || '').trim()).filter(Boolean));
       const ownerSelectionId = getSelectionPublishAssignmentOwnerSelectionId_();
@@ -1446,7 +1463,7 @@ function closeRegistrySelectionPublishDraft_(options) {
     function ensureMapPublishInspectorsLoaded_(options) {
       const settings = options || {};
       const divisionCode = getCurrentUserMproDivisionCode_();
-      if (!canCurrentUserManageMproMap_() || !state.currentUser || !state.sessionToken || !divisionCode) {
+      if (!canCurrentUserManageMproMap_() || !state.currentUser || !state.sessionToken) {
         resetMapPublishInspectorsState_();
         return Promise.resolve([]);
       }
@@ -1465,14 +1482,7 @@ function closeRegistrySelectionPublishDraft_(options) {
       return fetchMproInspectorDirectory_()
         .then(result => {
           const rows = Array.isArray(result && result.inspectorsList) ? result.inspectorsList : [];
-          state.mapPublishInspectors = rows
-            .map(item => ({
-              name: String(item && item.name || '').trim(),
-              role: String(item && item.role || '').trim(),
-              divisionCode: normalizeMproDivisionCode_(item && (item.divisionCode || item.division) || '')
-            }))
-            .filter(item => item.name && item.divisionCode === divisionCode && !/admin|админ/i.test(item.role))
-            .sort((left, right) => String(left && left.name || '').localeCompare(String(right && right.name || ''), 'ru'));
+          state.mapPublishInspectors = normalizeMapPublishInspectorDirectoryRows_(rows, divisionCode);
           state.mapPublishInspectorsLoaded = true;
           pruneSelectionPublishInspectorNames_();
           return getCurrentDivisionMapPublishInspectors_();
