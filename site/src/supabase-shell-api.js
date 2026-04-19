@@ -224,6 +224,11 @@
     return JSON.parse(JSON.stringify(value));
   }
 
+  function normalizeVersion(value) {
+    const version = Number(value);
+    return Number.isFinite(version) && version >= 0 ? Math.floor(version) : 0;
+  }
+
   function safeReadSessionStorage(key) {
     try {
       return window.sessionStorage.getItem(key);
@@ -279,6 +284,53 @@
       maxAttempts: 2,
       timeoutMs: requestTimeoutMs
     });
+    if (error) throw mapSupabaseError(error);
+    return data;
+  }
+
+  function canRetryVersionedRpcWithoutIfVersion(error) {
+    const code = normalizeString(error && error.code).toUpperCase();
+    const message = normalizeString(
+      error && (
+        error.message ||
+        error.error_description ||
+        error.details ||
+        error.hint
+      )
+    );
+    return code === 'PGRST202'
+      || code === '42883'
+      || /p_if_version/i.test(message)
+      || (/function\s+.*does not exist/i.test(message) && /sf_get_|mpro_get_/i.test(message));
+  }
+
+  async function invokeRpcWithOptionalVersion(name, params, ifVersion) {
+    const rpcName = normalizeString(name);
+    if (!rpcName) throw createShellError('Не настроено имя RPC-функции', 'CONFIG');
+    const baseParams = params && typeof params === 'object' && !Array.isArray(params)
+      ? { ...params }
+      : {};
+    const version = normalizeVersion(ifVersion);
+    if (!version) return invokeRpc(rpcName, baseParams);
+
+    let data = null;
+    let error = null;
+
+    ({ data, error } = await callRpcWithRetry(rpcName, {
+      ...baseParams,
+      p_if_version: version
+    }, {
+      maxAttempts: 2,
+      timeoutMs: requestTimeoutMs
+    }));
+
+    if (error && canRetryVersionedRpcWithoutIfVersion(error)) {
+      ({ data, error } = await callRpcWithRetry(rpcName, baseParams, {
+        maxAttempts: 1,
+        timeoutMs: requestTimeoutMs
+      }));
+    }
+
     if (error) throw mapSupabaseError(error);
     return data;
   }
@@ -626,6 +678,103 @@
     };
   }
 
+  function getCachedBootstrap(options) {
+    const cached = options && options.cachedBootstrap && typeof options.cachedBootstrap === 'object'
+      ? options.cachedBootstrap
+      : null;
+    return cached ? cloneJson(cached) : null;
+  }
+
+  function getCachedBootstrapVersion(cachedBootstrap, key) {
+    return normalizeVersion(cachedBootstrap && cachedBootstrap[key]);
+  }
+
+  function getCachedOverlayPayload(cachedBootstrap, key) {
+    const fallback = cachedBootstrap && cachedBootstrap[key] && typeof cachedBootstrap[key] === 'object'
+      ? cloneJson(cachedBootstrap[key])
+      : { rows: [] };
+    if (!Array.isArray(fallback.rows)) fallback.rows = [];
+    fallback.version = normalizeVersion(fallback.version);
+    fallback.fetchedAt = normalizeString(fallback.fetchedAt);
+    return fallback;
+  }
+
+  function resolveVersionedOverlayPayload(payload, fallbackPayload, fallbackVersion) {
+    if (payload && typeof payload === 'object' && payload.changed === false) {
+      const resolvedFallback = fallbackPayload && typeof fallbackPayload === 'object'
+        ? cloneJson(fallbackPayload)
+        : { rows: [] };
+      if (!Array.isArray(resolvedFallback.rows)) resolvedFallback.rows = [];
+      resolvedFallback.version = normalizeVersion(payload.version) || normalizeVersion(fallbackVersion);
+      resolvedFallback.fetchedAt = normalizeString(payload.fetchedAt) || normalizeString(resolvedFallback.fetchedAt) || new Date().toISOString();
+      return resolvedFallback;
+    }
+    const resolved = payload && typeof payload === 'object'
+      ? cloneJson(payload)
+      : { rows: [] };
+    if (!Array.isArray(resolved.rows)) resolved.rows = [];
+    resolved.version = normalizeVersion(resolved.version);
+    resolved.fetchedAt = normalizeString(resolved.fetchedAt) || new Date().toISOString();
+    return resolved;
+  }
+
+  function getCachedSharedSelectionsItems(cachedBootstrap) {
+    return Array.isArray(cachedBootstrap && cachedBootstrap.sharedSelections)
+      ? cloneJson(cachedBootstrap.sharedSelections)
+      : [];
+  }
+
+  function resolveSharedSelectionsPayload(payload, cachedBootstrap) {
+    if (payload && typeof payload === 'object' && payload.changed === false) {
+      return {
+        items: getCachedSharedSelectionsItems(cachedBootstrap),
+        version: normalizeVersion(payload.version) || getCachedBootstrapVersion(cachedBootstrap, 'sharedSelectionsVersion'),
+        fetchedAt: normalizeString(payload.fetchedAt) || new Date().toISOString()
+      };
+    }
+    if (Array.isArray(payload)) {
+      return {
+        items: cloneJson(payload),
+        version: 0,
+        fetchedAt: new Date().toISOString()
+      };
+    }
+    return {
+      items: Array.isArray(payload && payload.items) ? cloneJson(payload.items) : [],
+      version: normalizeVersion(payload && payload.version),
+      fetchedAt: normalizeString(payload && payload.fetchedAt) || new Date().toISOString()
+    };
+  }
+
+  function getCachedSharedSelectionWork(cachedBootstrap, selectionId, user) {
+    const fallback = cachedBootstrap && cachedBootstrap.sharedSelectionWork && typeof cachedBootstrap.sharedSelectionWork === 'object'
+      ? cloneJson(cachedBootstrap.sharedSelectionWork)
+      : buildEmptyWorkState(selectionId, user);
+    if (normalizeString(fallback.selectionId) !== normalizeString(selectionId)) {
+      return buildEmptyWorkState(selectionId, user);
+    }
+    if (!Array.isArray(fallback.items)) fallback.items = [];
+    return fallback;
+  }
+
+  function resolveSharedSelectionWorkPayload(payload, cachedBootstrap, selectionId, user) {
+    if (payload && typeof payload === 'object' && payload.changed === false) {
+      return {
+        workState: getCachedSharedSelectionWork(cachedBootstrap, selectionId, user),
+        version: normalizeVersion(payload.version) || getCachedBootstrapVersion(cachedBootstrap, 'sharedSelectionWorkVersion')
+      };
+    }
+    const workState = payload && typeof payload === 'object'
+      ? cloneJson(payload)
+      : buildEmptyWorkState(selectionId, user);
+    if (!Array.isArray(workState.items)) workState.items = [];
+    workState.selectionId = normalizeString(workState.selectionId || selectionId);
+    return {
+      workState,
+      version: normalizeVersion(workState.version)
+    };
+  }
+
   function normalizeEditPayload(bundle, rawEdits) {
     const edits = Array.isArray(rawEdits) ? rawEdits : [];
     const out = [];
@@ -778,26 +927,39 @@
   }
 
   async function getSmartFilterShellBootstrap(options) {
+    const settings = options || {};
+    const sessionToken = normalizeString(settings.sessionToken);
     const selectionId = normalizeString(options && options.activeSelectionId);
+    const cachedBootstrap = !settings.force ? getCachedBootstrap(settings) : null;
     const bundlePromise = getBundle({
-      sessionToken: options && options.sessionToken,
-      force: !!(options && options.force),
-      dataset: options && options.dataset
+      sessionToken,
+      force: !!settings.force,
+      dataset: settings.dataset
     });
-    const monitoringOverlayPromise = invokeRpc(RPC.getMonitoringOverlay, {
-      p_session_token: normalizeString(options && options.sessionToken)
-    });
-    const mapOverlayPromise = invokeRpc(RPC.getRegistryMapOverlay, {
-      p_session_token: normalizeString(options && options.sessionToken)
-    });
-    const selectionsPromise = invokeRpc(RPC.getSharedSelections, {
-      p_session_token: normalizeString(options && options.sessionToken)
-    });
+    const monitoringOverlayPromise = invokeRpcWithOptionalVersion(RPC.getMonitoringOverlay, {
+      p_session_token: sessionToken
+    }, settings.force ? 0 : getCachedBootstrapVersion(cachedBootstrap, 'monitoringOverlayVersion'));
+    const mapOverlayPromise = invokeRpcWithOptionalVersion(RPC.getRegistryMapOverlay, {
+      p_session_token: sessionToken
+    }, settings.force ? 0 : getCachedBootstrapVersion(cachedBootstrap, 'mapOverlayVersion'));
+    const selectionsPromise = invokeRpcWithOptionalVersion(RPC.getSharedSelections, {
+      p_session_token: sessionToken
+    }, settings.force ? 0 : getCachedBootstrapVersion(cachedBootstrap, 'sharedSelectionsVersion'));
     const workPromise = selectionId
-      ? invokeRpc(RPC.getSharedSelectionWorkState, {
-          p_session_token: normalizeString(options && options.sessionToken),
+      ? invokeRpcWithOptionalVersion(RPC.getSharedSelectionWorkState, {
+          p_session_token: sessionToken,
           p_selection_id: selectionId
-        })
+        }, settings.force
+          ? 0
+          : (
+              normalizeString(
+                cachedBootstrap &&
+                cachedBootstrap.sharedSelectionWork &&
+                cachedBootstrap.sharedSelectionWork.selectionId
+              ) === selectionId
+                ? getCachedBootstrapVersion(cachedBootstrap, 'sharedSelectionWorkVersion')
+                : 0
+            ))
       : Promise.resolve(null);
 
     const [bundle, monitoringOverlay, mapOverlay, sharedSelections, sharedSelectionWork] = await Promise.all([
@@ -809,21 +971,36 @@
     ]);
     const session = bundle && bundle.currentUser
       ? { user: cloneJson(bundle.currentUser) }
-      : await requireSession(options && options.sessionToken);
+      : await requireSession(sessionToken);
     if (bundle && !bundle.currentUser) bundle.currentUser = cloneJson(session.user);
+    const resolvedMonitoringOverlay = resolveVersionedOverlayPayload(
+      monitoringOverlay,
+      getCachedOverlayPayload(cachedBootstrap, 'monitoringOverlay'),
+      getCachedBootstrapVersion(cachedBootstrap, 'monitoringOverlayVersion')
+    );
+    const resolvedMapOverlay = resolveVersionedOverlayPayload(
+      mapOverlay,
+      getCachedOverlayPayload(cachedBootstrap, 'mapOverlay'),
+      getCachedBootstrapVersion(cachedBootstrap, 'mapOverlayVersion')
+    );
+    const resolvedSharedSelections = resolveSharedSelectionsPayload(sharedSelections, cachedBootstrap);
+    const resolvedSharedSelectionWork = resolveSharedSelectionWorkPayload(
+      sharedSelectionWork,
+      cachedBootstrap,
+      selectionId,
+      session.user
+    );
 
     return {
-      data: buildDataResponse(bundle, session.user, options),
-      monitoringOverlay: monitoringOverlay && typeof monitoringOverlay === 'object'
-        ? monitoringOverlay
-        : { rows: [] },
-      mapOverlay: mapOverlay && typeof mapOverlay === 'object'
-        ? mapOverlay
-        : { rows: [] },
-      sharedSelections: Array.isArray(sharedSelections) ? sharedSelections : [],
-      sharedSelectionWork: sharedSelectionWork && typeof sharedSelectionWork === 'object'
-        ? sharedSelectionWork
-        : buildEmptyWorkState(selectionId, session.user)
+      data: buildDataResponse(bundle, session.user, settings),
+      monitoringOverlay: resolvedMonitoringOverlay,
+      monitoringOverlayVersion: resolvedMonitoringOverlay.version,
+      mapOverlay: resolvedMapOverlay,
+      mapOverlayVersion: resolvedMapOverlay.version,
+      sharedSelections: resolvedSharedSelections.items,
+      sharedSelectionsVersion: resolvedSharedSelections.version,
+      sharedSelectionWork: resolvedSharedSelectionWork.workState,
+      sharedSelectionWorkVersion: resolvedSharedSelectionWork.version
     };
   }
 
@@ -886,7 +1063,9 @@
     const result = await invokeRpc(RPC.getSharedSelections, {
       p_session_token: normalizeString(options && options.sessionToken)
     });
-    return Array.isArray(result) ? result : [];
+    return Array.isArray(result)
+      ? result
+      : (Array.isArray(result && result.items) ? result.items : []);
   }
 
   async function getSmartFilterShellSharedSelectionWorkState(options) {

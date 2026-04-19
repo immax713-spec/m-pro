@@ -1470,15 +1470,55 @@
       const sharedSelectionWork = payload.sharedSelectionWork && typeof payload.sharedSelectionWork === 'object'
         ? payload.sharedSelectionWork
         : buildCurrentSharedSelectionWorkSnapshot_();
+      const monitoringOverlayVersion = Number.isFinite(Number(
+        payload.monitoringOverlayVersion != null
+          ? payload.monitoringOverlayVersion
+          : monitoringOverlay && monitoringOverlay.version
+      ))
+        ? Math.floor(Number(
+            payload.monitoringOverlayVersion != null
+              ? payload.monitoringOverlayVersion
+              : monitoringOverlay && monitoringOverlay.version
+          ))
+        : 0;
+      const mapOverlayVersion = Number.isFinite(Number(
+        payload.mapOverlayVersion != null
+          ? payload.mapOverlayVersion
+          : mapOverlay && mapOverlay.version
+      ))
+        ? Math.floor(Number(
+            payload.mapOverlayVersion != null
+              ? payload.mapOverlayVersion
+              : mapOverlay && mapOverlay.version
+          ))
+        : 0;
+      const sharedSelectionsVersion = Number.isFinite(Number(payload.sharedSelectionsVersion))
+        ? Math.floor(Number(payload.sharedSelectionsVersion))
+        : 0;
+      const sharedSelectionWorkVersion = Number.isFinite(Number(
+        payload.sharedSelectionWorkVersion != null
+          ? payload.sharedSelectionWorkVersion
+          : sharedSelectionWork && sharedSelectionWork.version
+      ))
+        ? Math.floor(Number(
+            payload.sharedSelectionWorkVersion != null
+              ? payload.sharedSelectionWorkVersion
+              : sharedSelectionWork && sharedSelectionWork.version
+          ))
+        : 0;
       try {
         window.sessionStorage.setItem(SHELL_BOOTSTRAP_CACHE_STORAGE_KEY, JSON.stringify({
           sessionToken: state.sessionToken,
           dataset: normalizeRegistryDataMode_(state.registryDataMode),
           cachedAt: new Date().toISOString(),
           monitoringOverlay,
+          monitoringOverlayVersion,
           mapOverlay,
+          mapOverlayVersion,
           sharedSelections,
-          sharedSelectionWork
+          sharedSelectionsVersion,
+          sharedSelectionWork,
+          sharedSelectionWorkVersion
         }));
       } catch (e) {}
     }
@@ -1845,10 +1885,27 @@ function buildCurrentDataRefreshOptions_(options) {
     }
 
     function fetchSmartFilterShellBootstrap_(requestOptions) {
+      const sessionToken = String(
+        requestOptions && requestOptions.sessionToken != null
+          ? requestOptions.sessionToken
+          : state.sessionToken
+      ).trim();
+      const cachedBootstrap = sessionToken ? readBootstrapCache_(sessionToken) : null;
       const nextOptions = {
         ...(requestOptions || {}),
         activeSelectionId: String(state.activeRegistrySelectionId || '').trim()
       };
+      const requestedDataset = normalizeRegistryDataMode_(nextOptions.dataset || state.registryDataMode);
+      const cachedDataset = normalizeRegistryDataMode_(
+        cachedBootstrap &&
+        (
+          cachedBootstrap.dataset ||
+          cachedBootstrap.data && cachedBootstrap.data.dataset
+        )
+      );
+      if (!nextOptions.force && cachedBootstrap && cachedDataset === requestedDataset) {
+        nextOptions.cachedBootstrap = cachedBootstrap;
+      }
       return runServer_('getSmartFilterShellBootstrap', [nextOptions]).then(result => (
         result && typeof result === 'object' ? { ...result } : {}
       ));
@@ -2031,7 +2088,6 @@ function buildCurrentDataRefreshOptions_(options) {
       silentDataRefreshWakeTimer = window.setTimeout(() => {
         silentDataRefreshWakeTimer = 0;
         triggerSilentDataRefresh_({
-          force: true,
           ignoreFocusedControl: true
         });
       }, delayMs);

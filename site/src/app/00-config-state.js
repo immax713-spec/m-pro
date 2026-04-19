@@ -369,9 +369,9 @@
       financed: 'mgz_1_6',
       budgetProgress: 'mgz_1_7'
     });
-    const SILENT_DATA_REFRESH_INTERVAL_MS = 25000;
-    const SILENT_DATA_REFRESH_MIN_GAP_MS = 15000;
-    const SILENT_DATA_REFRESH_WAKE_DELAY_MS = 180;
+    const SILENT_DATA_REFRESH_INTERVAL_MS = 300000;
+    const SILENT_DATA_REFRESH_MIN_GAP_MS = 120000;
+    const SILENT_DATA_REFRESH_WAKE_DELAY_MS = 600;
 
     function buildEmptyAnalyticsStartSmrQuarter_(options) {
       const settings = options || {};
