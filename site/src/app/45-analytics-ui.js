@@ -105,6 +105,14 @@ function formatAnalyticsDecimalText_(value) {
       return String(Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)).replace('.', ',');
     }
 
+function formatAnalyticsMinutesText_(value) {
+      const numeric = Math.round(Number(value));
+      if (!Number.isFinite(numeric) || numeric <= 0) return '—';
+      const hours = Math.floor(numeric / 60);
+      const minutes = Math.abs(numeric % 60);
+      return `${hours}:${String(minutes).padStart(2, '0')}`;
+    }
+
 function resetAnalyticsDrilldowns_() {
       state.analyticsDrilldowns = new Map();
       state.analyticsDrilldownSeq = 0;
@@ -161,8 +169,349 @@ function buildAnalyticsDashboardTrackCardHtml_(track, index) {
       );
     }
 
-function bindAnalyticsPanelEvents_() {
-      document.querySelectorAll('[data-open-analytics-section]').forEach(button => {
+function buildAnalyticsControlSummaryCardHtml_(label, valueText, metaText, tone) {
+      return (
+        `<article class="analytics-control-summary-card${tone ? ` analytics-control-summary-card--${escapeHtml_(tone)}` : ''}">` +
+          `<div class="analytics-control-summary-label">${escapeHtml_(label)}</div>` +
+          `<div class="analytics-control-summary-value">${escapeHtml_(valueText)}</div>` +
+          `<div class="analytics-control-summary-meta">${escapeHtml_(metaText || ' ')}</div>` +
+        `</article>`
+      );
+    }
+
+function buildAnalyticsControlDivisionFilterHtml_(dashboard) {
+      const data = dashboard || {};
+      const activeDivision = String(data.activeDivision || '').trim();
+      const options = Array.isArray(data.divisionOptions) ? data.divisionOptions : [];
+      const totalCount = options.reduce((sum, item) => sum + Math.max(0, Number(item && item.count) || 0), 0);
+      const triggerText = activeDivision || 'Все управления';
+      const menuHtml = (
+        `<div class="analytics-filter-menu analytics-control-filter-menu">` +
+          `<div class="analytics-filter-options">` +
+            `<button class="analytics-filter-option${!activeDivision ? ' active' : ''}" type="button" data-analytics-control-division-option="__all">` +
+              `<span class="analytics-filter-option-mark" aria-hidden="true"></span>` +
+              `<span class="analytics-filter-option-label">Все управления</span>` +
+              `<span class="analytics-filter-option-count">${escapeHtml_(formatAnalyticsCountText_(totalCount))}</span>` +
+            `</button>` +
+            options.map(item => {
+              const label = String(item && item.label || '').trim();
+              if (!label) return '';
+              const active = activeDivision && normalizeText_(activeDivision) === normalizeText_(label);
+              const countText = formatAnalyticsCountText_(item && item.count);
+              return (
+                `<button class="analytics-filter-option${active ? ' active' : ''}" type="button" data-analytics-control-division-option="${escapeHtml_(label)}" data-analytics-filter-label="${escapeHtml_(label)}">` +
+                  `<span class="analytics-filter-option-mark" aria-hidden="true"></span>` +
+                  `<span class="analytics-filter-option-label">${escapeHtml_(label)}</span>` +
+                  `<span class="analytics-filter-option-count">${escapeHtml_(countText)}</span>` +
+                `</button>`
+              );
+            }).join('') +
+          `</div>` +
+        `</div>`
+      );
+      return (
+        `<div class="analytics-control-filter-row">` +
+          `<details class="analytics-filter-dropdown analytics-control-filter-dropdown">` +
+            `<summary class="analytics-filter-trigger analytics-control-filter-trigger" title="${escapeHtml_(triggerText)}" aria-label="${escapeHtml_(`Управление: ${triggerText}`)}">` +
+              `<span class="analytics-filter-trigger-text">${escapeHtml_(triggerText)}</span>` +
+              `<span class="analytics-filter-trigger-caret" aria-hidden="true"></span>` +
+            `</summary>` +
+            `${menuHtml}` +
+          `</details>` +
+        `</div>`
+      );
+    }
+
+function buildAnalyticsControlDivisionRowHtml_(item, maxMonitorings) {
+      const division = item || {};
+      const monitorings = Math.max(0, Number(division.monitorings) || 0);
+      const violations = Math.max(0, Number(division.violations) || 0);
+      const width = maxMonitorings > 0 ? Math.max(6, (monitorings / maxMonitorings) * 100) : 0;
+      const active = normalizeText_(state.analyticsControlDivision || '') === normalizeText_(division.division || '');
+      return (
+        `<button class="analytics-control-bar-row${active ? ' active' : ''}" type="button" data-analytics-control-division="${escapeHtml_(String(division.division || '').trim())}">` +
+          `<span class="analytics-control-bar-copy">` +
+            `<span class="analytics-control-bar-title">${escapeHtml_(String(division.division || 'Не указано').trim() || 'Не указано')}</span>` +
+            `<span class="analytics-control-bar-meta">Инспекторов: ${escapeHtml_(formatAnalyticsCountText_(division.inspectorCount))}</span>` +
+          `</span>` +
+          `<span class="analytics-control-bar-track" aria-hidden="true"><span style="width:${escapeHtml_(String(width.toFixed(1)))}%"></span></span>` +
+          `<span class="analytics-control-bar-values">` +
+            `<span class="analytics-control-bar-value">${escapeHtml_(formatAnalyticsCountText_(monitorings))} мон.</span>` +
+            `<span class="analytics-control-bar-badge">${escapeHtml_(formatAnalyticsCountText_(violations))} наруш.</span>` +
+          `</span>` +
+        `</button>`
+      );
+    }
+
+function buildAnalyticsControlInspectorBarRowHtml_(item, maxMonitorings) {
+      const inspector = item || {};
+      const monitorings = Math.max(0, Number(inspector.monitorings) || 0);
+      const width = maxMonitorings > 0 ? Math.max(6, (monitorings / maxMonitorings) * 100) : 0;
+      const active = normalizeText_(state.analyticsControlSelectedInspector || '') === normalizeText_(inspector.inspectorKey || '');
+      return (
+        `<button class="analytics-control-bar-row analytics-control-bar-row--inspector${active ? ' active' : ''}" type="button" data-analytics-control-inspector="${escapeHtml_(String(inspector.inspectorKey || '').trim())}">` +
+          `<span class="analytics-control-bar-copy">` +
+            `<span class="analytics-control-bar-title">${escapeHtml_(String(inspector.inspector || '').trim() || 'Инспектор')}</span>` +
+            `<span class="analytics-control-bar-meta">${escapeHtml_(String(inspector.division || '').trim() || 'Не указано')}</span>` +
+          `</span>` +
+          `<span class="analytics-control-bar-track" aria-hidden="true"><span style="width:${escapeHtml_(String(width.toFixed(1)))}%"></span></span>` +
+          `<span class="analytics-control-bar-values">` +
+            `<span class="analytics-control-bar-value">${escapeHtml_(formatAnalyticsCountText_(monitorings))} мон.</span>` +
+            `<span class="analytics-control-bar-badge">${escapeHtml_(formatAnalyticsCountText_(inspector.violations))} наруш.</span>` +
+          `</span>` +
+        `</button>`
+      );
+    }
+
+function buildAnalyticsControlInspectorTableHtml_(dashboard) {
+      const inspectors = Array.isArray(dashboard && dashboard.filteredInspectors) ? dashboard.filteredInspectors : [];
+      if (!inspectors.length) return `<div class="analytics-view-message">Нет инспекторов в выбранном управлении.</div>`;
+      return (
+        `<div class="analytics-control-table-shell">` +
+          `<table class="analytics-control-table">` +
+            `<thead>` +
+              `<tr>` +
+                `<th>Инспектор</th>` +
+                `<th>Управление</th>` +
+                `<th>Мониторинги</th>` +
+                `<th>Среднее рабочее время</th>` +
+                `<th>Нарушения</th>` +
+              `</tr>` +
+            `</thead>` +
+            `<tbody>` +
+              inspectors.map(item => {
+                const active = normalizeText_(state.analyticsControlSelectedInspector || '') === normalizeText_(item.inspectorKey || '');
+                return (
+                  `<tr class="${active ? 'active' : ''}" data-analytics-control-inspector="${escapeHtml_(String(item.inspectorKey || '').trim())}" tabindex="0">` +
+                    `<td>${escapeHtml_(String(item.inspector || '').trim() || 'Инспектор')}</td>` +
+                    `<td>${escapeHtml_(String(item.division || '').trim() || 'Не указано')}</td>` +
+                    `<td>${escapeHtml_(formatAnalyticsCountText_(item.monitorings))}</td>` +
+                    `<td>${escapeHtml_(formatAnalyticsMinutesText_(item.averageWorkMinutes))}</td>` +
+                    `<td><span class="analytics-control-violation-pill${Number(item.violations || 0) > 0 ? ' analytics-control-violation-pill--alert' : ''}">${escapeHtml_(formatAnalyticsCountText_(item.violations))}</span></td>` +
+                  `</tr>`
+                );
+              }).join('') +
+            `</tbody>` +
+          `</table>` +
+        `</div>`
+      );
+    }
+
+function buildAnalyticsControlDailyTableHtml_(inspectorRecord) {
+      const inspector = inspectorRecord || {};
+      const days = Array.isArray(inspector.dailyRows) ? inspector.dailyRows : [];
+      if (!days.length) return `<div class="analytics-view-message">По этому инспектору пока нет строк контроля.</div>`;
+      return (
+        `<div class="analytics-control-detail-shell">` +
+          `<div class="analytics-control-detail-head">` +
+            `<div>` +
+              `<div class="analytics-control-detail-title">${escapeHtml_(String(inspector.inspector || '').trim() || 'Инспектор')}</div>` +
+              `<div class="analytics-control-detail-subtitle">${escapeHtml_(String(inspector.division || '').trim() || 'Не указано')}</div>` +
+            `</div>` +
+            `<button class="ghost analytics-refresh-button" type="button" data-analytics-control-clear-inspector="1">Скрыть</button>` +
+          `</div>` +
+          `<div class="analytics-control-table-shell analytics-control-table-shell--detail">` +
+            `<table class="analytics-control-table analytics-control-table--detail">` +
+              `<thead>` +
+                `<tr>` +
+                  `<th>День</th>` +
+                  `<th>Мониторинги</th>` +
+                  `<th>Открытие дня</th>` +
+                  `<th>Закрытие дня</th>` +
+                  `<th>Рабочее время</th>` +
+                  `<th>СКУД</th>` +
+                  `<th>Нарушение</th>` +
+                  `<th>Комментарий</th>` +
+                `</tr>` +
+              `</thead>` +
+              `<tbody>` +
+                days.map(item => (
+                  `<tr>` +
+                    `<td>${escapeHtml_(formatAnalyticsShortDateText_(item.date) || item.dateDisplay || item.date || '—')}</td>` +
+                    `<td>${escapeHtml_(formatAnalyticsCountText_(item.monitorings))}</td>` +
+                    `<td>${escapeHtml_(item.openingText || '—')}</td>` +
+                    `<td>${escapeHtml_(item.closingText || '—')}</td>` +
+                    `<td>${escapeHtml_(formatAnalyticsMinutesText_(item.workMinutes))}</td>` +
+                    `<td>${escapeHtml_(String(item.skudLabel || 'Нет данных').trim() || 'Нет данных')}</td>` +
+                    `<td><span class="analytics-control-violation-pill${item.hasViolation ? ' analytics-control-violation-pill--alert' : ''}">${item.hasViolation ? 'Да' : 'Нет'}</span></td>` +
+                    `<td>${escapeHtml_(String(item.commentText || '—').trim() || '—')}</td>` +
+                  `</tr>`
+                )).join('') +
+              `</tbody>` +
+            `</table>` +
+          `</div>` +
+        `</div>`
+      );
+    }
+
+function buildAnalyticsControlStatusBadgeHtml_(title, statusRecord, fallbackLabel) {
+      const data = statusRecord && typeof statusRecord === 'object' ? statusRecord : {};
+      const hasData = (
+        Number(data.loadedDays || 0) > 0
+        || (Array.isArray(data.loadedDates) && data.loadedDates.length > 0)
+        || String(data.status || '').trim() === 'ok'
+        || String(data.status || '').trim() === 'partial'
+      );
+      const status = hasData ? 'ok' : 'missing';
+      const label = hasData ? 'Есть данные за период' : (String(fallbackLabel || 'Нет данных').trim() || 'Нет данных');
+      return (
+        `<div class="analytics-control-status-badge analytics-control-status-badge--${escapeHtml_(status)}">` +
+          `<span class="analytics-control-status-badge-title">${escapeHtml_(title)}</span>` +
+          `<span class="analytics-control-status-badge-label">${escapeHtml_(label)}</span>` +
+        `</div>`
+      );
+    }
+
+function buildAnalyticsControlCompactStatusBadgeHtml_(title, statusRecord, fallbackLabel) {
+      const data = statusRecord && typeof statusRecord === 'object' ? statusRecord : {};
+      const hasData = (
+        Number(data.loadedDays || 0) > 0
+        || (Array.isArray(data.loadedDates) && data.loadedDates.length > 0)
+        || String(data.status || '').trim() === 'ok'
+        || String(data.status || '').trim() === 'partial'
+      );
+      const status = hasData ? 'ok' : 'missing';
+      const label = hasData ? 'Есть данные' : (String(fallbackLabel || 'Нет данных').trim() || 'Нет данных');
+      return (
+        `<div class="analytics-control-status-badge analytics-control-status-badge--${escapeHtml_(status)}">` +
+          `<span class="analytics-control-status-badge-dot" aria-hidden="true"></span>` +
+          `<span class="analytics-control-status-badge-title">${escapeHtml_(title)}</span>` +
+          `<span class="analytics-control-status-badge-separator" aria-hidden="true">•</span>` +
+          `<span class="analytics-control-status-badge-label">${escapeHtml_(label)}</span>` +
+        `</div>`
+      );
+    }
+
+function buildAnalyticsControlToolbarHtml_(dashboard) {
+      const dateFrom = normalizeAnalyticsArchiveDateValue_(state.analyticsControlDateFrom || dashboard && dashboard.periodFrom);
+      const dateTo = normalizeAnalyticsArchiveDateValue_(state.analyticsControlDateTo || dashboard && dashboard.periodTo);
+      const uploadNotice = String(state.analyticsControlUploadNotice || '').trim();
+      const uploadError = String(state.analyticsControlUploadError || '').trim();
+      const skudUploading = !!state.analyticsControlSkudUploading;
+      return (
+        `<section class="analytics-control-toolbar">` +
+          `<div class="analytics-control-toolbar-main">` +
+            `<label class="analytics-control-date-field">` +
+              `<span>С</span>` +
+              `<input type="date" value="${escapeHtml_(dateFrom)}" data-analytics-control-date="from">` +
+            `</label>` +
+            `<label class="analytics-control-date-field">` +
+              `<span>По</span>` +
+              `<input type="date" value="${escapeHtml_(dateTo)}" data-analytics-control-date="to">` +
+            `</label>` +
+            `<button class="analytics-refresh-button analytics-control-toolbar-button analytics-control-toolbar-button--primary" type="button" data-analytics-control-apply-period="1"${state.analyticsLoading ? ' disabled' : ''}>Показать</button>` +
+            `${buildAnalyticsControlCompactStatusBadgeHtml_('СКУД', dashboard && dashboard.skudStatus, 'Нет СКУД')}` +
+          `</div>` +
+          (
+            uploadError
+              ? `<div class="analytics-view-message analytics-view-message--error">${escapeHtml_(uploadError)}</div>`
+              : (
+                  uploadNotice
+                    ? `<div class="analytics-view-message">${escapeHtml_(uploadNotice)}</div>`
+                    : ''
+                )
+          ) +
+        `</section>`
+      );
+    }
+
+function buildAnalyticsWorkControlDashboardHtml_() {
+      const dashboard = typeof getAnalyticsWorkControlViewModel_ === 'function'
+        ? getAnalyticsWorkControlViewModel_(state.analyticsDashboard && state.analyticsDashboard.workControl)
+        : (
+            state.analyticsDashboard && state.analyticsDashboard.workControl
+              ? state.analyticsDashboard.workControl
+              : buildEmptyAnalyticsWorkControlDashboard_()
+          );
+      const inspectors = Array.isArray(dashboard.filteredInspectors) ? dashboard.filteredInspectors : [];
+      const divisions = Array.isArray(dashboard.divisions) ? dashboard.divisions : [];
+      const activeDivisionLabel = String(dashboard.activeDivision || '').trim();
+      const hasActiveDivision = !!activeDivisionLabel;
+      const maxDivisionMonitorings = divisions.reduce((max, item) => Math.max(max, Number(item && item.monitorings) || 0), 0);
+      const controlRangeMeta = dashboard.available
+        ? `${String(dashboard.sourceLabel || 'База данных').trim()} · ${formatAnalyticsRangeText_(dashboard.periodFrom, dashboard.periodTo) || 'Период не выбран'}`
+        : 'База данных';
+      const controlEmptyState = dashboard.errorText
+        ? `<div class="analytics-view-message analytics-view-message--error">${escapeHtml_(dashboard.errorText)}</div>`
+        : `<div class="analytics-view-message">За выбранный период пока нет данных.</div>`;
+      const summaryCardsHtml = [
+        buildAnalyticsControlSummaryCardHtml_('Мониторинги', formatAnalyticsCountText_(dashboard.displayMonitorings), 'По архиву за период', ''),
+        buildAnalyticsControlSummaryCardHtml_('Инспекторы', formatAnalyticsCountText_(dashboard.displayInspectors), 'В текущем срезе', ''),
+        buildAnalyticsControlSummaryCardHtml_('Нарушения', formatAnalyticsCountText_(dashboard.displayViolations), 'Только серьёзные случаи', 'alert'),
+        buildAnalyticsControlSummaryCardHtml_('Среднее рабочее время', formatAnalyticsMinutesText_(dashboard.displayAverageWorkMinutes), 'Только по полным дням 9ч+', '')
+      ].join('');
+      const skudUploading = !!state.analyticsControlSkudUploading;
+      if (!dashboard.available) {
+        return (
+          `<div class="analytics-dashboard analytics-dashboard--control">` +
+            `<section class="analytics-dashboard-header">` +
+              `<div class="analytics-dashboard-header-main">` +
+                `<div class="analytics-dashboard-kicker">Аналитика</div>` +
+                `<h2>Контроль работы</h2>` +
+                `<div class="analytics-dashboard-meta-line">${escapeHtml_(controlRangeMeta)}</div>` +
+              `</div>` +
+              `<div class="analytics-dashboard-header-actions">` +
+                `<button id="btnRefreshAnalyticsDashboardView" class="ghost analytics-refresh-button" type="button"${state.analyticsLoading ? ' disabled' : ''}>Обновить</button>` +
+                `<button class="ghost analytics-refresh-button" type="button" data-analytics-control-upload-skud="1"${skudUploading ? ' disabled' : ''}>${skudUploading ? '\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430 \u0421\u041a\u0423\u0414\u2026' : '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0421\u041a\u0423\u0414'}</button>` +
+                `<input type="file" hidden accept=".csv,text/csv" data-analytics-control-skud-input="1">` +
+              `</div>` +
+            `</section>` +
+            `${buildAnalyticsControlToolbarHtml_(dashboard)}` +
+            `${controlEmptyState}` +
+          `</div>`
+        );
+      }
+      return (
+        `<div class="analytics-dashboard analytics-dashboard--control">` +
+          `<section class="analytics-dashboard-header">` +
+            `<div class="analytics-dashboard-header-main">` +
+              `<div class="analytics-dashboard-kicker">Аналитика</div>` +
+              `<h2>Контроль работы</h2>` +
+              `<div class="analytics-dashboard-meta-line">${escapeHtml_(controlRangeMeta)}</div>` +
+            `</div>` +
+            `<div class="analytics-dashboard-header-actions">` +
+              `<button id="btnRefreshAnalyticsDashboardView" class="ghost analytics-refresh-button" type="button"${state.analyticsLoading ? ' disabled' : ''}>Обновить</button>` +
+                `<button class="ghost analytics-refresh-button" type="button" data-analytics-control-upload-skud="1"${skudUploading ? ' disabled' : ''}>${skudUploading ? '\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430 \u0421\u041a\u0423\u0414\u2026' : '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0421\u041a\u0423\u0414'}</button>` +
+                `<input type="file" hidden accept=".csv,text/csv" data-analytics-control-skud-input="1">` +
+              `</div>` +
+          `</section>` +
+          `${buildAnalyticsControlToolbarHtml_(dashboard)}` +
+          `${buildAnalyticsControlDivisionFilterHtml_(dashboard)}` +
+          `<section class="analytics-control-summary-grid">${summaryCardsHtml}</section>` +
+          (
+            hasActiveDivision
+              ? ''
+              : (
+                  `<section class="analytics-control-visual-grid analytics-control-visual-grid--wide">` +
+                    `<article class="analytics-control-card">` +
+                      `<div class="analytics-control-card-title">Нарушения по управлениям</div>` +
+                      `<div class="analytics-control-card-subtitle">Выберите управление сверху, чтобы перейти к инспекторам. Бэйдж справа показывает количество дней с нарушением.</div>` +
+                      `<div class="analytics-control-bar-list">${divisions.map(item => buildAnalyticsControlDivisionRowHtml_(item, maxDivisionMonitorings)).join('')}</div>` +
+                    `</article>` +
+                  `</section>`
+                )
+          ) +
+          `<section class="analytics-control-card analytics-control-card--table">` +
+            `<div class="analytics-control-card-title">${escapeHtml_(hasActiveDivision ? `Сводка по инспекторам · ${activeDivisionLabel}` : 'Сводка по инспекторам')}</div>` +
+            `<div class="analytics-control-card-subtitle">${escapeHtml_(hasActiveDivision ? 'Только инспекторы выбранного управления. Кликните по строке, чтобы открыть разбор по дням.' : 'Все инспекторы за выбранный период. Сортировка по убыванию нарушений, затем по мониторингам.')}</div>` +
+            `${buildAnalyticsControlInspectorTableHtml_(dashboard)}` +
+          `</section>` +
+          `<section class="analytics-control-card analytics-control-card--detail">` +
+            `<div class="analytics-control-card-title">Разбор по дням</div>` +
+            `<div class="analytics-control-card-subtitle">Без третьего уровня: всё важное сразу в строке дня</div>` +
+            (
+              dashboard.selectedInspectorRecord
+                ? buildAnalyticsControlDailyTableHtml_(dashboard.selectedInspectorRecord)
+                : `<div class="analytics-view-message">Выберите инспектора в графике или в таблице, чтобы увидеть дни.</div>`
+            ) +
+          `</section>` +
+        `</div>`
+      );
+    }
+
+function bindAnalyticsPanelEvents_(root) {
+      const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+      scope.querySelectorAll('[data-open-analytics-section]').forEach(button => {
         button.onclick = evt => {
           evt.preventDefault();
           evt.stopPropagation();
@@ -176,44 +525,8 @@ function bindAnalyticsPanelEvents_() {
 function renderAnalyticsPanel_() {
       const panel = el('sidebarAnalyticsPanel');
       if (!panel) return;
-      const analyticsActive = state.currentView === 'analytics';
-      const analyticsSection = normalizeAnalyticsSection_(state.analyticsSection);
-
-      panel.innerHTML = (
-        `<section class="sidebar-section analytics-panel analytics-panel--compact">` +
-          `<div class="quick-preset-grid analytics-panel-nav">` +
-            `<div class="preset-row">` +
-              `<button class="quick-preset${analyticsActive && analyticsSection === 'quarter1' ? ' active' : ''}" type="button" data-open-analytics-section="quarter1" aria-pressed="${analyticsActive && analyticsSection === 'quarter1' ? 'true' : 'false'}">` +
-                `<span class="preset-trigger-main">` +
-                  `<span class="preset-trigger-title">1 квартал 2026</span>` +
-                `</span>` +
-              `</button>` +
-            `</div>` +
-            `<div class="preset-row">` +
-              `<button class="quick-preset${analyticsActive && analyticsSection === 'quarter' ? ' active' : ''}" type="button" data-open-analytics-section="quarter" aria-pressed="${analyticsActive && analyticsSection === 'quarter' ? 'true' : 'false'}">` +
-                `<span class="preset-trigger-main">` +
-                  `<span class="preset-trigger-title">2 квартал 2026</span>` +
-                `</span>` +
-              `</button>` +
-            `</div>` +
-            `<div class="preset-row">` +
-              `<button class="quick-preset${analyticsActive && analyticsSection === 'ksg' ? ' active' : ''}" type="button" data-open-analytics-section="ksg" aria-pressed="${analyticsActive && analyticsSection === 'ksg' ? 'true' : 'false'}">` +
-                `<span class="preset-trigger-main">` +
-                  `<span class="preset-trigger-title">КСГ</span>` +
-                `</span>` +
-              `</button>` +
-            `</div>` +
-            `<div class="preset-row">` +
-              `<button class="quick-preset${analyticsActive && analyticsSection === 'archive' ? ' active' : ''}" type="button" data-open-analytics-section="archive" aria-pressed="${analyticsActive && analyticsSection === 'archive' ? 'true' : 'false'}">` +
-                `<span class="preset-trigger-main">` +
-                  `<span class="preset-trigger-title">Архив мониторинга</span>` +
-                `</span>` +
-              `</button>` +
-            `</div>` +
-          `</div>` +
-        `</section>`
-      );
-      bindAnalyticsPanelEvents_();
+      panel.innerHTML = buildAnalyticsPanelNavHtml_();
+      bindAnalyticsPanelEvents_(panel);
     }
 
 function bindAnalyticsViewEvents_() {
@@ -251,8 +564,8 @@ function bindAnalyticsViewEvents_() {
       }
       if (!view) return;
       const analyticsSection = normalizeAnalyticsSection_(state.analyticsSection);
-      if (analyticsSection === 'archive') {
-        const commitArchiveDateRange = (nextFromValue, nextToValue) => {
+      if (typeof isAnalyticsControlSection_ === 'function' && isAnalyticsControlSection_(analyticsSection)) {
+        const commitControlDateRange = (nextFromValue, nextToValue) => {
           let nextFrom = normalizeAnalyticsArchiveDateValue_(nextFromValue);
           let nextTo = normalizeAnalyticsArchiveDateValue_(nextToValue);
           if (nextFrom && nextTo && nextFrom > nextTo) {
@@ -260,92 +573,138 @@ function bindAnalyticsViewEvents_() {
             nextFrom = nextTo;
             nextTo = swap;
           }
-          state.analyticsArchiveDateFrom = nextFrom;
-          state.analyticsArchiveDateTo = nextTo;
+          state.analyticsControlDateFrom = nextFrom;
+          state.analyticsControlDateTo = nextTo;
+          persistRegistrySessionState_();
+        };
+        const readControlDateValue = key => normalizeAnalyticsArchiveDateValue_(
+          (view.querySelector(`[data-analytics-control-date="${key}"]`) || {}).value
+        );
+        const controlSkudInput = view.querySelector('[data-analytics-control-skud-input="1"]');
+        const rerenderControlViewPreservingScroll = () => {
+          const nextScrollTop = Number(view && view.scrollTop) || 0;
+          renderAnalyticsView_();
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => {
+              if (view) view.scrollTop = nextScrollTop;
+            });
+            return;
+          }
+          if (view) view.scrollTop = nextScrollTop;
+        };
+        const applyAnalyticsControlDivisionFilter = value => {
+          state.analyticsControlDivision = value === '__all' ? '' : String(value || '').trim();
+          state.analyticsControlSelectedInspector = '';
           persistRegistrySessionState_();
           renderAnalyticsView_();
         };
-        view.querySelectorAll('[data-analytics-archive-grbs-search]').forEach(input => {
-          input.oninput = () => {
-            const query = normalizeText_(String(input.value || ''));
-            const menu = input.closest('.analytics-filter-menu');
-            if (!menu) return;
-            menu.querySelectorAll('[data-analytics-archive-grbs]').forEach(button => {
-              const value = String(button.getAttribute('data-analytics-archive-grbs') || '').trim();
-              if (value === '__all') {
-                button.hidden = false;
-                return;
-              }
-              const label = normalizeText_(String(button.getAttribute('data-analytics-filter-label') || value));
-              button.hidden = !!query && !label.includes(query);
-            });
-          };
-        });
-        view.querySelectorAll('[data-analytics-archive-grbs]').forEach(button => {
+        view.querySelectorAll('[data-analytics-control-division]').forEach(button => {
           button.onclick = evt => {
             evt.preventDefault();
             evt.stopPropagation();
-            const value = String(button.getAttribute('data-analytics-archive-grbs') || '').trim();
-            if (!value) return;
-            if (value === '__all') {
-              state.analyticsArchiveGrbs = [];
-            } else {
-              const next = new Set(normalizeAnalyticsArchiveGrbsFilters_(state.analyticsArchiveGrbs));
-              if (next.has(value)) next.delete(value);
-              else next.add(value);
-              const availableValues = Array.from(view.querySelectorAll('[data-analytics-archive-grbs]'))
-                .map(node => String(node.getAttribute('data-analytics-archive-grbs') || '').trim())
-                .filter(item => item && item !== '__all');
-              state.analyticsArchiveGrbs = (!next.size || (availableValues.length && next.size >= availableValues.length))
-                ? []
-                : Array.from(next);
-            }
+            applyAnalyticsControlDivisionFilter(String(button.getAttribute('data-analytics-control-division') || '').trim());
+          };
+        });
+        view.querySelectorAll('[data-analytics-control-division-option]').forEach(button => {
+          button.onclick = evt => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            const dropdown = button.closest('details');
+            if (dropdown) dropdown.removeAttribute('open');
+            applyAnalyticsControlDivisionFilter(String(button.getAttribute('data-analytics-control-division-option') || '').trim());
+          };
+        });
+        view.querySelectorAll('[data-analytics-control-inspector]').forEach(node => {
+          const activate = evt => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            const nextValue = String(node.getAttribute('data-analytics-control-inspector') || '').trim();
+            if (!nextValue) return;
+            state.analyticsControlSelectedInspector = normalizeText_(state.analyticsControlSelectedInspector || '') === normalizeText_(nextValue)
+              ? ''
+              : nextValue;
+            persistRegistrySessionState_();
+            renderAnalyticsView_();
+          };
+          node.onclick = activate;
+          node.onkeydown = evt => {
+            if (evt.key !== 'Enter' && evt.key !== ' ') return;
+            activate(evt);
+          };
+        });
+        view.querySelectorAll('[data-analytics-control-clear-inspector]').forEach(button => {
+          button.onclick = evt => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            state.analyticsControlSelectedInspector = '';
             persistRegistrySessionState_();
             renderAnalyticsView_();
           };
         });
-        const readArchiveDateMenuValue = key => normalizeAnalyticsArchiveDateValue_(
-          (view.querySelector(`[data-analytics-archive-date-input="${key}"]`) || {}).value
-        );
-        const applyArchiveDateMenu = () => {
-          commitArchiveDateRange(
-            readArchiveDateMenuValue('from'),
-            readArchiveDateMenuValue('to')
-          );
-        };
-        view.querySelectorAll('[data-analytics-archive-date-clear]').forEach(button => {
+        view.querySelectorAll('[data-analytics-control-apply-period]').forEach(button => {
           button.onclick = evt => {
             evt.preventDefault();
             evt.stopPropagation();
-            commitArchiveDateRange('', '');
+            commitControlDateRange(
+              readControlDateValue('from'),
+              readControlDateValue('to')
+            );
+            state.analyticsControlSelectedInspector = '';
+            state.analyticsControlUploadError = '';
+            state.analyticsControlUploadNotice = '';
+            loadAnalyticsDashboard_({ force: true }).catch(() => {});
           };
         });
-        view.querySelectorAll('[data-analytics-archive-date-apply]').forEach(button => {
-          button.onclick = evt => {
-            evt.preventDefault();
-            evt.stopPropagation();
-            applyArchiveDateMenu();
-          };
-        });
-        view.querySelectorAll('[data-analytics-archive-date-input]').forEach(input => {
+        view.querySelectorAll('[data-analytics-control-date]').forEach(input => {
           input.onkeydown = evt => {
-            if (evt.key === 'Enter') {
-              evt.preventDefault();
-              evt.stopPropagation();
-              applyArchiveDateMenu();
-              return;
-            }
-            if (evt.key === 'Escape') {
-              evt.preventDefault();
-              evt.stopPropagation();
-              const dropdown = input.closest('[data-analytics-archive-date-dropdown]');
-              if (dropdown instanceof HTMLDetailsElement) dropdown.open = false;
-            }
+            if (evt.key !== 'Enter') return;
+            evt.preventDefault();
+            evt.stopPropagation();
+            commitControlDateRange(
+              readControlDateValue('from'),
+              readControlDateValue('to')
+            );
+            state.analyticsControlSelectedInspector = '';
+            state.analyticsControlUploadError = '';
+            state.analyticsControlUploadNotice = '';
+            loadAnalyticsDashboard_({ force: true }).catch(() => {});
           };
         });
+        view.querySelectorAll('[data-analytics-control-upload-skud]').forEach(button => {
+          button.onclick = evt => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            if (controlSkudInput) controlSkudInput.click();
+          };
+        });
+        if (controlSkudInput) {
+          controlSkudInput.onchange = async () => {
+            const file = controlSkudInput.files && controlSkudInput.files[0];
+            controlSkudInput.value = '';
+            if (!file) return;
+            state.analyticsControlSkudUploading = true;
+            state.analyticsControlUploadError = '';
+            state.analyticsControlUploadNotice = '';
+            rerenderControlViewPreservingScroll();
+            try {
+              const result = await importAnalyticsControlSkudFile_(file);
+              state.analyticsControlUploadNotice = result && result.periodFrom && result.periodTo
+                ? `СКУД загружен: ${formatAnalyticsRangeText_(result.periodFrom, result.periodTo)}`
+                : 'СКУД загружен';
+              await loadAnalyticsDashboard_({ force: true, silent: true });
+            } catch (error) {
+              state.analyticsControlUploadError = error && error.message ? error.message : 'Не удалось загрузить СКУД';
+            } finally {
+              state.analyticsControlSkudUploading = false;
+              rerenderControlViewPreservingScroll();
+            }
+          };
+        }
         return;
       }
-      if (analyticsSection !== 'ksg') return;
+      if (analyticsSection !== 'ksg') {
+        return;
+      }
       view.querySelectorAll('[data-analytics-ksg-contractor-search]').forEach(input => {
         input.oninput = () => {
           const query = normalizeText_(String(input.value || ''));
@@ -454,114 +813,6 @@ function buildAnalyticsGaugeHtml_(options) {
       );
     }
 
-function buildAnalyticsQuarterMetricHtml_(label, value, tone) {
-      const toneClass = tone ? ` analytics-quarter-metric--${tone}` : '';
-      return (
-        `<div class="analytics-quarter-metric${toneClass}">` +
-          `<span class="analytics-quarter-metric-label">${escapeHtml_(label)}</span>` +
-          `<strong class="analytics-quarter-metric-value">${escapeHtml_(formatAnalyticsCountText_(value))}</strong>` +
-        `</div>`
-      );
-    }
-
-function buildAnalyticsQuarterCardIconHtml_(key) {
-      const iconClass = `analytics-quarter-card-icon analytics-quarter-card-icon--${String(key || '').trim() || 'default'}`;
-      if (key === 'on-time') {
-        return (
-          `<span class="${iconClass}" aria-hidden="true">` +
-            `<svg viewBox="0 0 20 20" focusable="false">` +
-              `<circle cx="10" cy="10" r="8" fill="currentColor" opacity="0.18"></circle>` +
-              `<path d="M6.4 10.2 8.8 12.6 13.8 7.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>` +
-            `</svg>` +
-          `</span>`
-        );
-      }
-      if (key === 'late') {
-        return (
-          `<span class="${iconClass}" aria-hidden="true">` +
-            `<svg viewBox="0 0 20 20" focusable="false">` +
-              `<path d="M10 2.6 16.2 6.2V13.8L10 17.4 3.8 13.8V6.2Z" fill="currentColor" opacity="0.18"></path>` +
-              `<path d="M10 6.5V10.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>` +
-              `<circle cx="10" cy="13.2" r="1" fill="currentColor"></circle>` +
-            `</svg>` +
-          `</span>`
-        );
-      }
-      if (key === 'in-window') {
-        return (
-          `<span class="${iconClass}" aria-hidden="true">` +
-            `<svg viewBox="0 0 20 20" focusable="false">` +
-              `<path d="M6 3.5H14L12.2 8.2L14 13H6L7.8 8.2Z" fill="currentColor" opacity="0.18"></path>` +
-              `<path d="M6 3.5H14L12.2 8.2L14 13H6L7.8 8.2Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"></path>` +
-              `<path d="M8.2 8.2H11.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path>` +
-            `</svg>` +
-          `</span>`
-        );
-      }
-      if (key === 'future') {
-        return (
-          `<span class="${iconClass}" aria-hidden="true">` +
-            `<svg viewBox="0 0 20 20" focusable="false">` +
-              `<rect x="3.5" y="5.5" width="13" height="11" rx="2" fill="currentColor" opacity="0.14"></rect>` +
-              `<rect x="3.5" y="5.5" width="13" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"></rect>` +
-              `<path d="M6.5 3.5V7M13.5 3.5V7M3.5 8.2H16.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path>` +
-            `</svg>` +
-          `</span>`
-        );
-      }
-      return '';
-    }
-
-function buildAnalyticsStartSmrQuarterHtml_(quarter) {
-      const data = quarter || buildEmptyAnalyticsStartSmrQuarter_();
-      const total = Math.max(0, Number(data.total) || 0);
-      const elapsed = Math.max(0, Number(data.elapsed) || 0);
-      const cards = [
-        { key: 'on-time', label: 'В срок', value: Math.max(0, Number(data.onTime) || 0), rowIndexes: data.onTimeRowIndexes, metaLabel: 'подтверждено вовремя' },
-        { key: 'late', label: 'Просрочено', value: Math.max(0, Number(data.late) || 0), rowIndexes: data.lateRowIndexes, metaLabel: 'срок реакции истек' },
-        { key: 'in-window', label: 'В процессе', value: Math.max(0, Number(data.inWindow) || 0), rowIndexes: data.inWindowRowIndexes, metaLabel: 'ждем подтверждение' },
-        { key: 'future', label: 'Впереди', value: Math.max(0, Number(data.upcoming) || 0), rowIndexes: data.upcomingRowIndexes, metaLabel: 'старт еще не наступил' },
-        { key: 'total', label: 'Всего', value: total, isTotal: true, rowIndexes: data.rowIndexes, metaLabel: elapsed > 0 ? `${formatAnalyticsCountText_(elapsed)} уже стартовали` : 'объекты внутри периода' }
-      ];
-      const cardsHtml = total > 0
-        ? (
-            `<div class="analytics-quarter-cards">` +
-              cards.map(card => {
-                const share = !card.isTotal && total > 0 ? (card.value / total) * 100 : null;
-                const iconHtml = card.isTotal ? '' : buildAnalyticsQuarterCardIconHtml_(card.key);
-                const drilldownAttrs = buildAnalyticsDrilldownAttrs_(card.rowIndexes, `${card.label}: открыть объекты в реестре`);
-                const metaText = card.isTotal
-                  ? String(card.metaLabel || '').trim()
-                  : `${formatAnalyticsPercentText_(share)} · ${String(card.metaLabel || '').trim()}`;
-                return (
-                  `<article class="analytics-quarter-card analytics-quarter-card--${escapeHtml_(card.key)}${drilldownAttrs ? ' analytics-drilldown-target' : ''}"${drilldownAttrs}>` +
-                    `<div class="analytics-quarter-card-head${iconHtml ? '' : ' analytics-quarter-card-head--plain'}">` +
-                      iconHtml +
-                      `<div class="analytics-quarter-card-label">${escapeHtml_(card.label)}</div>` +
-                    `</div>` +
-                    `<div class="analytics-quarter-card-value">${escapeHtml_(formatAnalyticsCountText_(card.value))}</div>` +
-                    `<div class="analytics-quarter-card-meta">${escapeHtml_(metaText)}</div>` +
-                  `</article>`
-                );
-              }).join('') +
-            `</div>`
-          )
-        : '';
-
-      return (
-        `<section class="analytics-quarter-section analytics-quarter-section--summary">` +
-          `<div class="analytics-quarter-head analytics-quarter-head--summary">` +
-            `<div class="analytics-quarter-title">График начала СМР</div>` +
-          `</div>` +
-          (
-            total > 0
-              ? cardsHtml
-              : `<div class="analytics-quarter-note">В этом диапазоне нет объектов с заполненной датой начала СМР.</div>`
-          ) +
-        `</section>`
-      );
-    }
-
 function buildAnalyticsKsgSummaryCardHtml_(label, value, tone, meta, rowIndexes) {
       const toneClass = tone ? ` analytics-ksg-summary-card--${tone}` : '';
       const drilldownAttrs = buildAnalyticsDrilldownAttrs_(rowIndexes, `${label}: открыть объекты в реестре`);
@@ -614,280 +865,6 @@ function buildAnalyticsKsgContractorFilterHtml_(dashboard) {
           `</summary>` +
           `${menuHtml}` +
         `</details>`
-      );
-    }
-
-function buildAnalyticsArchiveGrbsFilterHtml_(dashboard) {
-      const data = dashboard || {};
-      const options = Array.isArray(data.grbsOptions) ? data.grbsOptions : [];
-      const activeGrbs = normalizeAnalyticsArchiveGrbsFilters_(data.activeGrbs);
-      const totalObjects = options.reduce((sum, option) => sum + Math.max(0, Number(option && option.count) || 0), 0);
-      const triggerText = activeGrbs.length === 1
-        ? activeGrbs[0]
-        : (activeGrbs.length > 1 ? `${activeGrbs[0]} +${activeGrbs.length - 1}` : 'ГРБС');
-      const menuHtml = options.length
-        ? (
-            `<div class="analytics-filter-menu">` +
-              `<div class="analytics-filter-search-shell">` +
-                `<input class="analytics-filter-search-input" type="search" placeholder="Поиск ГРБС" autocomplete="off" data-analytics-archive-grbs-search>` +
-              `</div>` +
-              `<div class="analytics-filter-options">` +
-                `<button class="analytics-filter-option${activeGrbs.length === 0 ? ' active' : ''}" type="button" data-analytics-archive-grbs="__all">` +
-                  `<span class="analytics-filter-option-mark" aria-hidden="true"></span>` +
-                  `<span class="analytics-filter-option-label">Все ГРБС</span>` +
-                  `<span class="analytics-filter-option-count">${escapeHtml_(formatAnalyticsCountText_(totalObjects))}</span>` +
-                `</button>` +
-                options.map(option => {
-                  const label = String(option && option.label || '').trim();
-                  const active = activeGrbs.includes(label);
-                  return (
-                    `<button class="analytics-filter-option${active ? ' active' : ''}" type="button" data-analytics-archive-grbs="${escapeHtml_(label)}" data-analytics-filter-label="${escapeHtml_(label)}">` +
-                      `<span class="analytics-filter-option-mark" aria-hidden="true"></span>` +
-                      `<span class="analytics-filter-option-label">${escapeHtml_(label)}</span>` +
-                      `<span class="analytics-filter-option-count">${escapeHtml_(formatAnalyticsCountText_(option && option.count))}</span>` +
-                    `</button>`
-                  );
-                }).join('') +
-              `</div>` +
-            `</div>`
-          )
-        : `<div class="analytics-filter-menu"><div class="analytics-filter-empty">Нет данных по ГРБС</div></div>`;
-      return (
-        `<details class="analytics-filter-dropdown analytics-filter-dropdown--archive-grbs">` +
-          `<summary class="analytics-filter-trigger" title="${escapeHtml_(triggerText)}" aria-label="${escapeHtml_(`Фильтр ГРБС: ${triggerText}`)}">` +
-            `<span class="analytics-filter-trigger-text">${escapeHtml_(triggerText)}</span>` +
-            `<span class="analytics-filter-trigger-caret" aria-hidden="true"></span>` +
-          `</summary>` +
-          `${menuHtml}` +
-        `</details>`
-      );
-    }
-
-function buildAnalyticsArchiveDateFilterHtml_(fromValue, toValue, min, max) {
-      const rangeText = formatAnalyticsRangeText_(fromValue, toValue);
-      return (
-        `<details class="analytics-filter-dropdown analytics-filter-dropdown--archive-date" data-analytics-archive-date-dropdown>` +
-          `<summary class="analytics-filter-trigger analytics-filter-trigger--stacked">` +
-            `<span class="analytics-filter-trigger-copy">` +
-              `<span class="analytics-filter-trigger-text">Дата мониторинга</span>` +
-              `<span class="analytics-filter-trigger-meta">${escapeHtml_(rangeText || 'Выберите диапазон')}</span>` +
-            `</span>` +
-            `<span class="analytics-filter-trigger-caret" aria-hidden="true"></span>` +
-          `</summary>` +
-          `<div class="analytics-filter-menu analytics-filter-menu--archive-date">` +
-            `<div class="analytics-archive-date-menu">` +
-              `<div class="analytics-archive-date-hint">Покажем записи архива в выбранном диапазоне.</div>` +
-              `<div class="analytics-archive-date-grid">` +
-                `<label class="analytics-archive-date-field">` +
-                  `<span class="analytics-archive-date-label">С</span>` +
-                  `<input class="analytics-archive-date-input" type="date" value="${escapeHtml_(fromValue || '')}"${min ? ` min="${escapeHtml_(min)}"` : ''}${max ? ` max="${escapeHtml_(max)}"` : ''} data-analytics-archive-date-input="from">` +
-                `</label>` +
-                `<label class="analytics-archive-date-field">` +
-                  `<span class="analytics-archive-date-label">По</span>` +
-                  `<input class="analytics-archive-date-input" type="date" value="${escapeHtml_(toValue || '')}"${min ? ` min="${escapeHtml_(min)}"` : ''}${max ? ` max="${escapeHtml_(max)}"` : ''} data-analytics-archive-date-input="to">` +
-                `</label>` +
-              `</div>` +
-              `<div class="analytics-archive-date-actions">` +
-                `<button class="ghost" type="button" data-analytics-archive-date-clear>Сбросить</button>` +
-                `<button class="primary" type="button" data-analytics-archive-date-apply>Применить</button>` +
-              `</div>` +
-            `</div>` +
-          `</div>` +
-        `</details>`
-      );
-    }
-
-function buildAnalyticsArchiveSummaryCardHtml_(label, value, meta, tone, rowIndexes) {
-      const toneClass = tone ? ` analytics-archive-summary-card--${tone}` : '';
-      const drilldownAttrs = buildAnalyticsDrilldownAttrs_(rowIndexes, `${label}: открыть объекты в реестре`);
-      return (
-        `<article class="analytics-archive-summary-card${toneClass}${drilldownAttrs ? ' analytics-drilldown-target' : ''}"${drilldownAttrs}>` +
-          `<div class="analytics-archive-summary-card-label">${escapeHtml_(label)}</div>` +
-          `<div class="analytics-archive-summary-card-value">${escapeHtml_(value)}</div>` +
-          `<div class="analytics-archive-summary-card-meta">${escapeHtml_(meta || ' ')}</div>` +
-        `</article>`
-      );
-    }
-
-function buildAnalyticsArchiveCompositionHtml_(dashboard) {
-      const totalCount = Math.max(0, Number(dashboard && dashboard.totalMonitorings) || 0);
-      const segments = [
-        {
-          key: 'unique',
-          label: 'Уникальные объекты',
-          value: Math.max(0, Number(dashboard && dashboard.uniqueObjects) || 0),
-          rowIndexes: dashboard && dashboard.uniqueRowIndexes
-        },
-        {
-          key: 'repeat',
-          label: 'Повторные выезды',
-          value: Math.max(0, Number(dashboard && dashboard.repeatedMonitorings) || 0),
-          rowIndexes: dashboard && dashboard.repeatedRowIndexes
-        }
-      ];
-      const totalDrilldownAttrs = buildAnalyticsDrilldownAttrs_(dashboard && dashboard.totalRowIndexes, 'Архив мониторинга · Все выезды за период');
-      const segmentsHtml = totalCount > 0
-        ? segments.map(segment => {
-            if (!segment.value) return '';
-            const width = Math.max(0, Math.min((segment.value / totalCount) * 100, 100));
-            return `<span class="analytics-archive-composition-segment analytics-archive-composition-segment--${escapeHtml_(segment.key)}" style="width:${escapeHtml_(width.toFixed(2))}%"></span>`;
-          }).join('')
-        : '';
-      const statsHtml = segments.map(segment => {
-        const share = totalCount > 0 ? (segment.value / totalCount) * 100 : 0;
-        const drilldownAttrs = buildAnalyticsDrilldownAttrs_(segment.rowIndexes, `${segment.label}: открыть объекты в реестре`);
-        return (
-          `<article class="analytics-archive-composition-stat analytics-archive-composition-stat--${escapeHtml_(segment.key)}${drilldownAttrs ? ' analytics-drilldown-target' : ''}"${drilldownAttrs}>` +
-            `<div class="analytics-archive-composition-stat-main">` +
-              `<span class="analytics-archive-composition-dot analytics-archive-composition-dot--${escapeHtml_(segment.key)}" aria-hidden="true"></span>` +
-              `<span class="analytics-archive-composition-stat-label">${escapeHtml_(segment.label)}</span>` +
-            `</div>` +
-            `<div class="analytics-archive-composition-stat-values">` +
-              `<span>${escapeHtml_(formatAnalyticsPercentText_(share))}</span>` +
-              `<strong>${escapeHtml_(formatAnalyticsCountText_(segment.value))}</strong>` +
-            `</div>` +
-          `</article>`
-        );
-      }).join('');
-      return (
-        `<div class="analytics-archive-composition-card">` +
-          `<div class="analytics-archive-composition-main${totalDrilldownAttrs ? ' analytics-drilldown-target' : ''}"${totalDrilldownAttrs}>` +
-            `<div class="analytics-archive-composition-kicker">Объездов всего</div>` +
-            `<div class="analytics-archive-composition-total">${escapeHtml_(formatAnalyticsCountText_(totalCount))}</div>` +
-            `<div class="analytics-archive-composition-caption">Уникальные объекты и повторные выезды за выбранный диапазон</div>` +
-            `<div class="analytics-archive-composition-bar" aria-hidden="true">${segmentsHtml}</div>` +
-          `</div>` +
-          `<div class="analytics-archive-composition-stats">${statsHtml}</div>` +
-        `</div>`
-      );
-    }
-
-function buildAnalyticsArchiveRvMetricsHtml_(dashboard) {
-      const postRvVisits = Math.max(0, Number(dashboard && dashboard.visitsAfterRv) || 0);
-      const postRvObjects = Math.max(0, Number(dashboard && dashboard.objectsWithPostRvVisits) || 0);
-      const postRvShare = Math.max(0, Number(dashboard && dashboard.postRvShare) || 0);
-      const visitsAttrs = buildAnalyticsDrilldownAttrs_(dashboard && dashboard.afterRvRowIndexes, 'Выезды после РВ: открыть объекты в реестре');
-      const objectsAttrs = buildAnalyticsDrilldownAttrs_(dashboard && dashboard.postRvObjectRowIndexes, 'Объекты с выездом после РВ: открыть объекты в реестре');
-      const shareAttrs = buildAnalyticsDrilldownAttrs_(dashboard && dashboard.afterRvRowIndexes, 'Доля выездов после РВ: открыть объекты в реестре');
-      return (
-        `<div class="analytics-archive-rv-card">` +
-          `<div class="analytics-archive-rv-head${visitsAttrs ? ' analytics-drilldown-target' : ''}"${visitsAttrs}>` +
-            `<div class="analytics-archive-rv-kicker">После РВ</div>` +
-            `<div class="analytics-archive-rv-value">${escapeHtml_(formatAnalyticsCountText_(postRvVisits))}</div>` +
-          `</div>` +
-          `<div class="analytics-archive-rv-stats">` +
-            `<article class="analytics-archive-rv-stat${objectsAttrs ? ' analytics-drilldown-target' : ''}"${objectsAttrs}>` +
-              `<span>Объектов с выездом после РВ</span>` +
-              `<strong>${escapeHtml_(formatAnalyticsCountText_(postRvObjects))}</strong>` +
-            `</article>` +
-            `<article class="analytics-archive-rv-stat${shareAttrs ? ' analytics-drilldown-target' : ''}"${shareAttrs}>` +
-              `<span>Доля от всех выездов</span>` +
-              `<strong>${escapeHtml_(formatAnalyticsPercentText_(postRvShare))}</strong>` +
-            `</article>` +
-          `</div>` +
-        `</div>`
-      );
-    }
-
-function buildAnalyticsArchiveTimelineHtml_(dashboard) {
-      const items = Array.isArray(dashboard && dashboard.timeline) ? dashboard.timeline : [];
-      if (!items.length) {
-        return `<div class="analytics-quarter-note">В выбранном диапазоне нет записей архива.</div>`;
-      }
-      const maxTotal = Math.max(1, ...items.map(item => Math.max(0, Number(item && item.total) || 0)));
-      return (
-        `<div class="analytics-archive-timeline-shell">` +
-          `<div class="analytics-archive-timeline">` +
-            items.map(item => {
-              const total = Math.max(0, Number(item && item.total) || 0);
-              const uniqueCount = Math.max(0, Number(item && item.uniqueCount) || 0);
-              const repeatCount = Math.max(0, Number(item && item.repeatCount) || 0);
-              const deniedCount = Math.max(0, Number(item && item.deniedCount) || 0);
-              const uniqueHeight = (uniqueCount / maxTotal) * 100;
-              const repeatHeight = (repeatCount / maxTotal) * 100;
-              const drilldownAttrs = buildAnalyticsDrilldownAttrs_(item && item.rowIndexes, `${item && item.date || 'Дата'}: открыть объекты в реестре`);
-              return (
-                `<article class="analytics-archive-timeline-item${drilldownAttrs ? ' analytics-drilldown-target' : ''}"${drilldownAttrs}>` +
-                  `<div class="analytics-archive-timeline-item-head">` +
-                    `<span class="analytics-archive-timeline-item-total">${escapeHtml_(formatAnalyticsCountText_(total))}</span>` +
-                    (deniedCount > 0 ? `<span class="analytics-archive-timeline-item-denied">${escapeHtml_(formatAnalyticsCountText_(deniedCount))}</span>` : '') +
-                  `</div>` +
-                  `<div class="analytics-archive-timeline-track">` +
-                    `<span class="analytics-archive-timeline-segment analytics-archive-timeline-segment--repeat" style="height:${escapeHtml_(repeatHeight.toFixed(2))}%"></span>` +
-                    `<span class="analytics-archive-timeline-segment analytics-archive-timeline-segment--unique" style="height:${escapeHtml_(uniqueHeight.toFixed(2))}%"></span>` +
-                  `</div>` +
-                  `<div class="analytics-archive-timeline-item-meta">${escapeHtml_(formatAnalyticsShortDateText_(item && item.date))}</div>` +
-                `</article>`
-              );
-            }).join('') +
-          `</div>` +
-        `</div>`
-      );
-    }
-
-function buildAnalyticsArchiveTopObjectRowHtml_(item) {
-      const data = item || {};
-      const title = String(data.objectName || '').trim() || String(data.uin || '').trim() || 'Объект без названия';
-      const meta = [
-        String(data.uin || '').trim() ? `УИН ${String(data.uin || '').trim()}` : '',
-        String(data.grbs || '').trim(),
-        String(data.contractor || '').trim()
-      ].filter(Boolean).join(' · ');
-      const drilldownAttrs = buildAnalyticsDrilldownAttrs_(data.rowIndexes, `${title}: открыть объект в реестре`);
-      return (
-        `<article class="analytics-archive-top-row${drilldownAttrs ? ' analytics-drilldown-target' : ''}"${drilldownAttrs}>` +
-          `<div class="analytics-archive-top-row-main">` +
-            `<div class="analytics-archive-top-row-title">${escapeHtml_(title)}</div>` +
-            `<div class="analytics-archive-top-row-meta">${escapeHtml_(meta)}</div>` +
-          `</div>` +
-          `<div class="analytics-archive-top-row-stats">` +
-            `<span>${escapeHtml_(formatAnalyticsCountText_(data.total))} выездов</span>` +
-            `<span>${escapeHtml_(formatAnalyticsShortDateText_(data.lastDate))}</span>` +
-            (Number(data.denied) > 0 ? `<span class="analytics-archive-top-row-stats--denied">${escapeHtml_(formatAnalyticsCountText_(data.denied))} недопуска</span>` : '') +
-          `</div>` +
-        `</article>`
-      );
-    }
-
-function buildAnalyticsArchiveDashboardHtml_() {
-      const base = state.analyticsDashboard && state.analyticsDashboard.archiveMonitoring
-        ? state.analyticsDashboard.archiveMonitoring
-        : buildEmptyAnalyticsArchiveMonitoring_();
-      const dashboard = buildAnalyticsArchiveMonitoringDashboard_(base);
-      const summaryCardsHtml = [
-        buildAnalyticsArchiveSummaryCardHtml_('Объездов всего', formatAnalyticsCountText_(dashboard.totalMonitorings), 'Все записи архива', '', dashboard.totalRowIndexes),
-        buildAnalyticsArchiveSummaryCardHtml_('Уникальные объекты', formatAnalyticsCountText_(dashboard.uniqueObjects), 'Без повторов в периоде', 'good', dashboard.uniqueRowIndexes),
-        buildAnalyticsArchiveSummaryCardHtml_('Повторных выездов', formatAnalyticsCountText_(dashboard.repeatedMonitorings), 'Дополнительные визиты по тем же объектам', 'repeat', dashboard.repeatedRowIndexes),
-        buildAnalyticsArchiveSummaryCardHtml_('Недопуски', formatAnalyticsCountText_(dashboard.deniedAccess), 'Записи со статусом недопуска', 'denied', dashboard.deniedRowIndexes),
-        buildAnalyticsArchiveSummaryCardHtml_('Среднее на объект', `${formatAnalyticsDecimalText_(dashboard.averagePerObject)}x`, 'Объекты с 2+ выездами', 'neutral', dashboard.repeatedRowIndexes)
-      ].join('');
-      const compositionHtml = buildAnalyticsArchiveCompositionHtml_(dashboard);
-      const rvMetricsHtml = buildAnalyticsArchiveRvMetricsHtml_(dashboard);
-
-      return (
-        `<div class="analytics-dashboard analytics-dashboard--archive">` +
-          `<section class="analytics-dashboard-header">` +
-            `<div class="analytics-dashboard-header-main">` +
-              `<div class="analytics-dashboard-kicker">Аналитика</div>` +
-              `<h2>Архив мониторинга</h2>` +
-            `</div>` +
-            `<div class="analytics-dashboard-header-actions">` +
-              `${buildAnalyticsArchiveGrbsFilterHtml_(dashboard)}` +
-              `${buildAnalyticsArchiveDateFilterHtml_(dashboard.dateFrom, dashboard.dateTo, dashboard.minDate, dashboard.maxDate)}` +
-              `<button id="btnRefreshAnalyticsDashboardView" class="ghost analytics-refresh-button" type="button"${state.analyticsLoading ? ' disabled' : ''}>Обновить</button>` +
-            `</div>` +
-          `</section>` +
-          `<section class="analytics-archive-summary-grid">${summaryCardsHtml}</section>` +
-          `<section class="analytics-quarter-section analytics-archive-focus-section">` +
-            `<div class="analytics-quarter-head analytics-quarter-head--summary analytics-archive-focus-head">` +
-              `<div class="analytics-quarter-title">Выезды</div>` +
-            `</div>` +
-            `<div class="analytics-archive-focus-layout">` +
-              `${compositionHtml}` +
-              `${rvMetricsHtml}` +
-            `</div>` +
-          `</section>` +
-        `</div>`
       );
     }
 
@@ -1020,60 +997,12 @@ function buildAnalyticsKsgDashboardHtml_() {
       );
     }
 
-function buildAnalyticsQuarterDashboardHtml_(dashboard, options) {
-      const data = dashboard || buildEmptyAnalyticsDashboard_();
-      const settings = options || {};
-      const tracks = Array.isArray(data.tracks) ? data.tracks : [];
-      const overallPlan = Math.max(0, Number(data.overallUniquePlan) || Number(data.trackedRows) || 0);
-      const overallFact = Math.max(0, Number(data.overallUniqueFact) || 0);
-      const rawOverallPercent = Number.isFinite(Number(data.overallUniquePercent))
-        ? Number(data.overallUniquePercent)
-        : (overallPlan > 0 ? (overallFact / overallPlan) * 100 : 0);
-      const startSmrQuarterHtml = buildAnalyticsStartSmrQuarterHtml_(settings.startSmrQuarter || data.startSmrQuarter);
-      const titleText = String(settings.title || 'Квартальная аналитика').trim() || 'Квартальная аналитика';
-      const statusText = String(settings.statusText || '').trim();
-      const errorText = String(settings.errorText || '').trim();
-      const emptyText = String(settings.emptyText || '').trim() || 'Данные появятся здесь после загрузки аналитики.';
-      const uniqueFactText = `${formatAnalyticsCountText_(overallFact)} из ${formatAnalyticsCountText_(overallPlan)}`;
-      const gaugeHtml = buildAnalyticsGaugeHtml_({
-        valueText: formatAnalyticsPercentText_(rawOverallPercent),
-        ratioText: uniqueFactText,
-        overflowText: rawOverallPercent > 100 ? formatAnalyticsOverPlanText_(overallFact, overallPlan) : '',
-        gaugePercent: Math.max(0, Math.min(rawOverallPercent, 100)),
-        ariaLabel: `Общий итог: ${formatAnalyticsPercentText_(rawOverallPercent)}, ${uniqueFactText}`,
-        wrapperClass: (Array.isArray(data.overallPlanRowIndexes) && data.overallPlanRowIndexes.length) ? 'analytics-drilldown-target' : '',
-        wrapperAttrs: buildAnalyticsDrilldownAttrs_(data.overallPlanRowIndexes, 'Общий итог: открыть объекты в реестре')
-      });
+function buildAnalyticsQuarterMetricHtml_(label, value, tone) {
+      const toneClass = tone ? ` analytics-quarter-metric--${tone}` : '';
       return (
-        `<div class="analytics-dashboard analytics-dashboard--quarter">` +
-          `<section class="analytics-dashboard-header">` +
-            `<div class="analytics-dashboard-header-main">` +
-              `<div class="analytics-dashboard-kicker">Аналитика</div>` +
-              `<h2>${escapeHtml_(titleText)}</h2>` +
-              (statusText ? `<div class="analytics-dashboard-meta-line">${escapeHtml_(statusText)}</div>` : '') +
-            `</div>` +
-            `<button id="btnRefreshAnalyticsDashboardView" class="ghost analytics-refresh-button" type="button"${settings.refreshDisabled ? ' disabled' : ''}>Обновить</button>` +
-          `</section>` +
-          `${errorText}` +
-          (
-            tracks.length
-              ? (
-                  `${startSmrQuarterHtml}` +
-                  `<section class="analytics-overview-grid analytics-overview-grid--quarter">` +
-                    `<div class="analytics-breakdown-card">` +
-                      `<div class="analytics-breakdown-card-title">${escapeHtml_(String(settings.breakdownTitle || 'Управление').trim() || 'Управление')}</div>` +
-                      `<div class="analytics-breakdown-card-subtitle">${escapeHtml_(String(settings.breakdownSubtitle || 'Факт к плану по направлениям').trim() || 'Факт к плану по направлениям')}</div>` +
-                      `<div class="analytics-breakdown-list">${tracks.map((track, index) => buildAnalyticsDashboardTrackCardHtml_(track, index)).join('')}</div>` +
-                    `</div>` +
-                    `<div class="analytics-total-card">` +
-                      `<div class="analytics-total-card-title">${escapeHtml_(String(settings.totalTitle || 'Общий итог').trim() || 'Общий итог')}</div>` +
-                      `<div class="analytics-total-card-subtitle">${escapeHtml_(String(settings.totalSubtitle || 'Факт к плану квартала').trim() || 'Факт к плану квартала')}</div>` +
-                      `${gaugeHtml}` +
-                    `</div>` +
-                  `</section>`
-                )
-              : `<div class="analytics-view-message">${escapeHtml_(emptyText)}</div>`
-          ) +
+        `<div class="analytics-quarter-metric${toneClass}">` +
+          `<span class="analytics-quarter-metric-label">${escapeHtml_(label)}</span>` +
+          `<strong class="analytics-quarter-metric-value">${escapeHtml_(formatAnalyticsCountText_(value))}</strong>` +
         `</div>`
       );
     }
@@ -1087,13 +1016,14 @@ function renderAnalyticsView_() {
       if (!isActive) return;
 
       const analyticsSection = normalizeAnalyticsSection_(state.analyticsSection);
-      if (analyticsSection === 'ksg') {
-        view.innerHTML = buildAnalyticsKsgDashboardHtml_();
+      if (typeof isAnalyticsControlSection_ === 'function' && isAnalyticsControlSection_(analyticsSection)) {
+        view.innerHTML = buildAnalyticsWorkControlDashboardHtml_();
         bindAnalyticsViewEvents_();
         return;
       }
-      if (analyticsSection === 'archive') {
-        view.innerHTML = buildAnalyticsArchiveDashboardHtml_();
+
+      if (typeof isAnalyticsKsgSection_ === 'function' && isAnalyticsKsgSection_(analyticsSection)) {
+        view.innerHTML = buildAnalyticsKsgDashboardHtml_();
         bindAnalyticsViewEvents_();
         return;
       }
@@ -1106,32 +1036,21 @@ function renderAnalyticsView_() {
         ? 'Подтягиваю план и архив мониторинга…'
         : 'Данные появятся здесь после загрузки аналитики.';
       const statusText = state.analyticsLoading ? 'Обновляем данные…' : '';
-      if (analyticsSection === 'quarter1') {
-        view.innerHTML = buildAnalyticsQuarterDashboardHtml_(buildAnalyticsQuarterOneDashboard_(dashboard), {
-          title: ANALYTICS_Q1_DASHBOARD_DEF && ANALYTICS_Q1_DASHBOARD_DEF.title || '1 квартал 2026',
+      const sectionDef = typeof getAnalyticsSectionDef_ === 'function'
+        ? getAnalyticsSectionDef_(analyticsSection)
+        : null;
+      const quarterDashboardBuilder = sectionDef && sectionDef.dashboardDefKey === 'q1'
+        ? buildAnalyticsQuarterOneDashboard_
+        : buildAnalyticsQuarterTwoDashboard_;
+      view.innerHTML = buildAnalyticsQuarterDashboardHtml_(
+        quarterDashboardBuilder(dashboard),
+        buildAnalyticsQuarterSectionViewOptions_(analyticsSection, {
           statusText,
           errorText,
           emptyText,
-          refreshDisabled: state.analyticsLoading,
-          breakdownTitle: 'Управление',
-          breakdownSubtitle: 'Факт к плану по направлениям за 1 квартал 2026',
-          totalTitle: 'Общий итог',
-          totalSubtitle: 'Факт выездов относительно плана квартала'
-        });
-        bindAnalyticsViewEvents_();
-        return;
-      }
-
-      view.innerHTML = buildAnalyticsQuarterDashboardHtml_(buildAnalyticsQuarterTwoDashboard_(dashboard), {
-        title: ANALYTICS_Q2_DASHBOARD_DEF && ANALYTICS_Q2_DASHBOARD_DEF.title || '2 квартал 2026',
-        statusText,
-        errorText,
-        emptyText,
-        refreshDisabled: state.analyticsLoading,
-        breakdownTitle: 'Управление',
-        breakdownSubtitle: 'Факт мониторинга к плану по направлениям',
-        totalTitle: 'Общий итог',
-        totalSubtitle: 'Факт выездов относительно плана квартала'
-      });
+          refreshDisabled: state.analyticsLoading
+        })
+      );
       bindAnalyticsViewEvents_();
     }
+

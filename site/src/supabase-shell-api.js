@@ -1013,14 +1013,93 @@
     return result && typeof result === 'object' ? result : { rows: [] };
   }
 
+  function canRetryArchiveMonitoringRpcWithoutDateParams(error) {
+    const code = normalizeString(error && error.code).toUpperCase();
+    const message = normalizeString(
+      error && (
+        error.message ||
+        error.error_description ||
+        error.details ||
+        error.hint
+      )
+    );
+    return code === 'PGRST202'
+      || code === '42883'
+      || /p_date_from/i.test(message)
+      || /p_date_to/i.test(message)
+      || (/function\s+.*sf_get_archive_monitoring/i.test(message) && /does not exist/i.test(message));
+  }
+
   async function getSmartFilterShellArchiveMonitoring(options) {
     await requireSession(options && options.sessionToken);
+    const sessionToken = normalizeString(options && options.sessionToken);
     const limitRaw = Number(options && options.limit);
-    const result = await invokeRpc(RPC.getArchiveMonitoring, {
-      p_session_token: normalizeString(options && options.sessionToken),
+    const legacyLimitRaw = Number(options && options.legacyLimit);
+    const dateFrom = normalizeString(options && options.dateFrom);
+    const dateTo = normalizeString(options && options.dateTo);
+    const baseParams = {
+      p_session_token: sessionToken,
       p_limit: Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : null
-    });
+    };
+    const usesDateFilter = /^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || /^\d{4}-\d{2}-\d{2}$/.test(dateTo);
+    let data = null;
+    let error = null;
+
+    ({ data, error } = await callRpcWithRetry(RPC.getArchiveMonitoring, {
+      ...baseParams,
+      p_date_from: /^\d{4}-\d{2}-\d{2}$/.test(dateFrom) ? dateFrom : null,
+      p_date_to: /^\d{4}-\d{2}-\d{2}$/.test(dateTo) ? dateTo : null
+    }, {
+      maxAttempts: 2,
+      timeoutMs: requestTimeoutMs
+    }));
+
+    if (error && usesDateFilter && canRetryArchiveMonitoringRpcWithoutDateParams(error)) {
+      ({ data, error } = await callRpcWithRetry(RPC.getArchiveMonitoring, {
+        p_session_token: sessionToken,
+        p_limit: Number.isFinite(legacyLimitRaw) && legacyLimitRaw > 0
+          ? Math.floor(legacyLimitRaw)
+          : baseParams.p_limit
+      }, {
+        maxAttempts: 1,
+        timeoutMs: requestTimeoutMs
+      }));
+    }
+
+    if (error) throw mapSupabaseError(error);
+    const result = data;
     return result && typeof result === 'object' ? result : { rows: [] };
+  }
+
+  async function getSmartFilterShellWorkControlDashboard(options) {
+    await requireSession(options && options.sessionToken);
+    const dateFrom = normalizeString(options && options.dateFrom);
+    const dateTo = normalizeString(options && options.dateTo);
+    const result = await invokeRpc(RPC.getWorkControlDashboard, {
+      p_session_token: normalizeString(options && options.sessionToken),
+      p_date_from: /^\d{4}-\d{2}-\d{2}$/.test(dateFrom) ? dateFrom : null,
+      p_date_to: /^\d{4}-\d{2}-\d{2}$/.test(dateTo) ? dateTo : null
+    });
+    return result && typeof result === 'object'
+      ? result
+      : {
+          periodFrom: '',
+          periodTo: '',
+          dailyRows: [],
+          skudStatus: { status: 'missing', label: 'Отсутствует СКУД за период' },
+        };
+  }
+
+  async function saveSmartFilterShellWorkControlSkud(options) {
+    await requireSession(options && options.sessionToken);
+    const payload = {
+      fileName: normalizeString(options && options.fileName),
+      rows: Array.isArray(options && options.rows) ? options.rows : []
+    };
+    return invokeRpc(RPC.importSkudRows, {
+      p_session_token: normalizeString(options && options.sessionToken),
+      p_payload: payload
+    });
   }
 
   async function getSmartFilterShellObjectLabStudiesHistory(options) {
@@ -1258,6 +1337,8 @@
       getSmartFilterShellData,
       getSmartFilterShellBootstrap,
       getSmartFilterShellArchiveMonitoring,
+      getSmartFilterShellWorkControlDashboard,
+      saveSmartFilterShellWorkControlSkud,
       getSmartFilterShellObjectMonitoringHistory,
       getSmartFilterShellObjectLabStudiesHistory,
       getSmartFilterShellLabStudyInspectors,

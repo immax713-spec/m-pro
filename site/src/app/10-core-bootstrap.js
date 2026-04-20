@@ -483,7 +483,14 @@
         renderAll_();
         scrollWorkspaceToTop_();
         if (state.analyticsSection === 'ksg') return state.analyticsDashboard;
-        const shouldLoad = !!settings.force || !state.analyticsLoadedOnce;
+        const analyticsCacheKey = typeof buildAnalyticsDashboardCacheKey_ === 'function'
+          ? buildAnalyticsDashboardCacheKey_(state.analyticsSection)
+          : String(state.analyticsSection || '').trim();
+        const shouldLoad = (
+          !!settings.force
+          || !state.analyticsLoadedOnce
+          || state.analyticsLoadedKey !== analyticsCacheKey
+        );
         return !shouldLoad
           ? Promise.resolve(state.analyticsDashboard)
           : (
@@ -495,6 +502,10 @@
       return loader.catch(() => {
         renderAll_();
       });
+    }
+
+    function getDefaultAnalyticsSection_() {
+      return String(ANALYTICS_DEFAULT_SECTION_KEY || 'quarter').trim() || 'quarter';
     }
 
     function switchWorkspaceView_(viewKey) {
@@ -822,7 +833,31 @@
     function handleSidebarNavigation_(panelKey) {
       const nextPanel = normalizeSidebarPanel_(panelKey);
       if (nextPanel === 'analytics') {
-        openAnalyticsDashboardView_({ section: state.analyticsSection });
+        const activePanel = normalizeSidebarPanel_(state.sidebarActivePanel);
+        const isSamePanel = nextPanel === activePanel;
+        const shouldOnlyExpand = !isCompactSidebarViewport_() && !state.sidebarExpanded;
+        const defaultSection = getDefaultAnalyticsSection_();
+        const currentSection = normalizeAnalyticsSection_(state.analyticsSection || defaultSection);
+        state.sidebarExpanded = true;
+        if (shouldOnlyExpand) {
+          state.sidebarActivePanel = 'analytics';
+          state.analyticsSidebarPanelOpen = true;
+          if (state.currentView === 'analytics') {
+            renderAll_();
+            return;
+          }
+          openAnalyticsDashboardView_({ section: currentSection });
+          return;
+        }
+        if (state.currentView === 'analytics' && isSamePanel) {
+          state.sidebarActivePanel = 'analytics';
+          state.analyticsSidebarPanelOpen = !(state.analyticsSidebarPanelOpen !== false);
+          renderAll_();
+          return;
+        }
+        state.sidebarActivePanel = 'analytics';
+        state.analyticsSidebarPanelOpen = true;
+        openAnalyticsDashboardView_({ section: currentSection });
         return;
       }
       const activePanel = normalizeSidebarPanel_(state.sidebarActivePanel);
@@ -1839,9 +1874,6 @@ function applyMonitoringOverlayPayload_(payload) {
       });
       restoreActiveRegistrySelectionState_();
       applyObjectFilters_();
-      if (typeof syncSavedSelectionPublishAssignmentsFromMapOverlay_ === 'function') {
-        syncSavedSelectionPublishAssignmentsFromMapOverlay_();
-      }
       syncObjectTabsState_();
       ensureObjectSelection_();
       syncSharedSelectionWorkStateForActiveSelection_();

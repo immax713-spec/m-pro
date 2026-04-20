@@ -1,30 +1,8 @@
 // ===== Analytics Domain (lazy) =====
 
-function getAnalyticsPlanAssetUrl_() {
-      const url = new URL(ANALYTICS_PLAN_ASSET_PATH, window.location.href);
-      const assetVersion = String(
-        window.__M_PRO_DEPLOY_CONFIG &&
-        window.__M_PRO_DEPLOY_CONFIG.assetVersion ||
-        ''
-      ).trim();
-      if (assetVersion) url.searchParams.set('v', assetVersion);
-      return url.toString();
-    }
-
-function readAnalyticsPlanText_() {
-      const embeddedText = String(window.__SITE_ANALYTICS_PLAN_Q2_2026_CSV__ || '');
-      if (embeddedText) return Promise.resolve(embeddedText);
-      return fetch(getAnalyticsPlanAssetUrl_(), { cache: 'no-store' })
-        .then(response => {
-          if (!response.ok) {
-            throw new Error(`Не удалось загрузить план аналитики (${response.status}).`);
-          }
-          return response.text();
-        });
-    }
-
-function parseCsvText_(rawText) {
+function parseDelimitedText_(rawText, delimiter) {
       const text = String(rawText || '');
+      const cellDelimiter = String(delimiter || ',').charAt(0) || ',';
       const rows = [];
       let row = [];
       let value = '';
@@ -40,7 +18,7 @@ function parseCsvText_(rawText) {
           }
           continue;
         }
-        if (char === ',' && !inQuotes) {
+        if (char === cellDelimiter && !inQuotes) {
           row.push(value);
           value = '';
           continue;
@@ -62,339 +40,341 @@ function parseCsvText_(rawText) {
       return rows;
     }
 
+function normalizeAnalyticsHeaderKey_(value) {
+      return normalizeText_(String(value == null ? '' : value).replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim());
+    }
+
+function normalizeAnalyticsCsvCell_(value) {
+      return String(value == null ? '' : value).replace(/^\uFEFF/, '').trim();
+    }
+
+function parseAnalyticsWorkControlDateValue_(value) {
+      const text = normalizeAnalyticsCsvCell_(value);
+      if (!text) return '';
+      let match = /^(\d{2})[.\-/](\d{2})[.\-/](\d{4})$/.exec(text);
+      if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+      match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+      if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+      const parsed = parseMonitoringDateValue_(text);
+      if (parsed && parsed.date instanceof Date) return formatLocalDateInputValue_(parsed.date);
+      return '';
+    }
+
+const ANALYTICS_CONTROL_FULL_WORKDAY_MINUTES = 540;
+
+function isAnalyticsControlAverageWorkMinutesValue_(value) {
+      return Number.isFinite(Number(value))
+        && Number(value) >= ANALYTICS_CONTROL_FULL_WORKDAY_MINUTES;
+    }
+
+function collectAnalyticsControlAverageWorkMinutes_(items) {
+      return (Array.isArray(items) ? items : [])
+        .map(item => Number(item && item.workMinutes))
+        .filter(isAnalyticsControlAverageWorkMinutesValue_);
+    }
+
+function parseAnalyticsIntegerValue_(value) {
+      const text = normalizeAnalyticsCsvCell_(value);
+      if (!text) return NaN;
+      const numeric = Number(String(text).replace(',', '.'));
+      return Number.isFinite(numeric) ? Math.round(numeric) : NaN;
+    }
+
+function parseAnalyticsSkudBool_(value) {
+      const text = normalizeText_(value);
+      return text === '1' || text === 'true' || text === 'да' || text === 'yes';
+    }
+
+function normalizeAnalyticsSkudInspectorName_(value) {
+      return String(value == null ? '' : value)
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/\s*\([^)]*\)\s*$/g, '')
+        .trim();
+    }
+
+function normalizeAnalyticsInspectorKey_(value) {
+      return String(value == null ? '' : value)
+        .trim()
+        .toLowerCase()
+        .replace(/[ёЁ]/g, 'е')
+        .replace(/\s+/g, ' ');
+    }
+
+function buildAnalyticsSkudUploadRows_(rawText) {
+      const rows = parseDelimitedText_(String(rawText || '').replace(/^\uFEFF/, ''), ';');
+      const headerIndex = rows.findIndex(row => {
+        const cells = Array.isArray(row) ? row : [];
+        return normalizeAnalyticsHeaderKey_(cells[0]) === 'фио'
+          && normalizeAnalyticsHeaderKey_(cells[1]) === 'подразделение'
+          && normalizeAnalyticsHeaderKey_(cells[2]) === 'дата';
+      });
+      if (headerIndex < 0) {
+        throw new Error('Не удалось найти заголовок СКУД CSV.');
+      }
+      const headers = (Array.isArray(rows[headerIndex]) ? rows[headerIndex] : []).map(cell => String(cell == null ? '' : cell));
+      const columnIndexByKey = new Map();
+      headers.forEach((header, index) => {
+        const key = normalizeAnalyticsHeaderKey_(header);
+        if (key) columnIndexByKey.set(key, index);
+      });
+      const getValue = (row, key) => {
+        const index = columnIndexByKey.get(key);
+        return index === undefined ? '' : normalizeAnalyticsCsvCell_(row[index]);
+      };
+      const getFirstValue = (row, keys) => {
+        for (let index = 0; index < keys.length; index += 1) {
+          const value = getValue(row, keys[index]);
+          if (value) return value;
+        }
+        return '';
+      };
+      return rows
+        .slice(headerIndex + 1)
+        .filter(row => Array.isArray(row) && row.some(cell => normalizeAnalyticsCsvCell_(cell)))
+        .map(row => {
+          const inspectorNameRaw = getValue(row, 'фио');
+          const inspectorNameClean = normalizeAnalyticsSkudInspectorName_(inspectorNameRaw);
+          const workDate = parseAnalyticsWorkControlDateValue_(getValue(row, 'дата'));
+          if (!inspectorNameClean || !workDate) return null;
+          const arrivalTime = getFirstValue(row, ['время прихода', 'приход в офис acs']);
+          const departureTime = getFirstValue(row, ['время ухода', 'возврат в офис acs']);
+          const totalMinutes = parseAnalyticsIntegerValue_(getFirstValue(row, ['итого_дня_мин', 'итого дня мин']));
+          const absenceReason = getValue(row, 'причина отсутствия');
+          const divisionName = getValue(row, 'подразделение');
+          const isRegistryInspector = parseAnalyticsSkudBool_(getFirstValue(row, ['реестр_инспектор', 'реестр инспектор']));
+          const isSkInspector = parseAnalyticsSkudBool_(getFirstValue(row, ['ск_инспектор', 'ск инспектор']));
+          const rawRow = {};
+          headers.forEach((header, index) => {
+            const normalizedHeader = normalizeAnalyticsCsvCell_(header);
+            if (!normalizedHeader) return;
+            rawRow[normalizedHeader] = normalizeAnalyticsCsvCell_(row[index]);
+          });
+          return {
+            work_date: workDate,
+            inspector_name: inspectorNameRaw,
+            inspector_name_clean: inspectorNameClean,
+            division_name: divisionName,
+            arrival_time: arrivalTime,
+            departure_time: departureTime,
+            total_minutes: Number.isFinite(totalMinutes) ? totalMinutes : null,
+            absence_reason: absenceReason,
+            is_registry_inspector: isRegistryInspector,
+            is_sk_inspector: isSkInspector,
+            raw_row: rawRow
+          };
+        })
+        .filter(Boolean);
+    }
+
+function buildAnalyticsWorkControlDashboardFromRows_(dailyRows, options) {
+      const settings = options && typeof options === 'object' ? options : {};
+      const dashboard = buildEmptyAnalyticsWorkControlDashboard_();
+      const items = Array.isArray(dailyRows) ? dailyRows.filter(Boolean) : [];
+      if (!items.length && !settings.allowEmpty) {
+        dashboard.errorText = String(settings.errorText || 'Нет строк для контроля работы.');
+        return dashboard;
+      }
+      const divisionsMap = new Map();
+      const inspectorsMap = new Map();
+
+      items.forEach(item => {
+        const divisionKey = normalizeText_(item.division);
+        const divisionBucket = divisionsMap.get(divisionKey) || {
+          division: item.division,
+          monitorings: 0,
+          violations: 0,
+          inspectors: new Set()
+        };
+        divisionBucket.monitorings += item.monitorings;
+        if (item.hasViolation) divisionBucket.violations += 1;
+        divisionBucket.inspectors.add(item.inspectorKey);
+        divisionsMap.set(divisionKey, divisionBucket);
+
+        const inspectorBucket = inspectorsMap.get(item.inspectorKey) || {
+          inspector: item.inspector,
+          inspectorKey: item.inspectorKey,
+          division: item.division,
+          monitorings: 0,
+          violations: 0,
+          workMinutesTotal: 0,
+          workMinutesCount: 0,
+          dailyRows: []
+        };
+        inspectorBucket.monitorings += item.monitorings;
+        if (item.hasViolation) inspectorBucket.violations += 1;
+        if (isAnalyticsControlAverageWorkMinutesValue_(item.workMinutes)) {
+          inspectorBucket.workMinutesTotal += item.workMinutes;
+          inspectorBucket.workMinutesCount += 1;
+        }
+        inspectorBucket.dailyRows.push(item);
+        inspectorsMap.set(item.inspectorKey, inspectorBucket);
+      });
+
+      const divisions = Array.from(divisionsMap.values())
+        .map(item => ({
+          division: item.division,
+          monitorings: item.monitorings,
+          violations: item.violations,
+          inspectorCount: item.inspectors.size
+        }))
+        .sort((left, right) => {
+          const violationsDelta = Number(right.violations || 0) - Number(left.violations || 0);
+          if (violationsDelta) return violationsDelta;
+          const monitoringsDelta = Number(right.monitorings || 0) - Number(left.monitorings || 0);
+          if (monitoringsDelta) return monitoringsDelta;
+          return normalizeText_(left.division).localeCompare(normalizeText_(right.division), 'ru');
+        });
+
+      const inspectors = Array.from(inspectorsMap.values())
+        .map(item => ({
+          inspector: item.inspector,
+          inspectorKey: item.inspectorKey,
+          division: item.division,
+          monitorings: item.monitorings,
+          violations: item.violations,
+          averageWorkMinutes: item.workMinutesCount > 0 ? item.workMinutesTotal / item.workMinutesCount : NaN,
+          dailyRows: item.dailyRows.sort((left, right) => String(right.date || '').localeCompare(String(left.date || ''), 'ru'))
+        }))
+        .sort((left, right) => {
+          const violationsDelta = Number(right.violations || 0) - Number(left.violations || 0);
+          if (violationsDelta) return violationsDelta;
+          const monitoringsDelta = Number(right.monitorings || 0) - Number(left.monitorings || 0);
+          if (monitoringsDelta) return monitoringsDelta;
+          return normalizeText_(left.inspector).localeCompare(normalizeText_(right.inspector), 'ru');
+        });
+
+      const activeDivision = normalizeText_(state.analyticsControlDivision || '');
+      const filteredInspectors = activeDivision
+        ? inspectors.filter(item => normalizeText_(item.division) === activeDivision)
+        : inspectors.slice();
+      const selectedInspectorKey = normalizeAnalyticsInspectorKey_(state.analyticsControlSelectedInspector || '');
+      const selectedInspectorRecord = filteredInspectors.find(item => item.inspectorKey === selectedInspectorKey) || null;
+      const filteredDailyRows = filteredInspectors.reduce((out, inspector) => out.concat(Array.isArray(inspector.dailyRows) ? inspector.dailyRows : []), []);
+      const filteredWorkMinutes = collectAnalyticsControlAverageWorkMinutes_(filteredDailyRows);
+      const workMinutesValues = collectAnalyticsControlAverageWorkMinutes_(items);
+
+      dashboard.available = true;
+      dashboard.errorText = String(settings.errorText || '').trim();
+      dashboard.sourceLabel = String(settings.sourceLabel || 'База данных').trim() || 'База данных';
+      dashboard.periodFrom = normalizeAnalyticsArchiveDateValue_(settings.periodFrom);
+      dashboard.periodTo = normalizeAnalyticsArchiveDateValue_(settings.periodTo);
+      dashboard.skudStatus = settings.skudStatus && typeof settings.skudStatus === 'object'
+        ? {
+            status: String(settings.skudStatus.status || '').trim() || 'missing',
+            label: String(settings.skudStatus.label || '').trim() || 'Отсутствует СКУД',
+            expectedDays: Math.max(0, Number(settings.skudStatus.expectedDays) || 0),
+            loadedDays: Math.max(0, Number(settings.skudStatus.loadedDays) || 0),
+            loadedDates: Array.isArray(settings.skudStatus.loadedDates) ? settings.skudStatus.loadedDates.slice() : [],
+            missingDates: Array.isArray(settings.skudStatus.missingDates) ? settings.skudStatus.missingDates.slice() : [],
+            latestImport: settings.skudStatus.latestImport && typeof settings.skudStatus.latestImport === 'object'
+              ? { ...settings.skudStatus.latestImport }
+              : {}
+          }
+        : dashboard.skudStatus;
+      dashboard.totalMonitorings = inspectors.reduce((sum, item) => sum + Math.max(0, Number(item.monitorings) || 0), 0);
+      dashboard.totalInspectors = inspectors.length;
+      dashboard.totalViolations = inspectors.reduce((sum, item) => sum + Math.max(0, Number(item.violations) || 0), 0);
+      dashboard.averageWorkMinutes = workMinutesValues.length
+        ? workMinutesValues.reduce((sum, value) => sum + value, 0) / workMinutesValues.length
+        : 0;
+      dashboard.displayMonitorings = filteredInspectors.reduce((sum, item) => sum + Math.max(0, Number(item.monitorings) || 0), 0);
+      dashboard.displayInspectors = filteredInspectors.length;
+      dashboard.displayViolations = filteredInspectors.reduce((sum, item) => sum + Math.max(0, Number(item.violations) || 0), 0);
+      dashboard.displayAverageWorkMinutes = filteredWorkMinutes.length
+        ? filteredWorkMinutes.reduce((sum, value) => sum + value, 0) / filteredWorkMinutes.length
+        : 0;
+      dashboard.inspectors = inspectors;
+      dashboard.filteredInspectors = filteredInspectors;
+      dashboard.divisions = divisions;
+      dashboard.divisionOptions = divisions.map(item => ({
+        value: item.division,
+        label: item.division,
+        count: item.inspectorCount
+      }));
+      dashboard.activeDivision = activeDivision;
+      dashboard.selectedInspector = selectedInspectorRecord ? selectedInspectorRecord.inspectorKey : '';
+      dashboard.selectedInspectorRecord = selectedInspectorRecord;
+      return dashboard;
+    }
+
+function normalizeAnalyticsWorkControlDbDailyRow_(row) {
+      const item = row && typeof row === 'object' ? row : {};
+      const inspector = String(item.inspector || '').trim();
+      const inspectorKey = normalizeAnalyticsInspectorKey_(item.inspectorKey || inspector);
+      const commentText = String(item.commentText || '—').trim() || '—';
+      return {
+        date: normalizeAnalyticsArchiveDateValue_(item.date),
+        dateDisplay: String(item.dateDisplay || item.date || '').trim(),
+        inspector,
+        inspectorKey,
+        division: String(item.division || 'Не указано').trim() || 'Не указано',
+        status: 'present',
+        monitorings: Math.max(0, Number(item.monitorings) || 0),
+        openingText: String(item.openingText || '—').trim() || '—',
+        closingText: String(item.closingText || '—').trim() || '—',
+        workMinutes: Number.isFinite(Number(item.workMinutes)) ? Number(item.workMinutes) : NaN,
+        workdayPresent: !!item.workdayPresent,
+        workdaySource: String(item.workdaySource || '').trim(),
+        skudLabel: String(item.skudLabel || 'Нет данных').trim() || 'Нет данных',
+        fromOfficeMinutes: Number.isFinite(Number(item.fromOfficeMinutes)) ? Number(item.fromOfficeMinutes) : NaN,
+        toOfficeMinutes: Number.isFinite(Number(item.toOfficeMinutes)) ? Number(item.toOfficeMinutes) : NaN,
+        hasViolation: !!item.hasViolation,
+        commentText,
+        commentParts: commentText === '—'
+          ? []
+          : commentText.split('·').map(part => String(part || '').trim()).filter(Boolean)
+      };
+    }
+
+function buildAnalyticsWorkControlDashboardFromDb_(payload) {
+      const data = payload && typeof payload === 'object' ? payload : {};
+      const rows = (Array.isArray(data.dailyRows) ? data.dailyRows : [])
+        .map(normalizeAnalyticsWorkControlDbDailyRow_)
+        .filter(item => item.inspectorKey && item.date);
+      return buildAnalyticsWorkControlDashboardFromRows_(rows, {
+        allowEmpty: true,
+        sourceLabel: 'База данных',
+        periodFrom: data.periodFrom,
+        periodTo: data.periodTo,
+        skudStatus: data.skudStatus && typeof data.skudStatus === 'object' ? data.skudStatus : {}
+      });
+    }
+
+function getAnalyticsWorkControlViewModel_(dashboard) {
+      const base = dashboard && typeof dashboard === 'object'
+        ? dashboard
+        : buildEmptyAnalyticsWorkControlDashboard_();
+      const inspectors = Array.isArray(base.inspectors) ? base.inspectors : [];
+      const divisions = Array.isArray(base.divisions) ? base.divisions : [];
+      const activeDivisionKey = normalizeText_(state.analyticsControlDivision || '');
+      const activeDivisionRecord = activeDivisionKey
+        ? divisions.find(item => normalizeText_(item && item.division) === activeDivisionKey)
+        : null;
+      const filteredInspectors = activeDivisionKey
+        ? inspectors.filter(item => normalizeText_(item && item.division) === activeDivisionKey)
+        : inspectors.slice();
+      const filteredDailyRows = filteredInspectors.reduce((items, inspector) => items.concat(Array.isArray(inspector && inspector.dailyRows) ? inspector.dailyRows : []), []);
+      const selectedInspectorKey = normalizeAnalyticsInspectorKey_(state.analyticsControlSelectedInspector || '');
+      const selectedInspectorRecord = filteredInspectors.find(item => normalizeText_(item && item.inspectorKey) === selectedInspectorKey) || null;
+      const filteredWorkMinutes = collectAnalyticsControlAverageWorkMinutes_(filteredDailyRows);
+      return {
+        ...base,
+        filteredInspectors,
+        activeDivision: activeDivisionRecord ? String(activeDivisionRecord.division || '').trim() : '',
+        selectedInspector: selectedInspectorRecord ? selectedInspectorRecord.inspectorKey : '',
+        selectedInspectorRecord,
+        displayMonitorings: filteredInspectors.reduce((sum, item) => sum + Math.max(0, Number(item && item.monitorings) || 0), 0),
+        displayInspectors: filteredInspectors.length,
+        displayViolations: filteredInspectors.reduce((sum, item) => sum + Math.max(0, Number(item && item.violations) || 0), 0),
+        displayAverageWorkMinutes: filteredWorkMinutes.length
+          ? filteredWorkMinutes.reduce((sum, value) => sum + value, 0) / filteredWorkMinutes.length
+          : 0
+      };
+    }
+
 function hasAnalyticsCellValue_(value) {
       return !!String(value == null ? '' : value).trim();
-    }
-
-function buildAnalyticsPlanRows_(csvRows) {
-      const rows = Array.isArray(csvRows) ? csvRows : [];
-      return rows
-        .slice(ANALYTICS_PLAN_DATA_START_ROW)
-        .filter(row => Array.isArray(row) && row.length >= ANALYTICS_PLAN_MIN_COLUMN_COUNT)
-        .map(row => ({
-          uin: String(row[ANALYTICS_PLAN_UIN_COLUMN_INDEX] || '').trim(),
-          constructionMonitoringPlan: hasAnalyticsCellValue_(row[13]),
-          constructionMonitoringFact: hasAnalyticsCellValue_(row[14]),
-          constructionControlPlan: hasAnalyticsCellValue_(row[15]),
-          constructionControlFact: hasAnalyticsCellValue_(row[16]),
-          metroMonitoringPlan: hasAnalyticsCellValue_(row[17]),
-          metroMonitoringFact: hasAnalyticsCellValue_(row[18]),
-          uniqueMonitoringPlan: hasAnalyticsCellValue_(row[19]),
-          uniqueMonitoringFact: hasAnalyticsCellValue_(row[20]),
-          labStudiesPlan: hasAnalyticsCellValue_(row[21]),
-          labStudiesFact: hasAnalyticsCellValue_(row[22])
-        }))
-        .filter(item => item.uin);
-    }
-
-function extractAnalyticsCsvSnapshotLabel_(csvRows) {
-      const infoRow = Array.isArray(csvRows && csvRows[2]) ? csvRows[2] : [];
-      return String(infoRow[5] || '').trim();
-    }
-
-function buildAnalyticsArchiveFactUins_(archivePayload) {
-      const rows = Array.isArray(archivePayload && archivePayload.rows) ? archivePayload.rows : [];
-      const seen = new Set();
-      rows.forEach(item => {
-        const uin = normalizeText_(item && (item.uin || item.objectId) || '');
-        const monitoringDateParsed = parseMonitoringDateValue_(item && item.monitoringDate);
-        const monitoringDate = monitoringDateParsed && monitoringDateParsed.date instanceof Date
-          ? formatLocalDateInputValue_(monitoringDateParsed.date)
-          : '';
-        const visitStatus = normalizeMonitoringVisitStatus_(item && item.visitStatus);
-        if (!uin || !monitoringDate) return;
-        if (monitoringDate < ANALYTICS_MONITORING_FACT_FROM) return;
-        if (visitStatus === 'denied_access') return;
-        seen.add(uin);
-      });
-      return seen;
-    }
-
-function collectRegistryRowIndexesForUins_(items) {
-      const targets = new Set((Array.isArray(items) ? items : []).map(normalizeText_).filter(Boolean));
-      if (!targets.size) return [];
-      const rowIndexes = [];
-      for (let rowIndex = 0; rowIndex < state.rows.length; rowIndex++) {
-        const uin = normalizeText_(getRegistrySummaryValue_(rowIndex, 'uin'));
-        if (!uin || !targets.has(uin)) continue;
-        rowIndexes.push(rowIndex);
-      }
-      return rowIndexes;
-    }
-
-function buildAnalyticsArchiveActivity_(archivePayload) {
-      const activity = buildEmptyAnalyticsArchiveActivity_();
-      const rows = Array.isArray(archivePayload && archivePayload.rows) ? archivePayload.rows : [];
-      const rangeFrom = String(activity.rangeFrom || '').trim();
-      const rangeTo = String(activity.rangeTo || '').trim();
-      activity.totalMonitorings = rows.reduce((count, item) => {
-        const monitoringDateParsed = parseMonitoringDateValue_(item && item.monitoringDate);
-        const monitoringDate = monitoringDateParsed && monitoringDateParsed.date instanceof Date
-          ? formatLocalDateInputValue_(monitoringDateParsed.date)
-          : '';
-        if (!monitoringDate) return count;
-        if (rangeFrom && monitoringDate < rangeFrom) return count;
-        if (rangeTo && monitoringDate > rangeTo) return count;
-        return count + 1;
-      }, 0);
-      activity.gaugePercent = activity.totalMonitorings > 0 ? 100 : 0;
-      return activity;
-    }
-
-function buildAnalyticsArchiveRegistryLookup_() {
-      const byObjectId = new Map();
-      const byUin = new Map();
-      (Array.isArray(state.rows) ? state.rows : []).forEach((row, rowIndex) => {
-        if (!Array.isArray(row)) return;
-        const summary = getRegistryRowSummary_(rowIndex) || {};
-        const objectId = normalizeText_(summary.objectId);
-        const uin = normalizeText_(summary.uin);
-        if (objectId && !byObjectId.has(objectId)) byObjectId.set(objectId, rowIndex);
-        if (uin && !byUin.has(uin)) byUin.set(uin, rowIndex);
-      });
-      return { byObjectId, byUin };
-    }
-
-function buildAnalyticsArchiveMonitoring_(archivePayload) {
-      const archive = buildEmptyAnalyticsArchiveMonitoring_();
-      const rows = Array.isArray(archivePayload && archivePayload.rows) ? archivePayload.rows : [];
-      const lookup = buildAnalyticsArchiveRegistryLookup_();
-      const grbsCounts = new Map();
-
-      rows.forEach((item, index) => {
-        const monitoringDateRaw = String(item && item.monitoringDate || '').trim();
-        const monitoringDateParsed = parseMonitoringDateValue_(monitoringDateRaw);
-        if (!monitoringDateParsed || !(monitoringDateParsed.date instanceof Date)) return;
-        const monitoringDate = formatLocalDateInputValue_(monitoringDateParsed.date);
-        const monitoringDateDisplay = String(monitoringDateParsed.display || formatLocalDateDisplay_(monitoringDateParsed.date) || monitoringDateRaw).trim();
-
-        const objectIdText = String(item && item.objectId || '').trim();
-        const uinText = String(item && item.uin || '').trim();
-        const objectIdKey = normalizeText_(objectIdText);
-        const uinKey = normalizeText_(uinText);
-        const matchedRowIndex = lookup.byObjectId.has(objectIdKey)
-          ? lookup.byObjectId.get(objectIdKey)
-          : (lookup.byUin.has(uinKey) ? lookup.byUin.get(uinKey) : NaN);
-        const summary = Number.isFinite(matchedRowIndex) ? (getRegistryRowSummary_(matchedRowIndex) || {}) : null;
-        const objectKey = normalizeText_(
-          String(summary && (summary.objectId || summary.uin) || objectIdText || uinText || `archive:${index}`).trim()
-        ) || `archive:${index}`;
-        const grbs = String(summary && summary.grbs || '').trim() || 'Не указан';
-        const rvDate = normalizeAnalyticsArchiveDateValue_(summary && summary.rvDate);
-        const record = {
-          monitoringDate,
-          monitoringDateDisplay,
-          objectKey,
-          objectId: String(summary && summary.objectId || objectIdText || '').trim(),
-          uin: String(summary && summary.uin || uinText || '').trim(),
-          objectName: String(summary && summary.name || item && item.objectName || objectIdText || uinText || 'Объект').trim(),
-          grbs,
-          contractor: String(summary && summary.contractor || '').trim(),
-          rvDate,
-          rvDateDisplay: rvDate ? formatRegistryDateText_(rvDate) : '',
-          inspector: String(item && item.inspector || '').trim(),
-          visitStatus: normalizeMonitoringVisitStatus_(item && item.visitStatus),
-          rowIndex: Number.isFinite(matchedRowIndex) ? Number(matchedRowIndex) : null
-        };
-        archive.records.push(record);
-        grbsCounts.set(grbs, (grbsCounts.get(grbs) || 0) + 1);
-        if (!archive.minDate || monitoringDate < archive.minDate) archive.minDate = monitoringDate;
-        if (!archive.maxDate || monitoringDate > archive.maxDate) archive.maxDate = monitoringDate;
-      });
-
-      archive.grbsOptions = Array.from(grbsCounts.entries())
-        .map(([label, count]) => ({ label, count }))
-        .sort((left, right) => normalizeText_(String(left && left.label || '')).localeCompare(normalizeText_(String(right && right.label || '')), 'ru'));
-      return archive;
-    }
-
-function buildAnalyticsArchiveMonitoringDashboard_(archiveMonitoringBase) {
-      const base = archiveMonitoringBase && typeof archiveMonitoringBase === 'object'
-        ? archiveMonitoringBase
-        : buildEmptyAnalyticsArchiveMonitoring_();
-      const records = Array.isArray(base.records) ? base.records : [];
-      const baseMinDate = String(base.minDate || '').trim();
-      const baseMaxDate = String(base.maxDate || '').trim();
-      const defaultDateTo = baseMaxDate;
-      let defaultDateFrom = baseMinDate;
-      if (baseMaxDate) {
-        const parsedMaxDate = parseMonitoringDateValue_(baseMaxDate);
-        if (parsedMaxDate && parsedMaxDate.date instanceof Date) {
-          const monthStartDate = createValidatedLocalDate_(
-            parsedMaxDate.date.getFullYear(),
-            parsedMaxDate.date.getMonth() + 1,
-            1
-          );
-          const monthStartValue = formatLocalDateInputValue_(monthStartDate);
-          if (monthStartValue) {
-            defaultDateFrom = (!baseMinDate || monthStartValue >= baseMinDate)
-              ? monthStartValue
-              : baseMinDate;
-          }
-        }
-      }
-      const selectedGrbs = normalizeAnalyticsArchiveGrbsFilters_(state.analyticsArchiveGrbs);
-      const activeGrbsSet = new Set(selectedGrbs.map(normalizeText_));
-      let dateFrom = normalizeAnalyticsArchiveDateValue_(state.analyticsArchiveDateFrom) || defaultDateFrom;
-      let dateTo = normalizeAnalyticsArchiveDateValue_(state.analyticsArchiveDateTo) || defaultDateTo;
-      if (baseMinDate && (!dateFrom || dateFrom < baseMinDate)) dateFrom = defaultDateFrom || baseMinDate;
-      if (baseMaxDate && (!dateTo || dateTo > baseMaxDate)) dateTo = defaultDateTo || baseMaxDate;
-      if (dateFrom && dateTo && dateFrom > dateTo) {
-        const swap = dateFrom;
-        dateFrom = dateTo;
-        dateTo = swap;
-      }
-
-      const dateFilteredGrbsCounts = new Map();
-      records.forEach(record => {
-        if (!record || !record.monitoringDate) return;
-        if (dateFrom && record.monitoringDate < dateFrom) return;
-        if (dateTo && record.monitoringDate > dateTo) return;
-        dateFilteredGrbsCounts.set(record.grbs, (dateFilteredGrbsCounts.get(record.grbs) || 0) + 1);
-      });
-
-      const filteredRecords = records.filter(record => {
-        if (!record || !record.monitoringDate) return false;
-        if (dateFrom && record.monitoringDate < dateFrom) return false;
-        if (dateTo && record.monitoringDate > dateTo) return false;
-        if (activeGrbsSet.size && !activeGrbsSet.has(normalizeText_(record.grbs))) return false;
-        return true;
-      });
-
-      const objectStats = new Map();
-      const postRvObjects = new Map();
-      const dailyBuckets = new Map();
-      const matchedRowIndexes = [];
-      const deniedRowIndexes = [];
-      const withoutRvRowIndexes = [];
-      const beforeRvRowIndexes = [];
-      const afterRvRowIndexes = [];
-      let visitsWithoutRv = 0;
-      let visitsBeforeRv = 0;
-      let visitsAfterRv = 0;
-
-      filteredRecords.forEach(record => {
-        const objectKey = String(record.objectKey || '').trim() || 'archive';
-        const rowIndex = Number.isFinite(record.rowIndex) ? Number(record.rowIndex) : NaN;
-        if (Number.isFinite(rowIndex)) matchedRowIndexes.push(rowIndex);
-        if (record.visitStatus === 'denied_access' && Number.isFinite(rowIndex)) deniedRowIndexes.push(rowIndex);
-        const rvDate = String(record.rvDate || '').trim();
-        if (!rvDate) {
-          visitsWithoutRv += 1;
-          if (Number.isFinite(rowIndex)) withoutRvRowIndexes.push(rowIndex);
-        } else if (record.monitoringDate > rvDate) {
-          visitsAfterRv += 1;
-          if (Number.isFinite(rowIndex)) afterRvRowIndexes.push(rowIndex);
-          if (!postRvObjects.has(objectKey) || (!Number.isFinite(postRvObjects.get(objectKey)) && Number.isFinite(rowIndex))) {
-            postRvObjects.set(objectKey, rowIndex);
-          }
-        } else {
-          visitsBeforeRv += 1;
-          if (Number.isFinite(rowIndex)) beforeRvRowIndexes.push(rowIndex);
-        }
-
-        const currentObject = objectStats.get(objectKey) || {
-          key: objectKey,
-          rowIndex,
-          uin: String(record.uin || '').trim(),
-          objectName: String(record.objectName || '').trim(),
-          grbs: String(record.grbs || '').trim(),
-          contractor: String(record.contractor || '').trim(),
-          total: 0,
-          denied: 0,
-          lastDate: ''
-        };
-        currentObject.total += 1;
-        if (record.visitStatus === 'denied_access') currentObject.denied += 1;
-        if (!currentObject.lastDate || record.monitoringDate > currentObject.lastDate) currentObject.lastDate = record.monitoringDate;
-        objectStats.set(objectKey, currentObject);
-
-        const bucket = dailyBuckets.get(record.monitoringDate) || {
-          date: record.monitoringDate,
-          total: 0,
-          denied: 0,
-          uniqueKeys: new Set(),
-          rowIndexes: []
-        };
-        bucket.total += 1;
-        if (record.visitStatus === 'denied_access') bucket.denied += 1;
-        bucket.uniqueKeys.add(objectKey);
-        if (Number.isFinite(rowIndex)) bucket.rowIndexes.push(rowIndex);
-        dailyBuckets.set(record.monitoringDate, bucket);
-      });
-
-      const uniqueObjects = objectStats.size;
-      const totalMonitorings = filteredRecords.length;
-      const repeatedMonitorings = Math.max(0, totalMonitorings - uniqueObjects);
-      const averagePerObject = uniqueObjects > 0 ? totalMonitorings / uniqueObjects : 0;
-      const objectsWithPostRvVisits = postRvObjects.size;
-      const postRvShare = totalMonitorings > 0 ? (visitsAfterRv / totalMonitorings) * 100 : 0;
-      const uniqueRowIndexes = Array.from(objectStats.values())
-        .map(item => item.rowIndex)
-        .filter(Number.isFinite);
-      const repeatedRowIndexes = Array.from(objectStats.values())
-        .filter(item => Number(item && item.total) > 1)
-        .map(item => item.rowIndex)
-        .filter(Number.isFinite);
-      const postRvObjectRowIndexes = Array.from(postRvObjects.values()).filter(Number.isFinite);
-      const timeline = Array.from(dailyBuckets.values())
-        .sort((left, right) => String(left && left.date || '').localeCompare(String(right && right.date || '')))
-        .map(bucket => {
-          const uniqueCount = bucket.uniqueKeys.size;
-          return {
-            date: bucket.date,
-            total: bucket.total,
-            uniqueCount,
-            repeatCount: Math.max(0, bucket.total - uniqueCount),
-            deniedCount: bucket.denied,
-            rowIndexes: normalizeAnalyticsRegistryDrilldownRowIndexes_(bucket.rowIndexes)
-          };
-        });
-      const topObjects = Array.from(objectStats.values())
-        .sort((left, right) => {
-          const totalDelta = Number(right && right.total || 0) - Number(left && left.total || 0);
-          if (totalDelta) return totalDelta;
-          const deniedDelta = Number(right && right.denied || 0) - Number(left && left.denied || 0);
-          if (deniedDelta) return deniedDelta;
-          return String(right && right.lastDate || '').localeCompare(String(left && left.lastDate || ''));
-        })
-        .slice(0, 10)
-        .map(item => ({
-          ...item,
-          rowIndexes: Number.isFinite(item && item.rowIndex) ? [Number(item.rowIndex)] : []
-        }));
-
-      return {
-        totalMonitorings,
-        uniqueObjects,
-        repeatedMonitorings,
-        deniedAccess: filteredRecords.reduce((count, record) => count + (record && record.visitStatus === 'denied_access' ? 1 : 0), 0),
-        averagePerObject,
-        visitsWithoutRv,
-        visitsBeforeRv,
-        visitsAfterRv,
-        objectsWithPostRvVisits,
-        postRvShare,
-        grbsOptions: (Array.isArray(base.grbsOptions) ? base.grbsOptions : []).map(option => ({
-          label: String(option && option.label || '').trim(),
-          count: dateFilteredGrbsCounts.get(String(option && option.label || '').trim()) || 0
-        })),
-        activeGrbs: selectedGrbs,
-        dateFrom,
-        dateTo,
-        minDate: String(base.minDate || '').trim(),
-        maxDate: String(base.maxDate || '').trim(),
-        timeline,
-        topObjects,
-        totalRowIndexes: normalizeAnalyticsRegistryDrilldownRowIndexes_(matchedRowIndexes),
-        uniqueRowIndexes: normalizeAnalyticsRegistryDrilldownRowIndexes_(uniqueRowIndexes),
-        repeatedRowIndexes: normalizeAnalyticsRegistryDrilldownRowIndexes_(repeatedRowIndexes),
-        deniedRowIndexes: normalizeAnalyticsRegistryDrilldownRowIndexes_(deniedRowIndexes),
-        withoutRvRowIndexes: normalizeAnalyticsRegistryDrilldownRowIndexes_(withoutRvRowIndexes),
-        beforeRvRowIndexes: normalizeAnalyticsRegistryDrilldownRowIndexes_(beforeRvRowIndexes),
-        afterRvRowIndexes: normalizeAnalyticsRegistryDrilldownRowIndexes_(afterRvRowIndexes),
-        postRvObjectRowIndexes: normalizeAnalyticsRegistryDrilldownRowIndexes_(postRvObjectRowIndexes)
-      };
     }
 
 function buildAnalyticsArchiveSuccessTimelineByKey_(archivePayload) {
@@ -536,15 +516,11 @@ function buildAnalyticsStaticQuarterDashboard_(baseDashboard, config, options) {
         overallUniquePercent: overallPlan > 0 ? (overallFact / overallPlan) * 100 : 0,
         overallPlanRowIndexes: [],
         overallFactRowIndexes: [],
-        archiveActivity: dashboard.archiveActivity || buildEmptyAnalyticsArchiveActivity_(),
-        archiveMonitoring: dashboard.archiveMonitoring || buildEmptyAnalyticsArchiveMonitoring_(),
         startSmrQuarter: dashboard[String(settings.startSmrKey || 'startSmrQuarter')] || startSmrFallback,
         startSmrQuarterQ1: dashboard.startSmrQuarterQ1 || buildEmptyAnalyticsStartSmrQuarter_({
           rangeFrom: ANALYTICS_Q1_START_SMR_RANGE_FROM,
           rangeTo: ANALYTICS_Q1_START_SMR_RANGE_TO
-        }),
-        csvSnapshotLabel: String(normalizedConfig.snapshotLabel || dashboard.csvSnapshotLabel || '').trim(),
-        csvFetchedAt: String(dashboard.csvFetchedAt || '').trim(),
+        }),
         archiveFetchedAt: String(dashboard.archiveFetchedAt || '').trim(),
         computedAt: String(dashboard.computedAt || '').trim()
       };
@@ -757,46 +733,6 @@ function buildAnalyticsKsgDashboard_() {
       return dashboard;
     }
 
-function countAnalyticsTrackPlan_(rows, trackDef) {
-      const planKey = `${String(trackDef && trackDef.key || '')}Plan`;
-      return (Array.isArray(rows) ? rows : []).reduce((count, row) => count + (row && row[planKey] ? 1 : 0), 0);
-    }
-
-function countAnalyticsTrackFact_(rows, trackDef, archiveFactUins) {
-      const items = Array.isArray(rows) ? rows : [];
-      const def = trackDef || {};
-      if (String(def.factSource || '') === 'archive') {
-        const planKey = `${String(def.key || '')}Plan`;
-        return items.reduce((count, row) => (
-          count + (row && row[planKey] && archiveFactUins.has(normalizeText_(row.uin)) ? 1 : 0)
-        ), 0);
-      }
-      const factKey = `${String(def.key || '')}Fact`;
-      return items.reduce((count, row) => count + (row && row[factKey] ? 1 : 0), 0);
-    }
-
-function buildAnalyticsTrackFactUins_(rows, trackDef, archiveFactUins) {
-      const items = Array.isArray(rows) ? rows : [];
-      const def = trackDef || {};
-      const seen = new Set();
-      if (String(def.factSource || '') === 'archive') {
-        const planKey = `${String(def.key || '')}Plan`;
-        items.forEach(row => {
-          const uin = normalizeText_(row && row.uin);
-          if (!uin || !row || !row[planKey] || !archiveFactUins.has(uin)) return;
-          seen.add(uin);
-        });
-        return seen;
-      }
-      const factKey = `${String(def.key || '')}Fact`;
-      items.forEach(row => {
-        const uin = normalizeText_(row && row.uin);
-        if (!uin || !row || !row[factKey]) return;
-        seen.add(uin);
-      });
-      return seen;
-    }
-
 function createAnalyticsIsoTimestamp_() {
       try {
         return new Date().toISOString();
@@ -805,9 +741,113 @@ function createAnalyticsIsoTimestamp_() {
       }
     }
 
-function buildAnalyticsDashboard_(archivePayload) {
-      const archiveActivity = buildAnalyticsArchiveActivity_(archivePayload);
-      const archiveMonitoring = buildAnalyticsArchiveMonitoring_(archivePayload);
+function ensureAnalyticsControlPeriod_() {
+      let dateFrom = normalizeAnalyticsArchiveDateValue_(state.analyticsControlDateFrom);
+      let dateTo = normalizeAnalyticsArchiveDateValue_(state.analyticsControlDateTo);
+      if (!dateFrom || !dateTo) {
+        const today = startOfLocalDay_(new Date());
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        dateFrom = dateFrom || formatLocalDateInputValue_(monthStart);
+        dateTo = dateTo || formatLocalDateInputValue_(today);
+        state.analyticsControlDateFrom = dateFrom;
+        state.analyticsControlDateTo = dateTo;
+      }
+      if (dateFrom && dateTo && dateFrom > dateTo) {
+        const swap = dateFrom;
+        dateFrom = dateTo;
+        dateTo = swap;
+        state.analyticsControlDateFrom = dateFrom;
+        state.analyticsControlDateTo = dateTo;
+      }
+      return { dateFrom, dateTo };
+    }
+
+function getAnalyticsSectionDef_(section) {
+      const normalized = normalizeAnalyticsSection_(section);
+      const defs = Array.isArray(ANALYTICS_PANEL_SECTION_DEFS)
+        ? ANALYTICS_PANEL_SECTION_DEFS
+        : [];
+      return defs.find(item => normalizeAnalyticsSection_(item && item.key) === normalized) || null;
+    }
+
+function getAnalyticsSectionKind_(section) {
+      const def = getAnalyticsSectionDef_(section);
+      const kind = String(def && def.kind || '').trim();
+      return kind || 'archive';
+    }
+
+function isAnalyticsControlSection_(section) {
+      return getAnalyticsSectionKind_(section) === 'control';
+    }
+
+function isAnalyticsKsgSection_(section) {
+      return getAnalyticsSectionKind_(section) === 'ksg';
+    }
+
+function isAnalyticsArchiveSection_(section) {
+      return getAnalyticsSectionKind_(section) === 'archive';
+    }
+
+function getAnalyticsArchiveSectionPeriod_(section) {
+      const def = getAnalyticsSectionDef_(section);
+      if (def && isAnalyticsArchiveSection_(def.key)) {
+        return {
+          dateFrom: normalizeAnalyticsArchiveDateValue_(def.rangeFrom),
+          dateTo: normalizeAnalyticsArchiveDateValue_(def.rangeTo)
+        };
+      }
+      return {
+        dateFrom: '',
+        dateTo: ''
+      };
+    }
+
+function buildAnalyticsDashboardCacheKey_(section, period) {
+      const analyticsSection = normalizeAnalyticsSection_(section || state.analyticsSection);
+      if (isAnalyticsControlSection_(analyticsSection)) {
+        const range = period && typeof period === 'object'
+          ? period
+          : ensureAnalyticsControlPeriod_();
+        return [
+          analyticsSection,
+          normalizeAnalyticsArchiveDateValue_(range.dateFrom),
+          normalizeAnalyticsArchiveDateValue_(range.dateTo)
+        ].join('|');
+      }
+      const archivePeriod = getAnalyticsArchiveSectionPeriod_(analyticsSection);
+      if (archivePeriod.dateFrom || archivePeriod.dateTo) {
+        return [
+          analyticsSection,
+          archivePeriod.dateFrom,
+          archivePeriod.dateTo
+        ].join('|');
+      }
+      return analyticsSection;
+    }
+
+function importAnalyticsControlSkudFile_(file) {
+      const sourceFile = file;
+      if (!sourceFile || typeof sourceFile.text !== 'function') {
+        return Promise.reject(new Error('Файл СКУД не выбран.'));
+      }
+      return sourceFile.text()
+        .then(text => {
+          const rows = buildAnalyticsSkudUploadRows_(text);
+          if (!rows.length) {
+            throw new Error('В файле СКУД не найдены строки для импорта.');
+          }
+          return runServer_('saveSmartFilterShellWorkControlSkud', [{
+            fileName: String(sourceFile.name || '').trim(),
+            rows
+          }]);
+        });
+    }
+
+function buildAnalyticsDashboard_(archivePayload, workControlPayload) {
+      const workControlData = workControlPayload && typeof workControlPayload === 'object'
+        ? workControlPayload
+        : {};
+      const workControl = buildAnalyticsWorkControlDashboardFromDb_(workControlData);
       const startSmrQuarter = buildAnalyticsStartSmrQuarter_(archivePayload);
       const startSmrQuarterQ1 = buildAnalyticsStartSmrQuarter_(archivePayload, {
         rangeFrom: ANALYTICS_Q1_START_SMR_RANGE_FROM,
@@ -821,12 +861,9 @@ function buildAnalyticsDashboard_(archivePayload) {
         overallUniquePercent: 0,
         overallPlanRowIndexes: [],
         overallFactRowIndexes: [],
-        archiveActivity,
-        archiveMonitoring,
+        workControl,
         startSmrQuarter,
         startSmrQuarterQ1,
-        csvSnapshotLabel: '',
-        csvFetchedAt: '',
         archiveFetchedAt: String(archivePayload && archivePayload.fetchedAt || '').trim(),
         computedAt: createAnalyticsIsoTimestamp_()
       };
@@ -866,15 +903,65 @@ function openAnalyticsRegistryDrilldown_(rowIndexes) {
       return true;
     }
 
+const ANALYTICS_ARCHIVE_RPC_LIMIT = 20000;
+
+function buildAnalyticsArchiveRequestOptions_(analyticsSection) {
+      const section = normalizeAnalyticsSection_(analyticsSection);
+      const period = getAnalyticsArchiveSectionPeriod_(section);
+      if (period.dateFrom || period.dateTo) {
+        return {
+          dateFrom: period.dateFrom,
+          dateTo: period.dateTo,
+          limit: null,
+          legacyLimit: ANALYTICS_ARCHIVE_RPC_LIMIT
+        };
+      }
+      return {
+        dateFrom: '',
+        dateTo: '',
+        limit: ANALYTICS_ARCHIVE_RPC_LIMIT,
+        legacyLimit: ANALYTICS_ARCHIVE_RPC_LIMIT
+      };
+    }
+
+function buildAnalyticsDashboardRequests_(analyticsSection, controlPeriod) {
+      const section = normalizeAnalyticsSection_(analyticsSection);
+      if (isAnalyticsControlSection_(section)) {
+        return {
+          archiveRequest: Promise.resolve({ rows: [], fetchedAt: '' }),
+          workControlRequest: runServer_('getSmartFilterShellWorkControlDashboard', [{
+            dateFrom: controlPeriod && controlPeriod.dateFrom || '',
+            dateTo: controlPeriod && controlPeriod.dateTo || ''
+          }])
+        };
+      }
+      const archiveRequest = buildAnalyticsArchiveRequestOptions_(section);
+      return {
+        archiveRequest: runServer_('getSmartFilterShellArchiveMonitoring', [{
+          limit: archiveRequest.limit,
+          legacyLimit: archiveRequest.legacyLimit,
+          dateFrom: archiveRequest.dateFrom,
+          dateTo: archiveRequest.dateTo
+        }]),
+        workControlRequest: Promise.resolve(null)
+      };
+    }
+
 function ensureAnalyticsDashboardLoaded_(options) {
       const settings = options || {};
       if (!state.sessionToken) return Promise.resolve(state.analyticsDashboard);
       const force = !!settings.force;
       const now = Date.now();
+      const analyticsSection = normalizeAnalyticsSection_(settings.section || state.analyticsSection);
+      const controlPeriod = isAnalyticsControlSection_(analyticsSection)
+        ? ensureAnalyticsControlPeriod_()
+        : null;
+      const cacheKey = buildAnalyticsDashboardCacheKey_(analyticsSection, controlPeriod);
       if (
         !force &&
         state.analyticsLoadedOnce &&
         !state.analyticsError &&
+        state.analyticsLoadedKey === cacheKey &&
         (now - Number(state.analyticsLastLoadedAt || 0)) < ANALYTICS_DASHBOARD_CACHE_MS
       ) {
         return Promise.resolve(state.analyticsDashboard);
@@ -889,12 +976,23 @@ function loadAnalyticsDashboard_(options) {
       state.analyticsLoading = true;
       state.analyticsError = '';
       if (!settings.silent) renderAll_();
-      const archiveRequest = runServer_('getSmartFilterShellArchiveMonitoring', [{ limit: 20000 }]);
-      return Promise.resolve(archiveRequest)
-        .then(archivePayload => {
-          state.analyticsDashboard = buildAnalyticsDashboard_(archivePayload);
+      const analyticsSection = normalizeAnalyticsSection_(state.analyticsSection);
+      const controlPeriod = isAnalyticsControlSection_(analyticsSection)
+        ? ensureAnalyticsControlPeriod_()
+        : { dateFrom: '', dateTo: '' };
+      const cacheKey = buildAnalyticsDashboardCacheKey_(analyticsSection, controlPeriod);
+      const requests = buildAnalyticsDashboardRequests_(analyticsSection, controlPeriod);
+      return Promise.all([
+        Promise.resolve(requests.archiveRequest),
+        Promise.resolve(requests.workControlRequest)
+      ])
+        .then(results => {
+          const archivePayload = results[0];
+          const workControlPayload = results[1];
+          state.analyticsDashboard = buildAnalyticsDashboard_(archivePayload, workControlPayload);
           state.analyticsLastLoadedAt = Date.now();
           state.analyticsLoadedOnce = true;
+          state.analyticsLoadedKey = cacheKey;
           return state.analyticsDashboard;
         })
         .catch(err => {

@@ -99,6 +99,7 @@ function renderNavState_() {
       const activePanel = normalizeSidebarPanel_(state.sidebarActivePanel);
       const activePanelForUi = state.currentView === 'object' && activePanel === 'registry' ? '' : activePanel;
       const isRegistryPanelOpen = activePanelForUi === 'registry' && state.registrySidebarPanelOpen !== false;
+      const isAnalyticsPanelOpen = activePanelForUi === 'analytics' && state.analyticsSidebarPanelOpen !== false;
       const expanded = !!state.sidebarExpanded;
       const visibleExpanded = expanded || isCompactSidebarViewport_();
       const panelAnimationMode = isSiteNavHydrating_() ? 'instant' : 'fade';
@@ -138,7 +139,13 @@ function renderNavState_() {
         const button = buttonMap[key];
         if (!button) return;
         const active = key === activePanelForUi;
-        const expandedForButton = key === 'registry' ? isRegistryPanelOpen : active;
+        const expandedForButton = (
+          key === 'registry'
+            ? isRegistryPanelOpen
+            : key === 'analytics'
+              ? isAnalyticsPanelOpen
+              : active
+        );
         button.classList.toggle('is-active', active);
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
         if (button.classList.contains('nav-button-expandable')) {
@@ -150,15 +157,51 @@ function renderNavState_() {
         Object.keys(panelMap).forEach(key => {
           const panel = panelMap[key];
           if (!panel) return;
-          const shouldOpen = key === 'registry' ? isRegistryPanelOpen : key === activePanelForUi;
+          const shouldOpen = (
+            key === 'registry'
+              ? isRegistryPanelOpen
+              : key === 'analytics'
+                ? isAnalyticsPanelOpen
+                : key === activePanelForUi
+          );
           setCollapsibleOpenState_(panel, shouldOpen, { mode: panelAnimationMode, duration: 180, translateY: 8 });
         });
       }
 
 
 // Analytics UI is loaded on demand.
-function bindAnalyticsPanelEvents_() {
-  document.querySelectorAll('[data-open-analytics-section]').forEach(button => {
+function getAnalyticsPanelSectionDefs_() {
+  return Array.isArray(ANALYTICS_PANEL_SECTION_DEFS)
+    ? ANALYTICS_PANEL_SECTION_DEFS.filter(item => item && String(item.key || '').trim())
+    : [];
+}
+
+function buildAnalyticsPanelNavHtml_() {
+  const analyticsActive = state.currentView === 'analytics';
+  const analyticsSection = normalizeAnalyticsSection_(state.analyticsSection);
+  return (
+    `<section class="sidebar-section analytics-panel analytics-panel--compact">` +
+      `<div class="quick-preset-grid analytics-panel-nav">` +
+        getAnalyticsPanelSectionDefs_().map(item => {
+          const key = String(item.key || '').trim();
+          const title = String(item.title || '').trim() || key;
+          const active = analyticsActive && analyticsSection === key;
+          return (
+            `<div class="preset-row">` +
+              `<button class="quick-preset${active ? ' active' : ''}" type="button" data-open-analytics-section="${escapeHtml_(key)}" aria-pressed="${active ? 'true' : 'false'}">` +
+                `<span class="preset-trigger-main"><span class="preset-trigger-title">${escapeHtml_(title)}</span></span>` +
+              `</button>` +
+            `</div>`
+          );
+        }).join('') +
+      `</div>` +
+    `</section>`
+  );
+}
+
+function bindAnalyticsPanelEvents_(root) {
+  const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+  scope.querySelectorAll('[data-open-analytics-section]').forEach(button => {
     button.onclick = evt => {
       evt.preventDefault();
       evt.stopPropagation();
@@ -172,35 +215,8 @@ function bindAnalyticsPanelEvents_() {
 function renderAnalyticsPanel_() {
   const panel = el('sidebarAnalyticsPanel');
   if (!panel) return;
-  const analyticsActive = state.currentView === 'analytics';
-  const analyticsSection = normalizeAnalyticsSection_(state.analyticsSection);
-  panel.innerHTML = (
-    `<section class="sidebar-section analytics-panel analytics-panel--compact">` +
-      `<div class="quick-preset-grid analytics-panel-nav">` +
-        `<div class="preset-row">` +
-          `<button class="quick-preset${analyticsActive && analyticsSection === 'quarter1' ? ' active' : ''}" type="button" data-open-analytics-section="quarter1" aria-pressed="${analyticsActive && analyticsSection === 'quarter1' ? 'true' : 'false'}">` +
-            `<span class="preset-trigger-main"><span class="preset-trigger-title">1 квартал 2026</span></span>` +
-          `</button>` +
-        `</div>` +
-        `<div class="preset-row">` +
-          `<button class="quick-preset${analyticsActive && analyticsSection === 'quarter' ? ' active' : ''}" type="button" data-open-analytics-section="quarter" aria-pressed="${analyticsActive && analyticsSection === 'quarter' ? 'true' : 'false'}">` +
-            `<span class="preset-trigger-main"><span class="preset-trigger-title">2 квартал 2026</span></span>` +
-          `</button>` +
-        `</div>` +
-        `<div class="preset-row">` +
-          `<button class="quick-preset${analyticsActive && analyticsSection === 'ksg' ? ' active' : ''}" type="button" data-open-analytics-section="ksg" aria-pressed="${analyticsActive && analyticsSection === 'ksg' ? 'true' : 'false'}">` +
-            `<span class="preset-trigger-main"><span class="preset-trigger-title">КСГ</span></span>` +
-          `</button>` +
-        `</div>` +
-        `<div class="preset-row">` +
-          `<button class="quick-preset${analyticsActive && analyticsSection === 'archive' ? ' active' : ''}" type="button" data-open-analytics-section="archive" aria-pressed="${analyticsActive && analyticsSection === 'archive' ? 'true' : 'false'}">` +
-            `<span class="preset-trigger-main"><span class="preset-trigger-title">Архив мониторинга</span></span>` +
-          `</button>` +
-        `</div>` +
-      `</div>` +
-    `</section>`
-  );
-  bindAnalyticsPanelEvents_();
+  panel.innerHTML = buildAnalyticsPanelNavHtml_();
+  bindAnalyticsPanelEvents_(panel);
 }
 
 function renderAnalyticsView_() {
@@ -212,10 +228,9 @@ function renderAnalyticsView_() {
   const readStatus = window.__getSiteSliceGroupStatus__;
   const status = typeof readStatus === 'function' ? readStatus('analytics') : null;
   const errorText = status && status.error ? String(status.error || '') : '';
-  const message = errorText || ((status && status.loading) ? 'Загрузка аналитики...' : 'Подготовка аналитики...');
+  const message = errorText || ((status && status.loading) ? 'Загружаю аналитику…' : 'Открываю аналитику…');
   view.innerHTML = `<div class="analytics-view-message${errorText ? ' analytics-view-message--error' : ''}">${escapeHtml_(message)}</div>`;
 }
-
 
 function populatePresetMenus_() {
       document.querySelectorAll('[data-preset-menu]').forEach(node => {
@@ -1052,7 +1067,7 @@ function renderRegistryTextCellHtml_(value, options) {
       const className = settings.className ? ` ${settings.className}` : '';
       const text = String(value == null ? '' : value).trim();
       const displayText = text || '—';
-      return `<span class="registry-cell-clip${className}" title="${escapeHtml_(displayText)}">${escapeHtml_(displayText)}</span>`;
+      return `<span class="registry-cell-clip${className}" title="${escapeHtml_(String(settings.title || displayText))}">${escapeHtml_(displayText)}</span>`;
     }
 
 function renderRegistryLinkedTextCellHtml_(value, href, options) {
@@ -1297,6 +1312,13 @@ function renderRegistryPublishInspectorCellHtmlLegacy_(rowIndex, rowState) {
       return `<td class="registry-cell-center"><span class="registry-row-publish-inspector-text${text ? '' : ' is-empty'}" title="${escapeHtml_(text || 'Не назначено')}">${escapeHtml_(text || '—')}</span></td>`;
     }
 
+function renderRegistryMapPlacementCellHtml_(summary) {
+      const item = summary && typeof summary === 'object' ? summary : {};
+      const text = String(item.mapPlacementDisplay || item.mapPlacement || '').trim();
+      const title = String(item.mapPlacementTitle || text || '').trim();
+      return `<td class="registry-cell-center">${renderRegistryTextCellHtml_(text, { title })}</td>`;
+    }
+
 function canEditRegistryRowPublishInspector_(rowState) {
       const context = rowState && typeof rowState === 'object' ? rowState : {};
       const sharedWorkBatchMode = normalizeSharedSelectionWorkBatchMode_(context.sharedWorkBatchMode);
@@ -1417,6 +1439,9 @@ function renderRegistryRowCellHtml_(rowIndex, def, context) {
       }
       if (def.key === 'monitoringDate') {
         return `<td class="registry-cell-center">${renderRegistryMonitoringDateCellHtml_(summary)}</td>`;
+      }
+      if (def.key === 'mapPlacement') {
+        return renderRegistryMapPlacementCellHtml_(summary);
       }
       if (def.key === 'inspector') {
         return renderRegistryPublishInspectorCellHtml_(rowIndex, rowState);

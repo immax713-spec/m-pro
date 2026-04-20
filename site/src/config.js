@@ -21,6 +21,8 @@
       auth: 'sf_auth',
       getDataBundle: 'sf_get_data_bundle',
       getArchiveMonitoring: 'sf_get_archive_monitoring',
+      getWorkControlDashboard: 'mpro_get_work_control_dashboard',
+      importSkudRows: 'mpro_import_skud_rows',
       getMonitoringOverlay: 'sf_get_registry_monitoring_overlay',
       getRegistryMapOverlay: 'sf_get_registry_map_overlay',
       getObjectMonitoringHistory: 'sf_get_object_monitoring_history',

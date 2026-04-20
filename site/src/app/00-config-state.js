@@ -21,6 +21,8 @@
       'getSmartFilterShellBootstrap',
       'getSmartFilterShellData',
       'getSmartFilterShellArchiveMonitoring',
+      'getSmartFilterShellWorkControlDashboard',
+      'saveSmartFilterShellWorkControlSkud',
       'getSmartFilterShellObjectMonitoringHistory',
       'getSmartFilterShellObjectLabStudiesHistory',
       'getSmartFilterShellLabStudyInspectors',
@@ -55,22 +57,36 @@
     const REGISTRY_SELECTION_PUBLISH_ASSIGNMENTS_STORAGE_PREFIX = 'smart_filter_shell_registry_publish_assignments:';
     const CHANGE_HISTORY_SESSION_STORAGE_KEY = 'smart_filter_shell_change_history';
     const GOOGLE_SYNC_LAST_AT_STORAGE_KEY = 'smart_filter_shell_google_sync_last_at';
-    const SHELL_BOOTSTRAP_CACHE_STORAGE_KEY = 'smart_filter_shell_bootstrap_cache_v4';
-    const ANALYTICS_PLAN_ASSET_PATH = './src/data/analytics-plan-q2-2026.csv';
-    const ANALYTICS_PLAN_DATA_START_ROW = 3;
-    const ANALYTICS_PLAN_MIN_COLUMN_COUNT = 27;
-    const ANALYTICS_PLAN_UIN_COLUMN_INDEX = 2;
-    const ANALYTICS_MONITORING_FACT_FROM = '2026-04-01';
-    const ANALYTICS_ARCHIVE_ACTIVITY_FROM = '2026-04-01';
-    const ANALYTICS_ARCHIVE_ACTIVITY_TO = '2026-04-14';
     const ANALYTICS_START_SMR_RANGE_FROM = '2026-04-01';
     const ANALYTICS_START_SMR_RANGE_TO = '2026-06-30';
     const ANALYTICS_Q1_START_SMR_RANGE_FROM = '2026-01-01';
     const ANALYTICS_Q1_START_SMR_RANGE_TO = '2026-03-31';
     const ANALYTICS_START_SMR_RESPONSE_DAYS = 7;
     const ANALYTICS_DASHBOARD_CACHE_MS = 120000;
-    const ANALYTICS_SECTION_KEYS = Object.freeze(['quarter1', 'quarter', 'ksg', 'archive']);
-    const ANALYTICS_ARCHIVE_FILTER_STATE_VERSION = '20260414a';
+    const ANALYTICS_DEFAULT_SECTION_KEY = 'quarter';
+    const ANALYTICS_PANEL_SECTION_DEFS = Object.freeze([
+      {
+        key: 'quarter1',
+        title: '1 квартал 2026',
+        kind: 'archive',
+        rangeFrom: ANALYTICS_Q1_START_SMR_RANGE_FROM,
+        rangeTo: ANALYTICS_Q1_START_SMR_RANGE_TO,
+        dashboardDefKey: 'q1'
+      },
+      {
+        key: 'quarter',
+        title: '2 квартал 2026',
+        kind: 'archive',
+        rangeFrom: ANALYTICS_START_SMR_RANGE_FROM,
+        rangeTo: ANALYTICS_START_SMR_RANGE_TO,
+        dashboardDefKey: 'q2'
+      },
+      { key: 'control', title: 'Контроль работы', kind: 'control' },
+      { key: 'ksg', title: 'КСГ', kind: 'ksg' }
+    ]);
+    const ANALYTICS_SECTION_KEYS = Object.freeze(
+      ANALYTICS_PANEL_SECTION_DEFS.map(item => String(item && item.key || '').trim()).filter(Boolean)
+    );
     const ANALYTICS_Q1_DASHBOARD_DEF = Object.freeze({
       title: '1 квартал 2026',
       overall: {
@@ -150,48 +166,6 @@
         }
       ]
     });
-    const ANALYTICS_TRACK_DEFS = Object.freeze([
-      {
-        key: 'constructionMonitoring',
-        title: 'Строймониторинг',
-        planColumnIndex: 13,
-        factColumnIndex: 14,
-        factSource: 'archive',
-        note: 'План из CSV, факт по sf_archive_monitoring с 01.04.2026'
-      },
-      {
-        key: 'constructionControl',
-        title: 'Стройконтроль',
-        planColumnIndex: 15,
-        factColumnIndex: 16,
-        factSource: 'csv',
-        note: 'План и факт считаются по заполненным ячейкам файла'
-      },
-      {
-        key: 'metroMonitoring',
-        title: 'Метрополитен',
-        planColumnIndex: 17,
-        factColumnIndex: 18,
-        factSource: 'csv',
-        note: 'План и факт считаются по заполненным ячейкам файла'
-      },
-      {
-        key: 'uniqueMonitoring',
-        title: 'Уникальные объекты',
-        planColumnIndex: 19,
-        factColumnIndex: 20,
-        factSource: 'csv',
-        note: 'План и факт считаются по заполненным ячейкам файла'
-      },
-      {
-        key: 'labStudies',
-        title: 'Лаборатория',
-        planColumnIndex: 21,
-        factColumnIndex: 22,
-        factSource: 'csv',
-        note: 'План и факт считаются по заполненным ячейкам файла'
-      }
-    ]);
     const ANALYTICS_KSG_PAIR_DEFS = Object.freeze([
       { key: 'ksg_2', title: 'РС', planFieldId: 'ksg_2_2', factFieldId: 'ksg_2_3' },
       { key: 'ksg_4', title: 'Передача площадки', planFieldId: 'ksg_4_2', factFieldId: 'ksg_4_3' },
@@ -393,21 +367,37 @@
       };
     }
 
-    function buildEmptyAnalyticsArchiveActivity_() {
+    function buildEmptyAnalyticsWorkControlDashboard_() {
       return {
-        rangeFrom: ANALYTICS_ARCHIVE_ACTIVITY_FROM,
-        rangeTo: ANALYTICS_ARCHIVE_ACTIVITY_TO,
+        available: false,
+        errorText: '',
+        sourceLabel: '',
+        periodFrom: '',
+        periodTo: '',
+        skudStatus: {
+          status: 'missing',
+          label: 'Отсутствует СКУД за период',
+          expectedDays: 0,
+          loadedDays: 0,
+          loadedDates: [],
+          missingDates: [],
+          latestImport: {}
+        },
         totalMonitorings: 0,
-        gaugePercent: 0
-      };
-    }
-
-    function buildEmptyAnalyticsArchiveMonitoring_() {
-      return {
-        records: [],
-        grbsOptions: [],
-        minDate: '',
-        maxDate: ''
+        totalInspectors: 0,
+        totalViolations: 0,
+        averageWorkMinutes: 0,
+        displayMonitorings: 0,
+        displayInspectors: 0,
+        displayViolations: 0,
+        displayAverageWorkMinutes: 0,
+        inspectors: [],
+        filteredInspectors: [],
+        divisions: [],
+        divisionOptions: [],
+        selectedInspector: '',
+        selectedInspectorRecord: null,
+        activeDivision: ''
       };
     }
 
@@ -420,15 +410,12 @@
         overallUniquePercent: 0,
         overallPlanRowIndexes: [],
         overallFactRowIndexes: [],
-        archiveActivity: buildEmptyAnalyticsArchiveActivity_(),
-        archiveMonitoring: buildEmptyAnalyticsArchiveMonitoring_(),
+        workControl: buildEmptyAnalyticsWorkControlDashboard_(),
         startSmrQuarter: buildEmptyAnalyticsStartSmrQuarter_(),
         startSmrQuarterQ1: buildEmptyAnalyticsStartSmrQuarter_({
           rangeFrom: ANALYTICS_Q1_START_SMR_RANGE_FROM,
           rangeTo: ANALYTICS_Q1_START_SMR_RANGE_TO
-        }),
-        csvSnapshotLabel: '',
-        csvFetchedAt: '',
+        }),
         archiveFetchedAt: '',
         computedAt: ''
       };
@@ -436,24 +423,11 @@
 
     function normalizeAnalyticsSection_(value) {
       const normalized = String(value || '').trim();
-      return ANALYTICS_SECTION_KEYS.includes(normalized) ? normalized : 'quarter';
+      if (normalized === 'archive') return 'control';
+      return ANALYTICS_SECTION_KEYS.includes(normalized) ? normalized : ANALYTICS_DEFAULT_SECTION_KEY;
     }
 
     function normalizeAnalyticsKsgContractorFilters_(value) {
-      const items = Array.isArray(value)
-        ? value
-        : (value == null || value === '' ? [] : [value]);
-      const seen = new Set();
-      return items.reduce((acc, item) => {
-        const text = String(item || '').trim();
-        if (!text || seen.has(text)) return acc;
-        seen.add(text);
-        acc.push(text);
-        return acc;
-      }, []);
-    }
-
-    function normalizeAnalyticsArchiveGrbsFilters_(value) {
       const items = Array.isArray(value)
         ? value
         : (value == null || value === '' ? [] : [value]);
@@ -837,11 +811,16 @@
       registryBulkOpen: false,
       registryColumnsPanelOpen: false,
       registrySidebarPanelOpen: true,
+      analyticsSidebarPanelOpen: true,
       analyticsSection: 'quarter',
+      analyticsControlDivision: '',
+      analyticsControlSelectedInspector: '',
+      analyticsControlDateFrom: '',
+      analyticsControlDateTo: '',
+      analyticsControlSkudUploading: false,
+      analyticsControlUploadError: '',
+      analyticsControlUploadNotice: '',
       analyticsKsgContractors: [],
-      analyticsArchiveGrbs: [],
-      analyticsArchiveDateFrom: '',
-      analyticsArchiveDateTo: '',
       analyticsRegistryDrilldownRowIndexes: [],
       analyticsDrilldowns: new Map(),
       analyticsDrilldownSeq: 0,
@@ -945,6 +924,7 @@
       analyticsError: '',
       analyticsLastLoadedAt: 0,
       analyticsLoadedOnce: false,
+      analyticsLoadedKey: '',
       lastDataLoadedAt: 0,
       lastPersistedRegistrySessionJson: ''
     };

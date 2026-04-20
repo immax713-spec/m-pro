@@ -12,6 +12,7 @@ window.__M_PRO_SITE_APP_SLICES__ = Object.freeze([
 window.__M_PRO_SITE_OPTIONAL_SLICE_GROUPS__ = Object.freeze({
   analytics: Object.freeze([
     './src/app/35-analytics-domain.js',
+    './src/app/44-analytics-quarter-ui.js',
     './src/app/45-analytics-ui.js'
   ])
 });

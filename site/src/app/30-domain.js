@@ -38,9 +38,6 @@ function loadData_(options) {
           state.registryBulkDraftText = preservedBulkDraftText;
           state.registryBulkOpen = preservedBulkOpen;
           applyObjectFilters_();
-          if (typeof syncSavedSelectionPublishAssignmentsFromMapOverlay_ === 'function') {
-            syncSavedSelectionPublishAssignmentsFromMapOverlay_();
-          }
           if (preservedBulkUinOrder.length) {
             state.filteredRowIndexes = sortRegistryRowIndexesByBulkUinOrder_(
               state.filteredRowIndexes,
@@ -225,6 +222,31 @@ function getRegistryColumnDef_(key) {
       return getRegistryMapOverlayEntriesForRow_(rowIndex, options).length;
     }
 
+    function getRegistryMapPlacementDisplayText_(rowIndex, options) {
+      const entry = getRegistryMapOverlayForRow_(rowIndex, options);
+      if (!entry) return '';
+      const activeSelection = typeof getActiveRegistrySelection_ === 'function'
+        ? getActiveRegistrySelection_()
+        : null;
+      const activeSelectionNameNorm = normalizeText_(activeSelection && activeSelection.name || '');
+      const ownerProjectNameNorm = normalizeText_(entry && entry.routeListName || '');
+      if (!activeSelectionNameNorm || !ownerProjectNameNorm) return 'На карте';
+      return activeSelectionNameNorm === ownerProjectNameNorm
+        ? 'На карте'
+        : 'На карте в другом проекте';
+    }
+
+    function getRegistryMapPlacementTitleText_(rowIndex, options) {
+      const entry = getRegistryMapOverlayForRow_(rowIndex, options);
+      if (!entry) return '';
+      const ownerProjectName = String(entry && entry.routeListName || '').trim();
+      const inspectorName = String(entry && entry.inspector || '').trim();
+      if (ownerProjectName && inspectorName) return `На карте в проекте ${ownerProjectName} · ${inspectorName}`;
+      if (ownerProjectName) return `На карте в проекте ${ownerProjectName}`;
+      if (inspectorName) return `На карте · ${inspectorName}`;
+      return 'На карте';
+    }
+
     function isRegistryRowPlacedOnMap_(rowIndex, options) {
       return getRegistryMapOverlayVisitCountForRow_(rowIndex, options) > 0;
     }
@@ -346,6 +368,8 @@ function getRegistryRowSummary_(rowIndex) {
         deadlineRisk: readRegistrySummaryValueByKey_(rowIndex, 'deadlineRisk'),
         startSmrDate: readRegistrySummaryValueByKey_(rowIndex, 'startSmrDate'),
         mapPlacement: mapOverlay ? 'На карте' : '',
+        mapPlacementDisplay: getRegistryMapPlacementDisplayText_(rowIndex),
+        mapPlacementTitle: getRegistryMapPlacementTitleText_(rowIndex),
         rvDate,
         rvNumber
       };
@@ -2026,13 +2050,12 @@ function buildRegistrySelectionPublishVisitRequests_(publishContext) {
           ? getSelectionPublishInspectorNamesForObject_(objectId)
           : [];
         const resolvedInspectorNames = inspectorNames.length ? inspectorNames : fallbackInspectorNames;
-        if (resolvedInspectorNames.length) {
+        const resolvedInspectorName = String(resolvedInspectorNames[0] || '').trim();
+        if (resolvedInspectorName) {
           hasExplicitAssignments = true;
-          resolvedInspectorNames.forEach(inspectorName => {
-            requests.push({
-              ...baseRequest,
-              inspectorName: String(inspectorName || '').trim()
-            });
+          requests.push({
+            ...baseRequest,
+            inspectorName: resolvedInspectorName
           });
           return;
         }
@@ -2093,6 +2116,9 @@ function buildSelectionPublishToastText_(result) {
       const replacedDenied = Number(result && result.replacedDenied) || 0;
       const skippedInProgress = Number(result && result.skippedInProgress) || 0;
       const archivedToHistory = Number(result && result.archivedToHistoryCount) || 0;
+      const transferred = Number(result && result.transferredOwnershipCount) || 0;
+      const keptOtherProject = Number(result && result.keptOtherProjectCount) || 0;
+      const conflicts = Number(result && result.conflictAssignedCount) || 0;
       const parts = [
         publishMode === 'replace'
           ? `На карту отправлено: ${resolved} · режим "${getSelectionPublishModeLabel_('replace')}"`
@@ -2100,6 +2126,9 @@ function buildSelectionPublishToastText_(result) {
       ];
       if (created) parts.push(`новых ${created}`);
       if (refreshed) parts.push(`обновлено ${refreshed}`);
+      if (transferred) parts.push(`перенесено ${transferred}`);
+      if (keptOtherProject) parts.push(`в другом проекте ${keptOtherProject}`);
+      if (conflicts) parts.push(`конфликтов ${conflicts}`);
       if (replacedPlanned) parts.push(`снято новых ${replacedPlanned}`);
       if (replacedStaleInProgress) parts.push(`снято зависших "в работе" ${replacedStaleInProgress}`);
       if (replacedCompleted) parts.push(`снято выполненных ${replacedCompleted}`);
@@ -2109,6 +2138,59 @@ function buildSelectionPublishToastText_(result) {
       if (busy) parts.push(`не перезаписано ${busy}`);
       if (withoutCoordinates) parts.push(`без координат ${withoutCoordinates}`);
       return parts.join(' · ');
+    }
+
+function buildSelectionPublishAlertText_(result) {
+      const transferred = Number(result && result.transferredOwnershipCount) || 0;
+      const keptOtherProject = Number(result && result.keptOtherProjectCount) || 0;
+      const conflicts = Number(result && result.conflictAssignedCount) || 0;
+      const busy = Number(result && result.busyVisits) || 0;
+      const details = Array.isArray(result && result.details) ? result.details : [];
+      if (!(transferred || keptOtherProject || conflicts || busy || details.length)) return '';
+      const lines = ['Результат публикации на карту'];
+      if (transferred) lines.push(`Перенесено из других проектов: ${transferred}`);
+      if (keptOtherProject) lines.push(`Уже на карте в другом проекте: ${keptOtherProject}`);
+      if (conflicts) lines.push(`Конфликты назначения: ${conflicts}`);
+      if (busy) lines.push(`Занятые точки без изменений: ${busy}`);
+      const detailLines = details
+        .slice(0, 12)
+        .map(item => {
+          const objectId = String(item && item.objectId || '').trim() || 'Объект';
+          const routeListName = String(item && item.routeListName || '').trim();
+          const inspectorName = String(item && item.inspector || '').trim();
+          const visitStatus = String(item && item.visitStatus || '').trim();
+          const status = String(item && item.status || '').trim();
+          if (status === 'transferred') {
+            return `${objectId}: перенесено в проект ${routeListName}${inspectorName ? ` · ${inspectorName}` : ''}`;
+          }
+          if (status === 'kept_other_project') {
+            return `${objectId}: уже на карте в проекте ${routeListName}${inspectorName ? ` · ${inspectorName}` : ''}`;
+          }
+          if (status === 'conflict_assigned') {
+            return `${objectId}: конфликт с проектом ${routeListName}${inspectorName ? ` · ${inspectorName}` : ''}`;
+          }
+          if (status === 'busy') {
+            return `${objectId}: занято (${visitStatus || 'активный выезд'})`;
+          }
+          return '';
+        })
+        .filter(Boolean);
+      if (detailLines.length) {
+        lines.push('');
+        lines.push(...detailLines);
+        if (details.length > detailLines.length) {
+          lines.push(`... и ещё ${details.length - detailLines.length}`);
+        }
+      }
+      return lines.join('\n');
+    }
+
+function maybeShowSelectionPublishAlert_(result) {
+      const text = buildSelectionPublishAlertText_(result);
+      if (!text || typeof window === 'undefined' || typeof window.alert !== 'function') return;
+      window.setTimeout(() => {
+        window.alert(text);
+      }, 0);
     }
 
 async function publishRegistrySelectionById_(selectionId, requestedMode) {
@@ -2176,6 +2258,7 @@ async function publishRegistrySelectionById_(selectionId, requestedMode) {
             : 'Не удалось подобрать объекты для публикации',
           resolved <= 0
         );
+        maybeShowSelectionPublishAlert_(result);
       } catch (err) {
         if (isUnauthorizedError_(err)) {
           handleUnauthorized_();
@@ -2237,6 +2320,7 @@ async function publishRegistryToolbarDraftToMap_() {
             : 'Не удалось подобрать объекты для публикации',
           resolved <= 0
         );
+        maybeShowSelectionPublishAlert_(result);
       } catch (err) {
         if (isUnauthorizedError_(err)) {
           handleUnauthorized_();
@@ -2303,6 +2387,7 @@ async function publishRegistrySelectionComposerDraft_(requestedMode) {
             : 'Не удалось подобрать объекты для публикации',
           resolved <= 0
         );
+        maybeShowSelectionPublishAlert_(result);
       } catch (err) {
         if (isUnauthorizedError_(err)) {
           handleUnauthorized_();

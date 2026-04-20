@@ -193,11 +193,9 @@ function buildRegistrySessionStatePayload_() {
           registryVisibleColumnKeys: normalizeStoredRegistryVisibleColumnKeys_(state.registryVisibleColumnKeys),
           currentView: normalizeWorkspaceView_(state.currentView),
           analyticsSection: normalizeAnalyticsSection_(state.analyticsSection),
+          analyticsControlDateFrom: normalizeAnalyticsArchiveDateValue_(state.analyticsControlDateFrom),
+          analyticsControlDateTo: normalizeAnalyticsArchiveDateValue_(state.analyticsControlDateTo),
           analyticsKsgContractors: normalizeAnalyticsKsgContractorFilters_(state.analyticsKsgContractors),
-          analyticsArchiveFilterVersion: ANALYTICS_ARCHIVE_FILTER_STATE_VERSION,
-          analyticsArchiveGrbs: normalizeAnalyticsArchiveGrbsFilters_(state.analyticsArchiveGrbs),
-          analyticsArchiveDateFrom: normalizeAnalyticsArchiveDateValue_(state.analyticsArchiveDateFrom),
-          analyticsArchiveDateTo: normalizeAnalyticsArchiveDateValue_(state.analyticsArchiveDateTo),
           sidebarExpanded: !!state.sidebarExpanded,
           sidebarActivePanel: normalizeSidebarPanel_(state.sidebarActivePanel),
           registrySidebarPanelOpen: state.registrySidebarPanelOpen !== false,
@@ -237,8 +235,7 @@ function loadRegistrySessionState_() {
         } catch (e) {}
         const raw = window.localStorage.getItem(REGISTRY_SESSION_STORAGE_KEY);
         const parsed = JSON.parse(raw || '{}');
-        const registryDataMode = normalizeRegistryDataMode_(parsed && parsed.registryDataMode);
-        const hasCurrentAnalyticsArchiveFilterVersion = String(parsed && parsed.analyticsArchiveFilterVersion || '').trim() === ANALYTICS_ARCHIVE_FILTER_STATE_VERSION;
+        const registryDataMode = normalizeRegistryDataMode_(parsed && parsed.registryDataMode);
           return {
             registryDataMode,
             activeRegistrySelectionId: String(parsed && parsed.activeRegistrySelectionId || ''),
@@ -251,10 +248,9 @@ function loadRegistrySessionState_() {
               : buildDefaultRegistryVisibleColumnKeys_(registryDataMode),
             currentView: normalizeWorkspaceView_(parsed && parsed.currentView),
             analyticsSection: normalizeAnalyticsSection_(parsed && parsed.analyticsSection),
+            analyticsControlDateFrom: normalizeAnalyticsArchiveDateValue_(parsed && parsed.analyticsControlDateFrom),
+            analyticsControlDateTo: normalizeAnalyticsArchiveDateValue_(parsed && parsed.analyticsControlDateTo),
             analyticsKsgContractors: normalizeAnalyticsKsgContractorFilters_(parsed && parsed.analyticsKsgContractors),
-            analyticsArchiveGrbs: normalizeAnalyticsArchiveGrbsFilters_(parsed && parsed.analyticsArchiveGrbs),
-            analyticsArchiveDateFrom: hasCurrentAnalyticsArchiveFilterVersion ? normalizeAnalyticsArchiveDateValue_(parsed && parsed.analyticsArchiveDateFrom) : '',
-            analyticsArchiveDateTo: hasCurrentAnalyticsArchiveFilterVersion ? normalizeAnalyticsArchiveDateValue_(parsed && parsed.analyticsArchiveDateTo) : '',
             sidebarExpanded: parsed && parsed.sidebarExpanded !== undefined ? !!parsed.sidebarExpanded : true,
             sidebarActivePanel: normalizeSidebarPanel_(parsed && parsed.sidebarActivePanel),
             registrySidebarPanelOpen: parsed && parsed.registrySidebarPanelOpen !== undefined ? !!parsed.registrySidebarPanelOpen : true,
@@ -281,10 +277,9 @@ function loadRegistrySessionState_() {
             registryVisibleColumnKeys: buildDefaultRegistryVisibleColumnKeys_(REGISTRY_DATASET_MODES.registry),
             currentView: 'registry',
             analyticsSection: 'quarter',
+            analyticsControlDateFrom: '',
+            analyticsControlDateTo: '',
             analyticsKsgContractors: [],
-            analyticsArchiveGrbs: [],
-            analyticsArchiveDateFrom: '',
-            analyticsArchiveDateTo: '',
             sidebarExpanded: true,
             sidebarActivePanel: 'registry',
             objectTabRowIndexes: [],
@@ -641,6 +636,22 @@ function getSelectionPublishAssignmentOwnerSelectionId_() {
       return activeId && !isRegistryToolbarMapDraftId_(activeId) ? activeId : '';
     }
 
+function getSelectionPublishAssignmentOwnerSelectionName_(selectionId) {
+      const ownerSelectionId = String(selectionId || getSelectionPublishAssignmentOwnerSelectionId_() || '').trim();
+      if (ownerSelectionId && !isRegistryToolbarMapDraftId_(ownerSelectionId)) {
+        const item = typeof findSavedRegistrySelectionById_ === 'function'
+          ? findSavedRegistrySelectionById_(ownerSelectionId)
+          : null;
+        const itemName = String(item && item.name || '').trim();
+        if (itemName) return itemName;
+      }
+      if (state.selectionComposerOpen) {
+        const composerName = String(state.selectionComposerDraftName || '').trim();
+        if (composerName) return composerName;
+      }
+      return '';
+    }
+
 function getEffectiveSelectionPublishInspectorNamesByObjectKey_(selectionId) {
       const ownerSelectionId = String(selectionId || getSelectionPublishAssignmentOwnerSelectionId_() || '').trim();
       const persisted = ownerSelectionId
@@ -658,11 +669,16 @@ function getSelectionPublishInspectorNamesFromMapForObject_(objectId, options) {
       const targetObjectId = String(objectId || '').trim();
       if (!targetObjectId || typeof getRegistryMapOverlayEntriesForObjectKey_ !== 'function') return [];
       const settings = options && typeof options === 'object' ? options : {};
+      const targetSelectionNameNorm = normalizeText_(settings.selectionName || '');
       return Array.from(new Set(
         getRegistryMapOverlayEntriesForObjectKey_(targetObjectId, settings)
+          .filter(entry => {
+            if (!targetSelectionNameNorm) return false;
+            return normalizeText_(entry && entry.routeListName || '') === targetSelectionNameNorm;
+          })
           .map(entry => String(entry && (entry.inspector || entry.inspectorName) || '').trim())
           .filter(Boolean)
-      ));
+      )).slice(0, 1);
     }
 
 function getSelectionPublishAssignmentsSyncRowIndexes_(selectionId, options) {
@@ -686,12 +702,14 @@ function syncSavedSelectionPublishAssignmentsFromMapOverlay_(selectionId, option
       if (!ownerSelectionId || isRegistryToolbarMapDraftId_(ownerSelectionId)) return false;
       if (!canCurrentUserManageMproMap_() || !isCurrentRegistryDatasetEditable_()) return false;
       const settings = options && typeof options === 'object' ? options : {};
+      const ownerSelectionName = getSelectionPublishAssignmentOwnerSelectionName_(ownerSelectionId);
+      if (!ownerSelectionName) return false;
       const rowIndexes = getSelectionPublishAssignmentsSyncRowIndexes_(ownerSelectionId, settings);
       if (!rowIndexes.length) return false;
       const nextMap = getEffectiveSelectionPublishInspectorNamesByObjectKey_(ownerSelectionId);
       const mapOptions = Object.prototype.hasOwnProperty.call(settings, 'divisionCode')
-        ? { divisionCode: settings.divisionCode }
-        : {};
+        ? { divisionCode: settings.divisionCode, selectionName: ownerSelectionName }
+        : { selectionName: ownerSelectionName };
       let changed = false;
       rowIndexes.forEach(rowIndex => {
         const objectId = String(getRegistryRowObjectId_(rowIndex) || '').trim();
@@ -718,9 +736,14 @@ function getSelectionPublishInspectorNamesByObjectKey_() {
 function getSelectionPublishInspectorNamesForObject_(objectId) {
       const key = getSelectionPublishInspectorObjectKey_(objectId);
       if (!key) return [];
+      const ownerSelectionId = getSelectionPublishAssignmentOwnerSelectionId_();
       const map = getEffectiveSelectionPublishInspectorNamesByObjectKey_();
       if (Array.isArray(map[key]) && map[key].length) return map[key].slice();
-      return getSelectionPublishInspectorNamesFromMapForObject_(objectId);
+      const ownerSelectionName = getSelectionPublishAssignmentOwnerSelectionName_(ownerSelectionId);
+      if (!ownerSelectionName) return [];
+      return getSelectionPublishInspectorNamesFromMapForObject_(objectId, {
+        selectionName: ownerSelectionName
+      });
     }
 
 function setSelectionPublishInspectorNamesForObject_(objectId, items, options) {
@@ -731,7 +754,7 @@ function setSelectionPublishInspectorNamesForObject_(objectId, items, options) {
       const nextMap = ownerSelectionId
         ? getEffectiveSelectionPublishInspectorNamesByObjectKey_(ownerSelectionId)
         : getSelectionPublishInspectorNamesByObjectKey_();
-      const nextValues = normalizeSelectionPublishInspectorNames_(items);
+      const nextValues = normalizeSelectionPublishInspectorNames_(items).slice(0, 1);
       if (nextValues.length) nextMap[key] = nextValues;
       else delete nextMap[key];
       state.selectionPublishInspectorNamesByObjectKey = nextMap;
@@ -748,8 +771,8 @@ function toggleSelectionPublishInspectorNameForObject_(objectId, name) {
       if (!inspectorName) return;
       const current = getSelectionPublishInspectorNamesForObject_(objectId);
       const nextValues = current.includes(inspectorName)
-        ? current.filter(value => value !== inspectorName)
-        : current.concat(inspectorName);
+        ? []
+        : [inspectorName];
       setSelectionPublishInspectorNamesForObject_(objectId, nextValues);
       renderRegistryView_();
     }
@@ -2696,10 +2719,9 @@ function applyRegistrySessionState_(session) {
       state.registryColumnsPanelOpen = false;
       state.currentView = normalizeWorkspaceView_(data.currentView);
       state.analyticsSection = normalizeAnalyticsSection_(data.analyticsSection);
+      state.analyticsControlDateFrom = normalizeAnalyticsArchiveDateValue_(data.analyticsControlDateFrom);
+      state.analyticsControlDateTo = normalizeAnalyticsArchiveDateValue_(data.analyticsControlDateTo);
       state.analyticsKsgContractors = normalizeAnalyticsKsgContractorFilters_(data.analyticsKsgContractors);
-      state.analyticsArchiveGrbs = normalizeAnalyticsArchiveGrbsFilters_(data.analyticsArchiveGrbs);
-      state.analyticsArchiveDateFrom = normalizeAnalyticsArchiveDateValue_(data.analyticsArchiveDateFrom);
-      state.analyticsArchiveDateTo = normalizeAnalyticsArchiveDateValue_(data.analyticsArchiveDateTo);
       state.sidebarExpanded = data.sidebarExpanded !== undefined ? !!data.sidebarExpanded : true;
       state.sidebarActivePanel = normalizeSidebarPanel_(data.sidebarActivePanel);
       state.registrySidebarPanelOpen = data.registrySidebarPanelOpen !== undefined ? !!data.registrySidebarPanelOpen : true;
