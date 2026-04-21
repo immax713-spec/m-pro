@@ -205,10 +205,6 @@
     const KSG_RV_DATE_SPEC = { ids: ['ksg_12_3'], labels: ['Фактическая дата окончания  (этал.график)'] };
     const KSG_RV_NUMBER_SPEC = { ids: ['ksg_12_4'], labels: ['№ РВ'] };
     const GOOGLE_OWNED_HTML_FIELD_IDS = new Set([
-      'sm_1_5',
-      'sm_1_6',
-      'sm_1_7',
-      'sm_1_10',
       'ppr_1_8',
       'lb_1_5',
       'lb_1_6',

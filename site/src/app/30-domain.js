@@ -355,7 +355,7 @@ function getRegistryRowSummary_(rowIndex) {
         coordinates: String(readRegistrySummaryValueByKey_(rowIndex, 'coordinates') || '').trim(),
         inspector: String(monitoringOverlay && monitoringOverlay.inspector || readRegistrySummaryValueByKey_(rowIndex, 'inspector') || '').trim(),
         checklistUrl: String(readRegistrySummaryValueByKey_(rowIndex, 'checklistUrl') || monitoringOverlay && monitoringOverlay.checklistUrl || '').trim(),
-        monitoringDate: String(monitoringOverlay && monitoringOverlay.monitoringDate || readRegistrySummaryValueByKey_(rowIndex, 'monitoringDate') || '').trim(),
+        monitoringDate: String(readRegistrySummaryValueByKey_(rowIndex, 'monitoringDate') || monitoringOverlay && monitoringOverlay.monitoringDate || '').trim(),
         yandexDiskUrl: String(readRegistrySummaryValueByKey_(rowIndex, 'yandexDiskUrl') || monitoringOverlay && monitoringOverlay.yandexDiskUrl || '').trim(),
         lastDeniedAccessDate: String(monitoringOverlay && monitoringOverlay.lastDeniedAccessDate || '').trim(),
         lastDeniedAccessInspector: String(monitoringOverlay && monitoringOverlay.lastDeniedAccessInspector || '').trim(),
