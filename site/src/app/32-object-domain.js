@@ -17,6 +17,25 @@ function resetActiveObjectCardUiState_() {
       if (typeof closeLabStudySchemeModal_ === 'function') closeLabStudySchemeModal_();
     }
 
+    function normalizeObjectHistoryDivisionCode_(item) {
+      if (!item || typeof item !== 'object') return '';
+      const rawValue =
+        item.divisionCode ||
+        item.division ||
+        item.targetDivision ||
+        item.routeListDivision ||
+        '';
+      return typeof normalizeMproDivisionCode_ === 'function'
+        ? normalizeMproDivisionCode_(rawValue)
+        : String(rawValue || '').trim();
+    }
+
+    function shouldIncludeObjectMonitoringHistoryRow_(item) {
+      const divisionCode = normalizeObjectHistoryDivisionCode_(item);
+      if (!divisionCode) return true;
+      return divisionCode !== 'constructioncontrol' && divisionCode !== 'laboratory';
+    }
+
     function loadObjectMonitoringHistory_(objectId, options) {
       const objectKey = normalizeMonitoringObjectKey_(objectId);
       if (!objectKey) return Promise.resolve([]);
@@ -32,13 +51,16 @@ function resetActiveObjectCardUiState_() {
       return fetchObjectMonitoringHistory_(objectId)
         .then(result => {
           const rows = Array.isArray(result && result.rows) ? result.rows : [];
-          state.monitoringHistoryByObjectKey[objectKey] = rows.map(item => ({
+          const normalizedRows = rows.map(item => ({
             monitoringDate: String(item && item.monitoringDate || '').trim(),
             visitStatus: String(item && item.visitStatus || '').trim(),
             statusLabel: String(item && item.statusLabel || '').trim(),
             inspector: String(item && item.inspector || '').trim(),
-            photosUrl: String(item && item.photosUrl || '').trim()
+            photosUrl: String(item && item.photosUrl || '').trim(),
+            divisionCode: normalizeObjectHistoryDivisionCode_(item),
+            routeListName: String(item && item.routeListName || item && item.route_list_name || '').trim()
           }));
+          state.monitoringHistoryByObjectKey[objectKey] = normalizedRows.filter(shouldIncludeObjectMonitoringHistoryRow_);
           const nextOverlayEntry = buildMonitoringOverlayEntryFromHistoryRows_(
             objectId,
             state.monitoringHistoryByObjectKey[objectKey],

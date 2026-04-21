@@ -339,6 +339,13 @@ function getRegistryRowSummary_(rowIndex) {
       const rvNumber = readRegistrySummaryValueByKey_(rowIndex, 'rvNumber');
       const monitoringOverlay = getMonitoringOverlayForRow_(rowIndex);
       const mapOverlay = getRegistryMapOverlayForRow_(rowIndex);
+      const mapInspectorNames = Array.from(new Set(
+        getRegistryMapOverlayEntriesForRow_(rowIndex)
+          .map(entry => String(entry && (entry.inspector || entry.inspectorName) || '').trim())
+          .filter(Boolean)
+      ));
+      const currentInspectorText = mapInspectorNames.join(', ')
+        || String(monitoringOverlay && monitoringOverlay.inspector || readRegistrySummaryValueByKey_(rowIndex, 'inspector') || '').trim();
       const summary = {
         objectId: getRegistryRowObjectId_(rowIndex),
         dashboardUrl: readRegistrySummaryValueByKey_(rowIndex, 'dashboardUrl'),
@@ -353,7 +360,7 @@ function getRegistryRowSummary_(rowIndex) {
         contractor: readRegistrySummaryValueByKey_(rowIndex, 'contractor'),
         anoSmgCode: String(readRegistrySummaryValueByKey_(rowIndex, 'anoSmgCode') || monitoringOverlay && monitoringOverlay.anoSmgCode || '').trim(),
         coordinates: String(readRegistrySummaryValueByKey_(rowIndex, 'coordinates') || '').trim(),
-        inspector: String(monitoringOverlay && monitoringOverlay.inspector || readRegistrySummaryValueByKey_(rowIndex, 'inspector') || '').trim(),
+        inspector: currentInspectorText,
         checklistUrl: String(readRegistrySummaryValueByKey_(rowIndex, 'checklistUrl') || monitoringOverlay && monitoringOverlay.checklistUrl || '').trim(),
         monitoringDate: String(readRegistrySummaryValueByKey_(rowIndex, 'monitoringDate') || monitoringOverlay && monitoringOverlay.monitoringDate || '').trim(),
         yandexDiskUrl: String(readRegistrySummaryValueByKey_(rowIndex, 'yandexDiskUrl') || monitoringOverlay && monitoringOverlay.yandexDiskUrl || '').trim(),

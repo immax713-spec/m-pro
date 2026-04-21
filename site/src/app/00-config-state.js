@@ -437,6 +437,20 @@
       }, []);
     }
 
+    function normalizeAnalyticsKsgGrbsFilters_(value) {
+      const items = Array.isArray(value)
+        ? value
+        : (value == null || value === '' ? [] : [value]);
+      const seen = new Set();
+      return items.reduce((acc, item) => {
+        const text = String(item || '').trim();
+        if (!text || seen.has(text)) return acc;
+        seen.add(text);
+        acc.push(text);
+        return acc;
+      }, []);
+    }
+
     function normalizeAnalyticsArchiveDateValue_(value) {
       const text = String(value || '').trim();
       return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
@@ -817,6 +831,7 @@
       analyticsControlUploadError: '',
       analyticsControlUploadNotice: '',
       analyticsKsgContractors: [],
+      analyticsKsgGrbs: [],
       analyticsRegistryDrilldownRowIndexes: [],
       analyticsDrilldowns: new Map(),
       analyticsDrilldownSeq: 0,

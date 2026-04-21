@@ -196,6 +196,7 @@ function buildRegistrySessionStatePayload_() {
           analyticsControlDateFrom: normalizeAnalyticsArchiveDateValue_(state.analyticsControlDateFrom),
           analyticsControlDateTo: normalizeAnalyticsArchiveDateValue_(state.analyticsControlDateTo),
           analyticsKsgContractors: normalizeAnalyticsKsgContractorFilters_(state.analyticsKsgContractors),
+          analyticsKsgGrbs: normalizeAnalyticsKsgGrbsFilters_(state.analyticsKsgGrbs),
           sidebarExpanded: !!state.sidebarExpanded,
           sidebarActivePanel: normalizeSidebarPanel_(state.sidebarActivePanel),
           registrySidebarPanelOpen: state.registrySidebarPanelOpen !== false,
@@ -251,6 +252,7 @@ function loadRegistrySessionState_() {
             analyticsControlDateFrom: normalizeAnalyticsArchiveDateValue_(parsed && parsed.analyticsControlDateFrom),
             analyticsControlDateTo: normalizeAnalyticsArchiveDateValue_(parsed && parsed.analyticsControlDateTo),
             analyticsKsgContractors: normalizeAnalyticsKsgContractorFilters_(parsed && parsed.analyticsKsgContractors),
+            analyticsKsgGrbs: normalizeAnalyticsKsgGrbsFilters_(parsed && parsed.analyticsKsgGrbs),
             sidebarExpanded: parsed && parsed.sidebarExpanded !== undefined ? !!parsed.sidebarExpanded : true,
             sidebarActivePanel: normalizeSidebarPanel_(parsed && parsed.sidebarActivePanel),
             registrySidebarPanelOpen: parsed && parsed.registrySidebarPanelOpen !== undefined ? !!parsed.registrySidebarPanelOpen : true,
@@ -280,6 +282,7 @@ function loadRegistrySessionState_() {
             analyticsControlDateFrom: '',
             analyticsControlDateTo: '',
             analyticsKsgContractors: [],
+            analyticsKsgGrbs: [],
             sidebarExpanded: true,
             sidebarActivePanel: 'registry',
             objectTabRowIndexes: [],
@@ -2722,6 +2725,7 @@ function applyRegistrySessionState_(session) {
       state.analyticsControlDateFrom = normalizeAnalyticsArchiveDateValue_(data.analyticsControlDateFrom);
       state.analyticsControlDateTo = normalizeAnalyticsArchiveDateValue_(data.analyticsControlDateTo);
       state.analyticsKsgContractors = normalizeAnalyticsKsgContractorFilters_(data.analyticsKsgContractors);
+      state.analyticsKsgGrbs = normalizeAnalyticsKsgGrbsFilters_(data.analyticsKsgGrbs);
       state.sidebarExpanded = data.sidebarExpanded !== undefined ? !!data.sidebarExpanded : true;
       state.sidebarActivePanel = normalizeSidebarPanel_(data.sidebarActivePanel);
       state.registrySidebarPanelOpen = data.registrySidebarPanelOpen !== undefined ? !!data.registrySidebarPanelOpen : true;

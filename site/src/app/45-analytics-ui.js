@@ -509,6 +509,32 @@ function buildAnalyticsWorkControlDashboardHtml_() {
       );
     }
 
+function buildAnalyticsPanelNavHtml_() {
+      const analyticsActive = state.currentView === 'analytics';
+      const analyticsSection = normalizeAnalyticsSection_(state.analyticsSection);
+      const sectionDefs = Array.isArray(ANALYTICS_PANEL_SECTION_DEFS)
+        ? ANALYTICS_PANEL_SECTION_DEFS.filter(item => item && String(item.key || '').trim())
+        : [];
+      return (
+        `<section class="sidebar-section analytics-panel analytics-panel--compact">` +
+          `<div class="quick-preset-grid analytics-panel-nav">` +
+            sectionDefs.map(item => {
+              const key = String(item.key || '').trim();
+              const title = String(item.title || '').trim() || key;
+              const active = analyticsActive && analyticsSection === key;
+              return (
+                `<div class="preset-row">` +
+                  `<button class="quick-preset${active ? ' active' : ''}" type="button" data-open-analytics-section="${escapeHtml_(key)}" aria-pressed="${active ? 'true' : 'false'}">` +
+                    `<span class="preset-trigger-main"><span class="preset-trigger-title">${escapeHtml_(title)}</span></span>` +
+                  `</button>` +
+                `</div>`
+              );
+            }).join('') +
+          `</div>` +
+        `</section>`
+      );
+    }
+
 function bindAnalyticsPanelEvents_(root) {
       const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
       scope.querySelectorAll('[data-open-analytics-section]').forEach(button => {
@@ -740,6 +766,47 @@ function bindAnalyticsViewEvents_() {
               state.analyticsKsgContractors = [];
             } else {
               state.analyticsKsgContractors = Array.from(next);
+            }
+          }
+          persistRegistrySessionState_();
+          renderAnalyticsView_();
+        };
+      });
+      view.querySelectorAll('[data-analytics-ksg-grbs-search]').forEach(input => {
+        input.oninput = () => {
+          const query = normalizeText_(String(input.value || ''));
+          const menu = input.closest('.analytics-filter-menu');
+          if (!menu) return;
+          menu.querySelectorAll('[data-analytics-ksg-grbs]').forEach(button => {
+            const value = String(button.getAttribute('data-analytics-ksg-grbs') || '').trim();
+            if (value === '__all') {
+              button.hidden = false;
+              return;
+            }
+            const label = normalizeText_(String(button.getAttribute('data-analytics-filter-label') || value));
+            button.hidden = !!query && !label.includes(query);
+          });
+        };
+      });
+      view.querySelectorAll('[data-analytics-ksg-grbs]').forEach(button => {
+        button.onclick = evt => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          const value = String(button.getAttribute('data-analytics-ksg-grbs') || '').trim();
+          if (!value) return;
+          if (value === '__all') {
+            state.analyticsKsgGrbs = [];
+          } else {
+            const next = new Set(normalizeAnalyticsKsgGrbsFilters_(state.analyticsKsgGrbs));
+            if (next.has(value)) next.delete(value);
+            else next.add(value);
+            const availableValues = Array.from(view.querySelectorAll('[data-analytics-ksg-grbs]'))
+              .map(node => String(node.getAttribute('data-analytics-ksg-grbs') || '').trim())
+              .filter(item => item && item !== '__all');
+            if (!next.size || (availableValues.length && next.size >= availableValues.length)) {
+              state.analyticsKsgGrbs = [];
+            } else {
+              state.analyticsKsgGrbs = Array.from(next);
             }
           }
           persistRegistrySessionState_();
@@ -988,6 +1055,187 @@ function buildAnalyticsKsgDashboardHtml_() {
               `${gaugeHtml}` +
               `<div class="analytics-ksg-total-stats">` +
                 `<div class="analytics-ksg-total-stat analytics-ksg-total-stat--late${dashboard.lateRowIndexes.length ? ' analytics-drilldown-target' : ''}"${buildAnalyticsDrilldownAttrs_(dashboard.lateRowIndexes, 'КСГ · С опозданием')}><span>С опозданием</span><strong>${escapeHtml_(formatAnalyticsCountText_(late))}</strong></div>` +
+                `<div class="analytics-ksg-total-stat analytics-ksg-total-stat--missing${dashboard.missingPastRowIndexes.length ? ' analytics-drilldown-target' : ''}"${buildAnalyticsDrilldownAttrs_(dashboard.missingPastRowIndexes, 'КСГ · Нет факта')}><span>Нет факта</span><strong>${escapeHtml_(formatAnalyticsCountText_(missingPast))}</strong></div>` +
+                `<div class="analytics-ksg-total-stat analytics-ksg-total-stat--without-plan${dashboard.withoutPlanRowIndexes.length ? ' analytics-drilldown-target' : ''}"${buildAnalyticsDrilldownAttrs_(dashboard.withoutPlanRowIndexes, 'КСГ · Без плана')}><span>Без плана</span><strong>${escapeHtml_(formatAnalyticsCountText_(withoutPlan))}</strong></div>` +
+              `</div>` +
+            `</div>` +
+          `</section>` +
+        `</div>`
+      );
+    }
+
+function buildAnalyticsKsgFilterHtml_(options) {
+      const settings = options || {};
+      const optionKey = String(settings.optionKey || '').trim();
+      const searchKey = String(settings.searchKey || '').trim();
+      const title = String(settings.title || '').trim() || 'Фильтр';
+      const searchPlaceholder = String(settings.searchPlaceholder || '').trim() || 'Поиск';
+      const emptyLabel = String(settings.emptyLabel || '').trim() || 'Все';
+      const emptyMessage = String(settings.emptyMessage || '').trim() || 'Нет данных';
+      const allValue = String(settings.allValue || '__all').trim() || '__all';
+      const optionAttr = `data-analytics-ksg-${optionKey}`;
+      const searchAttr = `data-analytics-ksg-${searchKey}`;
+      const optionsList = Array.isArray(settings.options) ? settings.options : [];
+      const activeValues = Array.isArray(settings.activeValues) ? settings.activeValues : [];
+      const totalObjects = optionsList.reduce((sum, option) => sum + Math.max(0, Number(option && option.count) || 0), 0);
+      const menuHtml = optionsList.length
+        ? (
+            `<div class="analytics-filter-menu">` +
+              `<div class="analytics-filter-search-shell">` +
+                `<input class="analytics-filter-search-input" type="search" placeholder="${escapeHtml_(searchPlaceholder)}" autocomplete="off" ${searchAttr}>` +
+              `</div>` +
+              `<div class="analytics-filter-options">` +
+                `<button class="analytics-filter-option${activeValues.length === 0 ? ' active' : ''}" type="button" ${optionAttr}="${escapeHtml_(allValue)}">` +
+                  `<span class="analytics-filter-option-mark" aria-hidden="true"></span>` +
+                  `<span class="analytics-filter-option-label">${escapeHtml_(emptyLabel)}</span>` +
+                  `<span class="analytics-filter-option-count">${escapeHtml_(formatAnalyticsCountText_(totalObjects))}</span>` +
+                `</button>` +
+                optionsList.map(option => {
+                  const label = String(option && option.label || '').trim();
+                  const active = activeValues.includes(label);
+                  return (
+                    `<button class="analytics-filter-option${active ? ' active' : ''}" type="button" ${optionAttr}="${escapeHtml_(label)}" data-analytics-filter-label="${escapeHtml_(label)}">` +
+                      `<span class="analytics-filter-option-mark" aria-hidden="true"></span>` +
+                      `<span class="analytics-filter-option-label">${escapeHtml_(label)}</span>` +
+                      `<span class="analytics-filter-option-count">${escapeHtml_(formatAnalyticsCountText_(option && option.count))}</span>` +
+                    `</button>`
+                  );
+                }).join('') +
+              `</div>` +
+            `</div>`
+          )
+        : `<div class="analytics-filter-menu"><div class="analytics-filter-empty">${escapeHtml_(emptyMessage)}</div></div>`;
+      return (
+        `<details class="analytics-filter-dropdown analytics-filter-dropdown--contractor">` +
+          `<summary class="analytics-filter-trigger">` +
+            `<span class="analytics-filter-trigger-text">${escapeHtml_(title)}</span>` +
+            `<span class="analytics-filter-trigger-caret" aria-hidden="true"></span>` +
+          `</summary>` +
+          `${menuHtml}` +
+        `</details>`
+      );
+    }
+
+function buildAnalyticsKsgContractorFilterHtml_(dashboard) {
+      const data = dashboard || {};
+      return buildAnalyticsKsgFilterHtml_({
+        optionKey: 'contractor',
+        searchKey: 'contractor-search',
+        title: 'Генподрядчик',
+        searchPlaceholder: 'Поиск генподрядчика',
+        emptyLabel: 'Все генподрядчики',
+        emptyMessage: 'Нет данных по генподрядчикам',
+        options: data.contractorOptions,
+        activeValues: normalizeAnalyticsKsgContractorFilters_(data.activeContractors)
+      });
+    }
+
+function buildAnalyticsKsgGrbsFilterHtml_(dashboard) {
+      const data = dashboard || {};
+      return buildAnalyticsKsgFilterHtml_({
+        optionKey: 'grbs',
+        searchKey: 'grbs-search',
+        title: 'ГРБС',
+        searchPlaceholder: 'Поиск ГРБС',
+        emptyLabel: 'Все ГРБС',
+        emptyMessage: 'Нет данных по ГРБС',
+        options: data.grbsOptions,
+        activeValues: normalizeAnalyticsKsgGrbsFilters_(data.activeGrbs)
+      });
+    }
+
+function buildAnalyticsKsgStageRowHtml_(stage) {
+      const item = stage || {};
+      const totalPlan = Math.max(0, Number(item.totalPlan) || 0);
+      const segments = [
+        { key: 'on-time', label: 'В срок', value: Math.max(0, Number(item.onTime) || 0), rowIndexes: item.onTimeRowIndexes },
+        { key: 'late', label: 'Выполнен с отставанием', value: Math.max(0, Number(item.late) || 0), rowIndexes: item.lateRowIndexes },
+        { key: 'missing', label: 'Нет факта', value: Math.max(0, Number(item.missingPast) || 0), rowIndexes: item.missingPastRowIndexes },
+        { key: 'upcoming', label: 'Впереди', value: Math.max(0, Number(item.upcoming) || 0), rowIndexes: item.upcomingRowIndexes }
+      ];
+      const stageDrilldownAttrs = buildAnalyticsDrilldownAttrs_(item.totalPlanRowIndexes, `${item.title || 'Этап'}: открыть объекты в реестре`);
+      const segmentsHtml = totalPlan > 0
+        ? segments.map(segment => {
+            if (!segment.value) return '';
+            const width = Math.max(0, Math.min((segment.value / totalPlan) * 100, 100));
+            return `<span class="analytics-ksg-stage-bar-segment analytics-ksg-stage-bar-segment--${escapeHtml_(segment.key)}" style="width:${escapeHtml_(width.toFixed(2))}%"></span>`;
+          }).join('')
+        : '';
+      return (
+        `<article class="analytics-ksg-stage-row${stageDrilldownAttrs ? ' analytics-drilldown-target' : ''}"${stageDrilldownAttrs}>` +
+          `<div class="analytics-ksg-stage-head">` +
+            `<div class="analytics-ksg-stage-title">${escapeHtml_(item.title || 'КСГ')}</div>` +
+            `<div class="analytics-ksg-stage-ratio">${escapeHtml_(formatAnalyticsCountText_(totalPlan))} с планом</div>` +
+            `<div class="analytics-ksg-stage-percent">${escapeHtml_(formatAnalyticsPercentText_(item.okPercent))}</div>` +
+          `</div>` +
+          `<div class="analytics-ksg-stage-bar" aria-hidden="true">${segmentsHtml}</div>` +
+          `<div class="analytics-ksg-stage-stats">` +
+            segments.map(segment => {
+              const drilldownAttrs = buildAnalyticsDrilldownAttrs_(segment.rowIndexes, `${item.title || 'Этап'} · ${segment.label}`);
+              return (
+                `<span class="analytics-ksg-stage-stat analytics-ksg-stage-stat--${escapeHtml_(segment.key)}${drilldownAttrs ? ' analytics-drilldown-target analytics-drilldown-target--inline' : ''}"${drilldownAttrs}>${escapeHtml_(segment.label)}: ${escapeHtml_(formatAnalyticsCountText_(segment.value))}</span>`
+              );
+            }).join('') +
+          `</div>` +
+        `</article>`
+      );
+    }
+
+function buildAnalyticsKsgDashboardHtml_() {
+      const dashboard = buildAnalyticsKsgDashboard_();
+      const totalPlan = Math.max(0, Number(dashboard.totalPlan) || 0);
+      const onTime = Math.max(0, Number(dashboard.onTime) || 0);
+      const late = Math.max(0, Number(dashboard.late) || 0);
+      const missingPast = Math.max(0, Number(dashboard.missingPast) || 0);
+      const upcoming = Math.max(0, Number(dashboard.upcoming) || 0);
+      const withoutPlan = Math.max(0, Number(dashboard.withoutPlan) || 0);
+      const gaugePercent = Math.max(0, Math.min(Number(dashboard.okPercent) || 0, 100));
+      const summaryCardsHtml = [
+        buildAnalyticsKsgSummaryCardHtml_('В срок', onTime, 'good', formatAnalyticsPercentText_(totalPlan > 0 ? (onTime / totalPlan) * 100 : 0), dashboard.onTimeRowIndexes),
+        buildAnalyticsKsgSummaryCardHtml_('Выполнен с отставанием', late, 'late', formatAnalyticsPercentText_(totalPlan > 0 ? (late / totalPlan) * 100 : 0), dashboard.lateRowIndexes),
+        buildAnalyticsKsgSummaryCardHtml_('Нет факта', missingPast, 'missing', 'План уже прошёл', dashboard.missingPastRowIndexes),
+        buildAnalyticsKsgSummaryCardHtml_('Впереди', upcoming, 'upcoming', 'План ещё не наступил', dashboard.upcomingRowIndexes)
+      ].join('');
+      const gaugeHtml = buildAnalyticsGaugeHtml_({
+        valueText: formatAnalyticsPercentText_(gaugePercent),
+        ratioText: `${formatAnalyticsCountText_(onTime)} из ${formatAnalyticsCountText_(totalPlan)}`,
+        gaugePercent,
+        ariaLabel: `КСГ в срок: ${formatAnalyticsPercentText_(gaugePercent)}, ${formatAnalyticsCountText_(onTime)} из ${formatAnalyticsCountText_(totalPlan)}`,
+        wrapperClass: dashboard.onTimeRowIndexes.length ? 'analytics-drilldown-target' : '',
+        wrapperAttrs: buildAnalyticsDrilldownAttrs_(dashboard.onTimeRowIndexes, 'КСГ · В срок'),
+        segmentTotal: totalPlan + withoutPlan,
+        minSegmentLength: 1.4,
+        segments: [
+          { key: 'on-time', value: onTime },
+          { key: 'late', value: late },
+          { key: 'missing', value: missingPast },
+          { key: 'without-plan', value: withoutPlan }
+        ]
+      });
+      return (
+        `<div class="analytics-dashboard analytics-dashboard--ksg">` +
+          `<section class="analytics-dashboard-header">` +
+            `<div class="analytics-dashboard-header-main">` +
+              `<div class="analytics-dashboard-kicker">Аналитика</div>` +
+              `<h2>КСГ</h2>` +
+            `</div>` +
+            `<div class="analytics-dashboard-header-actions">` +
+              `${buildAnalyticsKsgGrbsFilterHtml_(dashboard)}` +
+              `${buildAnalyticsKsgContractorFilterHtml_(dashboard)}` +
+              `<button id="btnRefreshAnalyticsDashboardView" class="ghost analytics-refresh-button" type="button"${state.loading ? ' disabled' : ''}>Обновить</button>` +
+            `</div>` +
+          `</section>` +
+          `<section class="analytics-ksg-summary-grid">${summaryCardsHtml}</section>` +
+          `<section class="analytics-overview-grid analytics-overview-grid--ksg">` +
+            `<div class="analytics-breakdown-card analytics-ksg-stage-card">` +
+              `<div class="analytics-breakdown-card-title">План / факт по этапам</div>` +
+              `<div class="analytics-ksg-stage-list">${(Array.isArray(dashboard.stages) ? dashboard.stages : []).map(buildAnalyticsKsgStageRowHtml_).join('')}</div>` +
+            `</div>` +
+            `<div class="analytics-total-card analytics-ksg-total-card">` +
+              `<div class="analytics-total-card-title">В срок</div>` +
+              `${gaugeHtml}` +
+              `<div class="analytics-ksg-total-stats">` +
+                `<div class="analytics-ksg-total-stat analytics-ksg-total-stat--late${dashboard.lateRowIndexes.length ? ' analytics-drilldown-target' : ''}"${buildAnalyticsDrilldownAttrs_(dashboard.lateRowIndexes, 'КСГ · Выполнен с отставанием')}><span>Выполнен с отставанием</span><strong>${escapeHtml_(formatAnalyticsCountText_(late))}</strong></div>` +
                 `<div class="analytics-ksg-total-stat analytics-ksg-total-stat--missing${dashboard.missingPastRowIndexes.length ? ' analytics-drilldown-target' : ''}"${buildAnalyticsDrilldownAttrs_(dashboard.missingPastRowIndexes, 'КСГ · Нет факта')}><span>Нет факта</span><strong>${escapeHtml_(formatAnalyticsCountText_(missingPast))}</strong></div>` +
                 `<div class="analytics-ksg-total-stat analytics-ksg-total-stat--without-plan${dashboard.withoutPlanRowIndexes.length ? ' analytics-drilldown-target' : ''}"${buildAnalyticsDrilldownAttrs_(dashboard.withoutPlanRowIndexes, 'КСГ · Без плана')}><span>Без плана</span><strong>${escapeHtml_(formatAnalyticsCountText_(withoutPlan))}</strong></div>` +
               `</div>` +

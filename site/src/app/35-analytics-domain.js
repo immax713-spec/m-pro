@@ -553,6 +553,8 @@ function buildEmptyAnalyticsKsgDashboard_() {
         okPercent: 0,
         contractorOptions: [],
         activeContractors: [],
+        grbsOptions: [],
+        activeGrbs: [],
         totalPlanRowIndexes: [],
         onTimeRowIndexes: [],
         lateRowIndexes: [],
@@ -584,6 +586,8 @@ function buildAnalyticsKsgDashboard_() {
       const rows = Array.isArray(state.rows) ? state.rows : [];
       const contractorCounts = new Map();
       const selectedContractors = normalizeAnalyticsKsgContractorFilters_(state.analyticsKsgContractors);
+      const grbsCounts = new Map();
+      const selectedGrbs = normalizeAnalyticsKsgGrbsFilters_(state.analyticsKsgGrbs);
 
       rows.forEach((row, rowIndex) => {
         if (!Array.isArray(row)) return;
@@ -686,6 +690,179 @@ function buildAnalyticsKsgDashboard_() {
                 rowIndex,
                 status: 'late',
                 statusLabel: 'С опозданием',
+                deltaDays
+              });
+            }
+            return;
+          }
+
+          if (planTime < todayTime) {
+            const overdueDays = Math.max(1, Math.round((todayTime - planTime) / 86400000));
+            stage.missingPast += 1;
+            dashboard.missingPast += 1;
+            stage.missingPastRowIndexes.push(rowIndex);
+            dashboard.missingPastRowIndexes.push(rowIndex);
+            dashboard.problems.push({
+              ...problemBase,
+              rowIndex,
+              status: 'missing',
+              statusLabel: 'Нет факта',
+              deltaDays: overdueDays
+            });
+            return;
+          }
+
+          stage.upcoming += 1;
+          dashboard.upcoming += 1;
+          stage.upcomingRowIndexes.push(rowIndex);
+          dashboard.upcomingRowIndexes.push(rowIndex);
+        });
+
+        stage.resolved = stage.onTime + stage.late;
+        stage.okPercent = stage.totalPlan > 0 ? (stage.onTime / stage.totalPlan) * 100 : 0;
+        return stage;
+      });
+
+      dashboard.okPercent = dashboard.totalPlan > 0 ? (dashboard.onTime / dashboard.totalPlan) * 100 : 0;
+      dashboard.problems = dashboard.problems
+        .sort((left, right) => {
+          const weightDelta = getAnalyticsKsgProblemSortWeight_(right) - getAnalyticsKsgProblemSortWeight_(left);
+          if (weightDelta) return weightDelta;
+          const dayDelta = (Number(right && right.deltaDays) || 0) - (Number(left && left.deltaDays) || 0);
+          if (dayDelta) return dayDelta;
+          return normalizeText_(String(left && left.objectName || left && left.uin || ''))
+            .localeCompare(normalizeText_(String(right && right.objectName || right && right.uin || '')), 'ru');
+        })
+        .slice(0, 14);
+      return dashboard;
+    }
+
+function buildAnalyticsKsgDashboard_() {
+      const dashboard = buildEmptyAnalyticsKsgDashboard_();
+      const todayTime = startOfLocalDay_(new Date()).getTime();
+      const rows = Array.isArray(state.rows) ? state.rows : [];
+      const contractorCounts = new Map();
+      const grbsCounts = new Map();
+      const selectedContractors = normalizeAnalyticsKsgContractorFilters_(state.analyticsKsgContractors);
+      const selectedGrbs = normalizeAnalyticsKsgGrbsFilters_(state.analyticsKsgGrbs);
+
+      rows.forEach((row, rowIndex) => {
+        if (!Array.isArray(row)) return;
+        const hasKsgData = ANALYTICS_KSG_PAIR_DEFS.some(def => {
+          const planText = String(getAnalyticsFieldValueById_(rowIndex, def.planFieldId) || '').trim();
+          const factText = String(getAnalyticsFieldValueById_(rowIndex, def.factFieldId) || '').trim();
+          return Number.isFinite(getMonitoringDateTimestamp_(planText)) || Number.isFinite(getMonitoringDateTimestamp_(factText));
+        });
+        if (!hasKsgData) return;
+        const summary = getRegistryRowSummary_(rowIndex) || {};
+        const contractorLabel = String(summary.contractor || '').trim() || 'Не указан';
+        const grbsLabel = String(summary.grbs || '').trim() || 'Не указан';
+        contractorCounts.set(contractorLabel, (contractorCounts.get(contractorLabel) || 0) + 1);
+        grbsCounts.set(grbsLabel, (grbsCounts.get(grbsLabel) || 0) + 1);
+      });
+
+      dashboard.contractorOptions = Array.from(contractorCounts.entries())
+        .map(([label, count]) => ({ label, count }))
+        .sort((left, right) => normalizeText_(String(left && left.label || '')).localeCompare(normalizeText_(String(right && right.label || '')), 'ru'));
+      dashboard.activeContractors = dashboard.contractorOptions
+        .map(option => String(option && option.label || '').trim())
+        .filter(label => selectedContractors.includes(label));
+
+      dashboard.grbsOptions = Array.from(grbsCounts.entries())
+        .map(([label, count]) => ({ label, count }))
+        .sort((left, right) => normalizeText_(String(left && left.label || '')).localeCompare(normalizeText_(String(right && right.label || '')), 'ru'));
+      dashboard.activeGrbs = dashboard.grbsOptions
+        .map(option => String(option && option.label || '').trim())
+        .filter(label => selectedGrbs.includes(label));
+
+      const activeContractorSet = new Set(dashboard.activeContractors.map(label => normalizeText_(label)));
+      const activeGrbsSet = new Set(dashboard.activeGrbs.map(label => normalizeText_(label)));
+      const hasActiveContractorFilter = activeContractorSet.size > 0;
+      const hasActiveGrbsFilter = activeGrbsSet.size > 0;
+
+      dashboard.stages = ANALYTICS_KSG_PAIR_DEFS.map(def => {
+        const stage = {
+          key: String(def && def.key || '').trim(),
+          title: String(def && def.title || '').trim() || 'КСГ',
+          totalPlan: 0,
+          onTime: 0,
+          late: 0,
+          missingPast: 0,
+          upcoming: 0,
+          withoutPlan: 0,
+          resolved: 0,
+          okPercent: 0,
+          totalPlanRowIndexes: [],
+          onTimeRowIndexes: [],
+          lateRowIndexes: [],
+          missingPastRowIndexes: [],
+          upcomingRowIndexes: [],
+          withoutPlanRowIndexes: []
+        };
+
+        rows.forEach((row, rowIndex) => {
+          if (!Array.isArray(row)) return;
+          const summary = getRegistryRowSummary_(rowIndex) || {};
+          const contractorLabel = String(summary.contractor || '').trim() || 'Не указан';
+          const grbsLabel = String(summary.grbs || '').trim() || 'Не указан';
+          if (hasActiveContractorFilter && !activeContractorSet.has(normalizeText_(contractorLabel))) return;
+          if (hasActiveGrbsFilter && !activeGrbsSet.has(normalizeText_(grbsLabel))) return;
+
+          const planText = String(getAnalyticsFieldValueById_(rowIndex, def.planFieldId) || '').trim();
+          const factText = String(getAnalyticsFieldValueById_(rowIndex, def.factFieldId) || '').trim();
+          const planTime = getMonitoringDateTimestamp_(planText);
+          const factTime = getMonitoringDateTimestamp_(factText);
+          const hasPlan = Number.isFinite(planTime);
+          const hasFact = Number.isFinite(factTime);
+
+          if (!hasPlan && !hasFact) return;
+
+          const problemBase = {
+            stageKey: stage.key,
+            stageTitle: stage.title,
+            uin: String(summary.uin || '').trim(),
+            objectName: String(summary.name || '').trim(),
+            planText,
+            factText
+          };
+
+          if (!hasPlan && hasFact) {
+            stage.withoutPlan += 1;
+            dashboard.withoutPlan += 1;
+            stage.withoutPlanRowIndexes.push(rowIndex);
+            dashboard.withoutPlanRowIndexes.push(rowIndex);
+            dashboard.problems.push({
+              ...problemBase,
+              rowIndex,
+              status: 'without-plan',
+              statusLabel: 'Без плана',
+              deltaDays: NaN
+            });
+            return;
+          }
+
+          stage.totalPlan += 1;
+          dashboard.totalPlan += 1;
+          stage.totalPlanRowIndexes.push(rowIndex);
+          dashboard.totalPlanRowIndexes.push(rowIndex);
+
+          if (hasFact) {
+            const deltaDays = Math.round((factTime - planTime) / 86400000);
+            if (factTime <= planTime) {
+              stage.onTime += 1;
+              dashboard.onTime += 1;
+              stage.onTimeRowIndexes.push(rowIndex);
+              dashboard.onTimeRowIndexes.push(rowIndex);
+            } else {
+              stage.late += 1;
+              dashboard.late += 1;
+              stage.lateRowIndexes.push(rowIndex);
+              dashboard.lateRowIndexes.push(rowIndex);
+              dashboard.problems.push({
+                ...problemBase,
+                rowIndex,
+                status: 'late',
+                statusLabel: 'Выполнен с отставанием',
                 deltaDays
               });
             }
