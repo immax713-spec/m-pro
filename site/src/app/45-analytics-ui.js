@@ -731,6 +731,40 @@ function bindAnalyticsViewEvents_() {
       if (analyticsSection !== 'ksg') {
         return;
       }
+      view.querySelectorAll('[data-analytics-ksg-date]').forEach(input => {
+        const applyValue = () => {
+          const key = String(input.getAttribute('data-analytics-ksg-date') || '').trim();
+          const value = normalizeAnalyticsArchiveDateValue_(String(input.value || ''));
+          if (key === 'from') state.analyticsKsgDateFrom = value;
+          if (key === 'to') state.analyticsKsgDateTo = value;
+        };
+        input.oninput = applyValue;
+        input.onchange = applyValue;
+        input.onkeydown = evt => {
+          if (evt.key !== 'Enter') return;
+          evt.preventDefault();
+          applyValue();
+          const applyButton = view.querySelector('[data-analytics-ksg-apply-period]');
+          if (applyButton) applyButton.click();
+        };
+      });
+      view.querySelectorAll('[data-analytics-ksg-apply-period]').forEach(button => {
+        button.onclick = evt => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          const dateFromInput = view.querySelector('[data-analytics-ksg-date="from"]');
+          const dateToInput = view.querySelector('[data-analytics-ksg-date="to"]');
+          state.analyticsKsgDateFrom = normalizeAnalyticsArchiveDateValue_(dateFromInput && dateFromInput.value);
+          state.analyticsKsgDateTo = normalizeAnalyticsArchiveDateValue_(dateToInput && dateToInput.value);
+          if (state.analyticsKsgDateFrom && state.analyticsKsgDateTo && state.analyticsKsgDateFrom > state.analyticsKsgDateTo) {
+            const swap = state.analyticsKsgDateFrom;
+            state.analyticsKsgDateFrom = state.analyticsKsgDateTo;
+            state.analyticsKsgDateTo = swap;
+          }
+          persistRegistrySessionState_();
+          renderAnalyticsView_();
+        };
+      });
       view.querySelectorAll('[data-analytics-ksg-contractor-search]').forEach(input => {
         input.oninput = () => {
           const query = normalizeText_(String(input.value || ''));
@@ -747,12 +781,24 @@ function bindAnalyticsViewEvents_() {
           });
         };
       });
+      view.querySelectorAll('[data-analytics-ksg-filter]').forEach(node => {
+        node.ontoggle = () => {
+          const key = String(node.getAttribute('data-analytics-ksg-filter') || '').trim();
+          if (!key) return;
+          if (node.open) {
+            state.analyticsKsgOpenFilter = key;
+            return;
+          }
+          if (state.analyticsKsgOpenFilter === key) state.analyticsKsgOpenFilter = '';
+        };
+      });
       view.querySelectorAll('[data-analytics-ksg-contractor]').forEach(button => {
         button.onclick = evt => {
           evt.preventDefault();
           evt.stopPropagation();
           const value = String(button.getAttribute('data-analytics-ksg-contractor') || '').trim();
           if (!value) return;
+          state.analyticsKsgOpenFilter = 'contractor';
           if (value === '__all') {
             state.analyticsKsgContractors = [];
           } else {
@@ -794,6 +840,7 @@ function bindAnalyticsViewEvents_() {
           evt.stopPropagation();
           const value = String(button.getAttribute('data-analytics-ksg-grbs') || '').trim();
           if (!value) return;
+          state.analyticsKsgOpenFilter = 'grbs';
           if (value === '__all') {
             state.analyticsKsgGrbs = [];
           } else {
@@ -889,6 +936,25 @@ function buildAnalyticsKsgSummaryCardHtml_(label, value, tone, meta, rowIndexes)
           `<div class="analytics-ksg-summary-card-value">${escapeHtml_(formatAnalyticsCountText_(value))}</div>` +
           `<div class="analytics-ksg-summary-card-meta">${escapeHtml_(meta || ' ')}</div>` +
         `</article>`
+      );
+    }
+
+function buildAnalyticsKsgPeriodControlsHtml_(dashboard) {
+      const data = dashboard || {};
+      const dateFrom = normalizeAnalyticsArchiveDateValue_(data.activeDateFrom || state.analyticsKsgDateFrom);
+      const dateTo = normalizeAnalyticsArchiveDateValue_(data.activeDateTo || state.analyticsKsgDateTo);
+      return (
+        `<div class="analytics-ksg-period-controls">` +
+          `<label class="analytics-control-date-field analytics-ksg-date-field">` +
+            `<span>С</span>` +
+            `<input type="date" value="${escapeHtml_(dateFrom)}" data-analytics-ksg-date="from">` +
+          `</label>` +
+          `<label class="analytics-control-date-field analytics-ksg-date-field">` +
+            `<span>По</span>` +
+            `<input type="date" value="${escapeHtml_(dateTo)}" data-analytics-ksg-date="to">` +
+          `</label>` +
+          `<button class="analytics-control-toolbar-button analytics-control-toolbar-button--primary" type="button" data-analytics-ksg-apply-period="1">Показать</button>` +
+        `</div>`
       );
     }
 
@@ -1077,6 +1143,16 @@ function buildAnalyticsKsgFilterHtml_(options) {
       const searchAttr = `data-analytics-ksg-${searchKey}`;
       const optionsList = Array.isArray(settings.options) ? settings.options : [];
       const activeValues = Array.isArray(settings.activeValues) ? settings.activeValues : [];
+      const activeLabelSet = new Set(activeValues.map(value => normalizeText_(String(value || '').trim())));
+      const orderedActiveLabels = optionsList
+        .map(option => String(option && option.label || '').trim())
+        .filter(label => label && activeLabelSet.has(normalizeText_(label)));
+      const triggerText = orderedActiveLabels.length
+        ? (orderedActiveLabels.length === 1 ? orderedActiveLabels[0] : `${orderedActiveLabels[0]} +${orderedActiveLabels.length - 1}`)
+        : title;
+      const triggerTitle = orderedActiveLabels.length
+        ? orderedActiveLabels.join(', ')
+        : title;
       const totalObjects = optionsList.reduce((sum, option) => sum + Math.max(0, Number(option && option.count) || 0), 0);
       const menuHtml = optionsList.length
         ? (
@@ -1106,9 +1182,9 @@ function buildAnalyticsKsgFilterHtml_(options) {
           )
         : `<div class="analytics-filter-menu"><div class="analytics-filter-empty">${escapeHtml_(emptyMessage)}</div></div>`;
       return (
-        `<details class="analytics-filter-dropdown analytics-filter-dropdown--contractor">` +
-          `<summary class="analytics-filter-trigger">` +
-            `<span class="analytics-filter-trigger-text">${escapeHtml_(title)}</span>` +
+        `<details class="analytics-filter-dropdown analytics-filter-dropdown--contractor"${state.analyticsKsgOpenFilter === optionKey ? ' open' : ''} data-analytics-ksg-filter="${escapeHtml_(optionKey)}">` +
+          `<summary class="analytics-filter-trigger" title="${escapeHtml_(triggerTitle)}" aria-label="${escapeHtml_(triggerTitle)}">` +
+            `<span class="analytics-filter-trigger-text">${escapeHtml_(triggerText)}</span>` +
             `<span class="analytics-filter-trigger-caret" aria-hidden="true"></span>` +
           `</summary>` +
           `${menuHtml}` +
@@ -1183,6 +1259,7 @@ function buildAnalyticsKsgStageRowHtml_(stage) {
 
 function buildAnalyticsKsgDashboardHtml_() {
       const dashboard = buildAnalyticsKsgDashboard_();
+      const totalObjects = Math.max(0, Number(dashboard.totalObjects) || 0);
       const totalPlan = Math.max(0, Number(dashboard.totalPlan) || 0);
       const onTime = Math.max(0, Number(dashboard.onTime) || 0);
       const late = Math.max(0, Number(dashboard.late) || 0);
@@ -1191,6 +1268,7 @@ function buildAnalyticsKsgDashboardHtml_() {
       const withoutPlan = Math.max(0, Number(dashboard.withoutPlan) || 0);
       const gaugePercent = Math.max(0, Math.min(Number(dashboard.okPercent) || 0, 100));
       const summaryCardsHtml = [
+        buildAnalyticsKsgSummaryCardHtml_('Всего объектов', totalObjects, '', 'Текущая выборка КСГ', dashboard.totalObjectRowIndexes),
         buildAnalyticsKsgSummaryCardHtml_('В срок', onTime, 'good', formatAnalyticsPercentText_(totalPlan > 0 ? (onTime / totalPlan) * 100 : 0), dashboard.onTimeRowIndexes),
         buildAnalyticsKsgSummaryCardHtml_('Выполнен с отставанием', late, 'late', formatAnalyticsPercentText_(totalPlan > 0 ? (late / totalPlan) * 100 : 0), dashboard.lateRowIndexes),
         buildAnalyticsKsgSummaryCardHtml_('Нет факта', missingPast, 'missing', 'План уже прошёл', dashboard.missingPastRowIndexes),
@@ -1220,6 +1298,7 @@ function buildAnalyticsKsgDashboardHtml_() {
               `<h2>КСГ</h2>` +
             `</div>` +
             `<div class="analytics-dashboard-header-actions">` +
+              `${buildAnalyticsKsgPeriodControlsHtml_(dashboard)}` +
               `${buildAnalyticsKsgGrbsFilterHtml_(dashboard)}` +
               `${buildAnalyticsKsgContractorFilterHtml_(dashboard)}` +
               `<button id="btnRefreshAnalyticsDashboardView" class="ghost analytics-refresh-button" type="button"${state.loading ? ' disabled' : ''}>Обновить</button>` +

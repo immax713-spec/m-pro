@@ -277,6 +277,21 @@
     return createShellError(message);
   }
 
+  async function callAuthRpc(params, options) {
+    const timeoutMs = normalizeTimeoutMs(options && options.timeoutMs, authRequestTimeoutMs);
+    let result = await callRpc(RPC.auth, params || {}, { timeoutMs });
+    if (!result.error) return result;
+    const errorCode = normalizeString(result.error && result.error.code).toUpperCase();
+    const canRetryQuickNetworkFailure =
+      isTransientNetworkErrorLike(result.error)
+      && errorCode
+      && errorCode !== 'TIMEOUT';
+    if (!canRetryQuickNetworkFailure) return result;
+    await sleep(250);
+    result = await callRpc(RPC.auth, params || {}, { timeoutMs });
+    return result;
+  }
+
   async function invokeRpc(name, params) {
     const rpcName = normalizeString(name);
     if (!rpcName) throw createShellError('Не настроено имя RPC-функции', 'CONFIG');
@@ -849,11 +864,14 @@
     const password = normalizeString(options && options.password);
     const remember = !!(options && options.remember);
     if (!password) throw createShellError('Пароль обязателен', 'AUTH_INPUT');
-    const result = await invokeRpc(RPC.auth, {
+    const { data, error } = await callAuthRpc({
       p_password: password,
       p_remember: remember
+    }, {
+      timeoutMs: authRequestTimeoutMs
     });
-    return result && typeof result === 'object' ? result : {};
+    if (error) throw mapSupabaseError(error);
+    return data && typeof data === 'object' ? data : {};
   }
 
   async function authWithIdentity(options) {
@@ -868,12 +886,11 @@
     let data = null;
     let error = null;
 
-    ({ data, error } = await callRpcWithRetry(RPC.auth, {
+    ({ data, error } = await callAuthRpc({
       p_name: identity,
       p_password: password,
       p_remember: remember
     }, {
-      maxAttempts: 2,
       timeoutMs: authRequestTimeoutMs
     }));
 
@@ -894,11 +911,10 @@
 
       let legacyData = null;
       let legacyError = null;
-      ({ data: legacyData, error: legacyError } = await callRpcWithRetry(RPC.auth, {
+      ({ data: legacyData, error: legacyError } = await callAuthRpc({
         p_password: password,
         p_remember: remember
       }, {
-        maxAttempts: 1,
         timeoutMs: authRequestTimeoutMs
       }));
       if (legacyError) throw mapSupabaseError(legacyError);

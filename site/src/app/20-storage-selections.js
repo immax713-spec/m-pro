@@ -195,6 +195,8 @@ function buildRegistrySessionStatePayload_() {
           analyticsSection: normalizeAnalyticsSection_(state.analyticsSection),
           analyticsControlDateFrom: normalizeAnalyticsArchiveDateValue_(state.analyticsControlDateFrom),
           analyticsControlDateTo: normalizeAnalyticsArchiveDateValue_(state.analyticsControlDateTo),
+          analyticsKsgDateFrom: normalizeAnalyticsArchiveDateValue_(state.analyticsKsgDateFrom),
+          analyticsKsgDateTo: normalizeAnalyticsArchiveDateValue_(state.analyticsKsgDateTo),
           analyticsKsgContractors: normalizeAnalyticsKsgContractorFilters_(state.analyticsKsgContractors),
           analyticsKsgGrbs: normalizeAnalyticsKsgGrbsFilters_(state.analyticsKsgGrbs),
           sidebarExpanded: !!state.sidebarExpanded,
@@ -251,6 +253,8 @@ function loadRegistrySessionState_() {
             analyticsSection: normalizeAnalyticsSection_(parsed && parsed.analyticsSection),
             analyticsControlDateFrom: normalizeAnalyticsArchiveDateValue_(parsed && parsed.analyticsControlDateFrom),
             analyticsControlDateTo: normalizeAnalyticsArchiveDateValue_(parsed && parsed.analyticsControlDateTo),
+            analyticsKsgDateFrom: normalizeAnalyticsArchiveDateValue_(parsed && parsed.analyticsKsgDateFrom),
+            analyticsKsgDateTo: normalizeAnalyticsArchiveDateValue_(parsed && parsed.analyticsKsgDateTo),
             analyticsKsgContractors: normalizeAnalyticsKsgContractorFilters_(parsed && parsed.analyticsKsgContractors),
             analyticsKsgGrbs: normalizeAnalyticsKsgGrbsFilters_(parsed && parsed.analyticsKsgGrbs),
             sidebarExpanded: parsed && parsed.sidebarExpanded !== undefined ? !!parsed.sidebarExpanded : true,
@@ -281,6 +285,8 @@ function loadRegistrySessionState_() {
             analyticsSection: 'quarter',
             analyticsControlDateFrom: '',
             analyticsControlDateTo: '',
+            analyticsKsgDateFrom: '',
+            analyticsKsgDateTo: '',
             analyticsKsgContractors: [],
             analyticsKsgGrbs: [],
             sidebarExpanded: true,
@@ -2724,6 +2730,8 @@ function applyRegistrySessionState_(session) {
       state.analyticsSection = normalizeAnalyticsSection_(data.analyticsSection);
       state.analyticsControlDateFrom = normalizeAnalyticsArchiveDateValue_(data.analyticsControlDateFrom);
       state.analyticsControlDateTo = normalizeAnalyticsArchiveDateValue_(data.analyticsControlDateTo);
+      state.analyticsKsgDateFrom = normalizeAnalyticsArchiveDateValue_(data.analyticsKsgDateFrom);
+      state.analyticsKsgDateTo = normalizeAnalyticsArchiveDateValue_(data.analyticsKsgDateTo);
       state.analyticsKsgContractors = normalizeAnalyticsKsgContractorFilters_(data.analyticsKsgContractors);
       state.analyticsKsgGrbs = normalizeAnalyticsKsgGrbsFilters_(data.analyticsKsgGrbs);
       state.sidebarExpanded = data.sidebarExpanded !== undefined ? !!data.sidebarExpanded : true;

@@ -544,6 +544,7 @@ function buildAnalyticsQuarterTwoDashboard_(baseDashboard) {
 
 function buildEmptyAnalyticsKsgDashboard_() {
       return {
+        totalObjects: 0,
         totalPlan: 0,
         onTime: 0,
         late: 0,
@@ -555,6 +556,9 @@ function buildEmptyAnalyticsKsgDashboard_() {
         activeContractors: [],
         grbsOptions: [],
         activeGrbs: [],
+        activeDateFrom: '',
+        activeDateTo: '',
+        totalObjectRowIndexes: [],
         totalPlanRowIndexes: [],
         onTimeRowIndexes: [],
         lateRowIndexes: [],
@@ -578,6 +582,52 @@ function getAnalyticsKsgProblemSortWeight_(item) {
       if (status === 'late') return 2;
       if (status === 'without-plan') return 1;
       return 0;
+    }
+
+function normalizeAnalyticsKsgDateRange_() {
+      let dateFrom = normalizeAnalyticsArchiveDateValue_(state.analyticsKsgDateFrom);
+      let dateTo = normalizeAnalyticsArchiveDateValue_(state.analyticsKsgDateTo);
+      if (dateFrom && dateTo && dateFrom > dateTo) {
+        const swap = dateFrom;
+        dateFrom = dateTo;
+        dateTo = swap;
+        state.analyticsKsgDateFrom = dateFrom;
+        state.analyticsKsgDateTo = dateTo;
+      }
+      return { dateFrom, dateTo };
+    }
+
+function isAnalyticsKsgTimestampInRange_(timestamp, dateFrom, dateTo) {
+      const time = Number(timestamp);
+      if (!Number.isFinite(time)) return false;
+      const minTime = dateFrom ? getMonitoringDateTimestamp_(dateFrom) : NaN;
+      const maxBaseTime = dateTo ? getMonitoringDateTimestamp_(dateTo) : NaN;
+      const maxTime = Number.isFinite(maxBaseTime) ? maxBaseTime + 86399999 : NaN;
+      if (Number.isFinite(minTime) && time < minTime) return false;
+      if (Number.isFinite(maxTime) && time > maxTime) return false;
+      return true;
+    }
+
+function isAnalyticsKsgEntryInDateRange_(planTime, factTime, dateFrom, dateTo) {
+      if (!dateFrom && !dateTo) return true;
+      return (
+        isAnalyticsKsgTimestampInRange_(planTime, dateFrom, dateTo)
+        || isAnalyticsKsgTimestampInRange_(factTime, dateFrom, dateTo)
+      );
+    }
+
+function isAnalyticsKsgRowInDateRange_(rowIndex, dateFrom, dateTo) {
+      if (!dateFrom && !dateTo) return true;
+      return ANALYTICS_KSG_PAIR_DEFS.some(def => {
+        const planText = String(getAnalyticsFieldValueById_(rowIndex, def.planFieldId) || '').trim();
+        const factText = String(getAnalyticsFieldValueById_(rowIndex, def.factFieldId) || '').trim();
+        return isAnalyticsKsgEntryInDateRange_(
+          getMonitoringDateTimestamp_(planText),
+          getMonitoringDateTimestamp_(factText),
+          dateFrom,
+          dateTo
+        );
+      });
     }
 
 function buildAnalyticsKsgDashboard_() {
@@ -743,8 +793,15 @@ function buildAnalyticsKsgDashboard_() {
       const rows = Array.isArray(state.rows) ? state.rows : [];
       const contractorCounts = new Map();
       const grbsCounts = new Map();
+      const totalObjectRowIndexes = [];
+      const dateRange = normalizeAnalyticsKsgDateRange_();
+      const activeDateFrom = dateRange.dateFrom;
+      const activeDateTo = dateRange.dateTo;
       const selectedContractors = normalizeAnalyticsKsgContractorFilters_(state.analyticsKsgContractors);
       const selectedGrbs = normalizeAnalyticsKsgGrbsFilters_(state.analyticsKsgGrbs);
+
+      dashboard.activeDateFrom = activeDateFrom;
+      dashboard.activeDateTo = activeDateTo;
 
       rows.forEach((row, rowIndex) => {
         if (!Array.isArray(row)) return;
@@ -754,6 +811,7 @@ function buildAnalyticsKsgDashboard_() {
           return Number.isFinite(getMonitoringDateTimestamp_(planText)) || Number.isFinite(getMonitoringDateTimestamp_(factText));
         });
         if (!hasKsgData) return;
+        if (!isAnalyticsKsgRowInDateRange_(rowIndex, activeDateFrom, activeDateTo)) return;
         const summary = getRegistryRowSummary_(rowIndex) || {};
         const contractorLabel = String(summary.contractor || '').trim() || 'Не указан';
         const grbsLabel = String(summary.grbs || '').trim() || 'Не указан';
@@ -779,6 +837,31 @@ function buildAnalyticsKsgDashboard_() {
       const activeGrbsSet = new Set(dashboard.activeGrbs.map(label => normalizeText_(label)));
       const hasActiveContractorFilter = activeContractorSet.size > 0;
       const hasActiveGrbsFilter = activeGrbsSet.size > 0;
+
+      rows.forEach((row, rowIndex) => {
+        if (!Array.isArray(row)) return;
+        if (!isAnalyticsKsgRowInDateRange_(rowIndex, activeDateFrom, activeDateTo)) return;
+        const summary = getRegistryRowSummary_(rowIndex) || {};
+        const contractorLabel = String(summary.contractor || '').trim() || 'Не указан';
+        const grbsLabel = String(summary.grbs || '').trim() || 'Не указан';
+        if (hasActiveContractorFilter && !activeContractorSet.has(normalizeText_(contractorLabel))) return;
+        if (hasActiveGrbsFilter && !activeGrbsSet.has(normalizeText_(grbsLabel))) return;
+        const hasVisibleKsgEntry = ANALYTICS_KSG_PAIR_DEFS.some(def => {
+          const planText = String(getAnalyticsFieldValueById_(rowIndex, def.planFieldId) || '').trim();
+          const factText = String(getAnalyticsFieldValueById_(rowIndex, def.factFieldId) || '').trim();
+          const planTime = getMonitoringDateTimestamp_(planText);
+          const factTime = getMonitoringDateTimestamp_(factText);
+          const hasPlan = Number.isFinite(planTime);
+          const hasFact = Number.isFinite(factTime);
+          if (!hasPlan && !hasFact) return false;
+          return isAnalyticsKsgEntryInDateRange_(planTime, factTime, activeDateFrom, activeDateTo);
+        });
+        if (!hasVisibleKsgEntry) return;
+        totalObjectRowIndexes.push(rowIndex);
+      });
+
+      dashboard.totalObjectRowIndexes = totalObjectRowIndexes.slice();
+      dashboard.totalObjects = totalObjectRowIndexes.length;
 
       dashboard.stages = ANALYTICS_KSG_PAIR_DEFS.map(def => {
         const stage = {
@@ -816,6 +899,7 @@ function buildAnalyticsKsgDashboard_() {
           const hasFact = Number.isFinite(factTime);
 
           if (!hasPlan && !hasFact) return;
+          if (!isAnalyticsKsgEntryInDateRange_(planTime, factTime, activeDateFrom, activeDateTo)) return;
 
           const problemBase = {
             stageKey: stage.key,
