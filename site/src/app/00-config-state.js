@@ -166,13 +166,15 @@
         }
       ]
     });
-    const ANALYTICS_KSG_PAIR_DEFS = Object.freeze([
-      { key: 'ksg_2', title: 'РС', planFieldId: 'ksg_2_2', factFieldId: 'ksg_2_3' },
-      { key: 'ksg_4', title: 'Передача площадки', planFieldId: 'ksg_4_2', factFieldId: 'ksg_4_3' },
+const ANALYTICS_KSG_PAIR_DEFS = Object.freeze([
+      { key: 'ksg_2', title: 'Разрешение на строительство', planFieldId: 'ksg_2_2', factFieldId: 'ksg_2_3' },
+      { key: 'ksg_4', title: 'Передача стройплощадки подрядчику', planFieldId: 'ksg_4_2', factFieldId: 'ksg_4_3' },
       { key: 'ksg_5', title: 'Начало СМР', planFieldId: 'ksg_5_2', factFieldId: 'ksg_5_3' },
       { key: 'ksg_6', title: 'Окончание СМР', planFieldId: 'ksg_6_2', factFieldId: 'ksg_6_3' },
-      { key: 'ksg_10', title: 'ЗОС', planFieldId: 'ksg_10_2', factFieldId: 'ksg_10_3' },
-      { key: 'ksg_12', title: 'РВ', planFieldId: 'ksg_12_2', factFieldId: 'ksg_12_3' }
+      { key: 'ksg_8', title: 'Акты технологического присоединения', planFieldId: 'ksg_8_2', factFieldId: 'ksg_8_3' },
+      { key: 'ksg_9', title: 'Папка ЗОС', planFieldId: 'ksg_9_2', factFieldId: 'ksg_9_3' },
+      { key: 'ksg_10', title: 'Получение ЗОС', planFieldId: 'ksg_10_2', factFieldId: 'ksg_10_3' },
+      { key: 'ksg_12', title: 'Получение РВ', planFieldId: 'ksg_12_2', factFieldId: 'ksg_12_3' }
     ]);
 
     // ===== Field specs =====
@@ -596,14 +598,14 @@
         defaultOption: '__all__',
         options: [
           { key: '__all__', dropdownLabel: 'Все позиции', title: 'КСГ', subtitle: 'Выбранные позиции блока КСГ', mode: 'all', fieldIds: [] },
-          { key: 'ksg_2_2', dropdownLabel: 'Разрешение на строительство', title: 'КСГ · Разрешение на строительство', subtitle: 'Получение разрешения на строительство', mode: 'all', fieldIds: ['ksg_2_2'], collectAllMatches: true, matchGroupedTitle: true },
-          { key: 'ksg_4_2', dropdownLabel: 'Передача стройплощадки подрядчику', title: 'КСГ · Передача стройплощадки подрядчику', subtitle: 'Передача строительной площадки подрядчику', mode: 'all', fieldIds: ['ksg_4_2'], collectAllMatches: true, matchGroupedTitle: true },
-          { key: 'ksg_5_1', dropdownLabel: 'Начало СМР', title: 'КСГ · Начало СМР', subtitle: 'Начало СМР', mode: 'all', fieldIds: ['ksg_5_1'], collectAllMatches: true, matchGroupedTitle: true },
-          { key: 'ksg_6_1', dropdownLabel: 'Окончание СМР', title: 'КСГ · Окончание СМР', subtitle: 'Окончание СМР', mode: 'all', fieldIds: ['ksg_6_1'], collectAllMatches: true, matchGroupedTitle: true },
-          { key: 'ksg_8_2', dropdownLabel: 'Акты технологического присоединения', title: 'КСГ · Акты технологического присоединения', subtitle: 'Получение актов технологического присоединения', mode: 'all', fieldIds: ['ksg_8_2'], collectAllMatches: true, matchGroupedTitle: true },
-          { key: 'ksg_9_2', dropdownLabel: 'Папка ЗОС', title: 'КСГ · Папка ЗОС', subtitle: 'Формирование папки ЗОС', mode: 'all', fieldIds: ['ksg_9_2'], collectAllMatches: true, matchGroupedTitle: true },
-          { key: 'ksg_10_2', dropdownLabel: 'Получение ЗОС', title: 'КСГ · Получение ЗОС', subtitle: 'Получение ЗОС', mode: 'all', fieldIds: ['ksg_10_2'], collectAllMatches: true, matchGroupedTitle: true },
-          { key: 'ksg_12_1', dropdownLabel: 'Получение РВ', title: 'КСГ · Получение РВ', subtitle: 'Получение РВ', mode: 'all', fieldIds: ['ksg_12_1'], collectAllMatches: true, matchGroupedTitle: true }
+          { key: 'ksg_2', dropdownLabel: 'Разрешение на строительство', title: 'КСГ · Разрешение на строительство', subtitle: 'Получение разрешения на строительство', mode: 'all', fieldIds: ['ksg_2_2', 'ksg_2_3'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_4', dropdownLabel: 'Передача стройплощадки подрядчику', title: 'КСГ · Передача стройплощадки подрядчику', subtitle: 'Передача строительной площадки подрядчику', mode: 'all', fieldIds: ['ksg_4_2', 'ksg_4_3'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_5', dropdownLabel: 'Начало СМР', title: 'КСГ · Начало СМР', subtitle: 'Начало СМР', mode: 'all', fieldIds: ['ksg_5_2', 'ksg_5_3'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_6', dropdownLabel: 'Окончание СМР', title: 'КСГ · Окончание СМР', subtitle: 'Окончание СМР', mode: 'all', fieldIds: ['ksg_6_2', 'ksg_6_3'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_8', dropdownLabel: 'Акты технологического присоединения', title: 'КСГ · Акты технологического присоединения', subtitle: 'Получение актов технологического присоединения', mode: 'all', fieldIds: ['ksg_8_2', 'ksg_8_3'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_9', dropdownLabel: 'Папка ЗОС', title: 'КСГ · Папка ЗОС', subtitle: 'Формирование папки ЗОС', mode: 'all', fieldIds: ['ksg_9_2', 'ksg_9_3'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_10', dropdownLabel: 'Получение ЗОС', title: 'КСГ · Получение ЗОС', subtitle: 'Получение ЗОС', mode: 'all', fieldIds: ['ksg_10_2', 'ksg_10_3'], collectAllMatches: true, matchGroupedTitle: true },
+          { key: 'ksg_12', dropdownLabel: 'Получение РВ', title: 'КСГ · Получение РВ', subtitle: 'Получение РВ', mode: 'all', fieldIds: ['ksg_12_2', 'ksg_12_3'], collectAllMatches: true, matchGroupedTitle: true }
         ]
       },
       suid_all: {
