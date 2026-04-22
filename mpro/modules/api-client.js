@@ -187,10 +187,15 @@
                         try {
                             return await fetchBootstrapBundleFromSupabase_(options);
                         } catch (error) {
-                            if (!isMissingSupabaseRpcError_(error) && !isRetriableSupabaseTransportError_(error)) {
+                            const canFallbackToGranularRpc =
+                                isMissingSupabaseRpcError_(error) ||
+                                String(error?.code || '').trim().toUpperCase() === 'BACKEND_NOT_DEPLOYED';
+                            if (!canFallbackToGranularRpc) {
                                 throw error;
                             }
-                            console.warn('Bootstrap bundle fetch failed, falling back to granular RPCs:', error);
+                            // Granular fallback is a compatibility path for older backends without the bundle RPC.
+                            // On transient network failures it only multiplies the number of failing requests.
+                            console.warn('Bootstrap bundle RPC is unavailable, falling back to granular RPCs:', error);
                         }
                     }
                     return fetchDataFromSupabase_(options);

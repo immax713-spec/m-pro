@@ -10,8 +10,9 @@
 
   const deployConfig = {
     ...currentDeployConfig,
-    assetVersion: '20260422b',
-    supabaseUrl: 'https://vsdfxrnkxohsuewyvpih.supabase.co',
+    assetVersion: '20260422c',
+    // Route browser traffic through the same origin to avoid provider/CDN reachability issues.
+    supabaseUrl: '/_supabase',
     supabaseAnonKey: 'sb_publishable_7deVw5OluDBmYalvdq_13Q_yKrCDT5H'
   };
 

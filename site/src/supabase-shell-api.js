@@ -277,6 +277,60 @@
     return createShellError(message);
   }
 
+  function canUseBootstrapFallbackForError(error) {
+    const code = normalizeString(error && error.code).toUpperCase();
+    if (!code) return false;
+    if (code === 'UNAUTHORIZED') return false;
+    return (
+      code === 'NETWORK_UNREACHABLE' ||
+      code === 'BACKEND_NOT_DEPLOYED' ||
+      code === 'MISSING_TABLE' ||
+      code === 'SECURE_DATA_LAYER_REQUIRED'
+    );
+  }
+
+  function createNoChangeBootstrapPayload(version) {
+    return {
+      changed: false,
+      version: normalizeVersion(version),
+      fetchedAt: new Date().toISOString()
+    };
+  }
+
+  async function loadCachedBundleForBootstrap(options) {
+    const sessionToken = normalizeString(options && options.sessionToken);
+    if (!sessionToken) return null;
+    try {
+      return await getBundle({
+        sessionToken,
+        dataset: options && options.dataset,
+        skipRemoteCheck: true
+      });
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  async function resolveBootstrapBundleWithFallback(bundlePromise, options) {
+    try {
+      return await bundlePromise;
+    } catch (error) {
+      if (!!(options && options.force) || !canUseBootstrapFallbackForError(error)) throw error;
+      const cachedBundle = await loadCachedBundleForBootstrap(options);
+      if (cachedBundle) return cachedBundle;
+      throw error;
+    }
+  }
+
+  async function resolveOptionalBootstrapPayload(promise, fallbackVersion) {
+    try {
+      return await promise;
+    } catch (error) {
+      if (!canUseBootstrapFallbackForError(error)) throw error;
+      return createNoChangeBootstrapPayload(fallbackVersion);
+    }
+  }
+
   async function callAuthRpc(params, options) {
     const timeoutMs = normalizeTimeoutMs(options && options.timeoutMs, authRequestTimeoutMs);
     let result = await callRpc(RPC.auth, params || {}, { timeoutMs });
@@ -978,12 +1032,33 @@
             ))
       : Promise.resolve(null);
 
-    const [bundle, monitoringOverlay, mapOverlay, sharedSelections, sharedSelectionWork] = await Promise.all([
-      bundlePromise,
-      monitoringOverlayPromise,
-      mapOverlayPromise,
-      selectionsPromise,
-      workPromise
+    const bundle = await resolveBootstrapBundleWithFallback(bundlePromise, {
+      sessionToken,
+      dataset: settings.dataset,
+      force: !!settings.force
+    });
+    const [
+      monitoringOverlay,
+      mapOverlay,
+      sharedSelections,
+      sharedSelectionWork
+    ] = await Promise.all([
+      resolveOptionalBootstrapPayload(
+        monitoringOverlayPromise,
+        getCachedBootstrapVersion(cachedBootstrap, 'monitoringOverlayVersion')
+      ),
+      resolveOptionalBootstrapPayload(
+        mapOverlayPromise,
+        getCachedBootstrapVersion(cachedBootstrap, 'mapOverlayVersion')
+      ),
+      resolveOptionalBootstrapPayload(
+        selectionsPromise,
+        getCachedBootstrapVersion(cachedBootstrap, 'sharedSelectionsVersion')
+      ),
+      resolveOptionalBootstrapPayload(
+        workPromise,
+        getCachedBootstrapVersion(cachedBootstrap, 'sharedSelectionWorkVersion')
+      )
     ]);
     const session = bundle && bundle.currentUser
       ? { user: cloneJson(bundle.currentUser) }

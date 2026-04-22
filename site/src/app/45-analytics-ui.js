@@ -1220,6 +1220,26 @@ function buildAnalyticsKsgGrbsFilterHtml_(dashboard) {
       });
     }
 
+function buildAnalyticsKsgSelectionSummaryPart_(label, values) {
+      const items = Array.isArray(values)
+        ? values.map(value => String(value || '').trim()).filter(Boolean)
+        : [];
+      if (!items.length) return '';
+      const valueText = items.length === 1
+        ? items[0]
+        : `${items[0]} +${items.length - 1}`;
+      return `${label}: ${valueText}`;
+    }
+
+function buildAnalyticsKsgSelectionSummaryText_(dashboard) {
+      const data = dashboard || {};
+      const parts = [
+        buildAnalyticsKsgSelectionSummaryPart_('ГРБС', normalizeAnalyticsKsgGrbsFilters_(data.activeGrbs)),
+        buildAnalyticsKsgSelectionSummaryPart_('Генподрядчик', normalizeAnalyticsKsgContractorFilters_(data.activeContractors))
+      ].filter(Boolean);
+      return parts.join(' • ');
+    }
+
 function buildAnalyticsKsgStageRowHtml_(stage) {
       const item = stage || {};
       const totalPlan = Math.max(0, Number(item.totalPlan) || 0);
@@ -1267,8 +1287,12 @@ function buildAnalyticsKsgDashboardHtml_() {
       const upcoming = Math.max(0, Number(dashboard.upcoming) || 0);
       const withoutPlan = Math.max(0, Number(dashboard.withoutPlan) || 0);
       const gaugePercent = Math.max(0, Math.min(Number(dashboard.okPercent) || 0, 100));
+      const selectionSummary = buildAnalyticsKsgSelectionSummaryText_(dashboard);
+      const totalObjectsMeta = selectionSummary
+        ? `Текущая выборка · ${selectionSummary}`
+        : 'Текущая выборка КСГ';
       const summaryCardsHtml = [
-        buildAnalyticsKsgSummaryCardHtml_('Всего объектов', totalObjects, '', 'Текущая выборка КСГ', dashboard.totalObjectRowIndexes),
+        buildAnalyticsKsgSummaryCardHtml_('Всего объектов', totalObjects, '', totalObjectsMeta, dashboard.totalObjectRowIndexes),
         buildAnalyticsKsgSummaryCardHtml_('В срок', onTime, 'good', formatAnalyticsPercentText_(totalPlan > 0 ? (onTime / totalPlan) * 100 : 0), dashboard.onTimeRowIndexes),
         buildAnalyticsKsgSummaryCardHtml_('Выполнен с отставанием', late, 'late', formatAnalyticsPercentText_(totalPlan > 0 ? (late / totalPlan) * 100 : 0), dashboard.lateRowIndexes),
         buildAnalyticsKsgSummaryCardHtml_('Нет факта', missingPast, 'missing', 'План уже прошёл', dashboard.missingPastRowIndexes),
