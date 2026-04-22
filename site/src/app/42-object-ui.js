@@ -1229,9 +1229,7 @@ function renderSectionStack_() {
       });
       stack.querySelectorAll('[data-ksg-state-save]').forEach(button => {
         button.addEventListener('click', () => {
-          const inputId = String(button.getAttribute('data-input-id') || '').trim();
-          const input = inputId ? document.getElementById(inputId) : null;
-          const isoDate = input ? String(input.value || '').trim() : '';
+          const isoDate = String(button.getAttribute('data-updated-date') || '').trim() || formatLocalDateInputValue_(new Date());
           saveSelectedObjectKsgState_(getSelectedObjectKey_(), isoDate);
         });
       });
@@ -1391,30 +1389,24 @@ function isKsgSection_(section) {
       return getObjectKsgStateRecordByObjectKey_(getSelectedObjectKey_());
     }
 
-    function getKsgSectionUpdatedDateInputValue_() {
-      const stateRecord = getSelectedObjectKsgStateRecord_();
-      const normalizedStored = normalizeDateRangeFacetBoundary_(stateRecord && stateRecord.updatedDate);
-      if (normalizedStored) return normalizedStored;
-      return formatLocalDateInputValue_(new Date());
-    }
-
     function renderKsgSectionToolbarHtml_(section, rowIndex, editing) {
       if (editing || !isKsgSection_(section)) return '';
       const objectKey = normalizeMonitoringObjectKey_(getSelectedObjectKey_());
       if (!objectKey) return '';
       const stateRecord = getSelectedObjectKsgStateRecord_();
-      const inputId = `ksg_section_update_${rowIndex}`;
       const busy = state.objectSaving || state.objectKsgStateLoadingObjectKey === objectKey;
       const disabledAttr = busy ? ' disabled' : '';
       const updatedDateText = formatRegistryDateText_(stateRecord && stateRecord.updatedDate) || '';
       const updatedByText = String(stateRecord && stateRecord.updatedBy || '').trim();
+      const todayIsoDate = formatLocalDateInputValue_(new Date());
       const metaText = updatedDateText
         ? `Обновлено: ${updatedDateText}${updatedByText ? ` · ${updatedByText}` : ''}`
         : 'Дата обновления блока не указана';
+      const visibleText = updatedDateText || 'Не обновлялось';
       return (
         `<div class="ksg-section-toolbar" title="${escapeHtml_(metaText)}">` +
-          `<input class="field-input ksg-section-date" type="date" id="${escapeHtml_(inputId)}" value="${escapeHtml_(getKsgSectionUpdatedDateInputValue_())}"${disabledAttr}>` +
-          `<button class="ghost ksg-section-update-button" type="button" data-ksg-state-save data-input-id="${escapeHtml_(inputId)}"${disabledAttr}>Обновить</button>` +
+          `<span class="ksg-section-updated-value">${escapeHtml_(visibleText)}</span>` +
+          `<button class="ghost ksg-section-update-button" type="button" data-ksg-state-save data-updated-date="${escapeHtml_(todayIsoDate)}"${disabledAttr}>Обновить</button>` +
         `</div>`
       );
     }
