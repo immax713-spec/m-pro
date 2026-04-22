@@ -919,8 +919,14 @@
     .section-item.changed .field-input,.section-subitem.changed .field-input,.passport-item.changed .field-input{border-color:rgba(15,125,112,.36);box-shadow:0 0 0 3px rgba(15,125,112,.08);background:linear-gradient(180deg,rgba(241,250,247,.96) 0%,rgba(255,255,255,.96) 100%)}
     .section-item .field-link-action,.section-subitem .field-link-action{margin-top:2px}
     .section-group-item{gap:8px}
+    .section-group-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
     .section-group-grid{display:grid;grid-template-columns:1fr;gap:8px}
     .section-subitem-label{margin:0;padding-top:1px;font-size:10px;line-height:1.1;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+    .ksg-section-toolbar{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+    .ksg-section-date{width:168px;min-width:168px;height:36px!important;padding:0 12px!important;border-radius:12px!important;font-size:12px!important}
+    .ksg-section-update-button{min-height:36px;padding:0 16px;border-radius:12px;font-size:12px;font-weight:800;box-shadow:none}
+    .ksg-section-update-button:hover{transform:none;box-shadow:none}
+    .ksg-section-update-button:disabled,.ksg-section-date:disabled{opacity:.6}
 
     /* ===== Save state ===== */
     .empty-state{padding:12px;border-radius:16px;border:1px dashed var(--panel-line);color:var(--muted);background:rgba(255,255,255,.66);line-height:1.45;font-size:12px}

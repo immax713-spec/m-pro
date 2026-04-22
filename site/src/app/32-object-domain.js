@@ -82,13 +82,113 @@ function resetActiveObjectCardUiState_() {
         });
     }
 
-    function ensureSelectedObjectMonitoringHistoryLoaded_() {
+function ensureSelectedObjectMonitoringHistoryLoaded_() {
       if (!state.activeSections.some(isMonitoringHistoryHostSection_)) return;
       const objectId = getSelectedObjectKey_();
       if (!objectId || !state.currentUser || !state.sessionToken) return;
       const objectKey = normalizeMonitoringObjectKey_(objectId);
       if (Array.isArray(state.monitoringHistoryByObjectKey[objectKey]) || state.monitoringHistoryLoadingObjectKey === objectKey) return;
       loadObjectMonitoringHistory_(objectId);
+    }
+
+    function normalizeObjectKsgStateRecord_(payload) {
+      const item = payload && typeof payload === 'object' ? payload : {};
+      return {
+        objectId: String(item.objectId || '').trim(),
+        updatedDate: String(item.updatedDate || '').trim(),
+        updatedAt: String(item.updatedAt || '').trim(),
+        updatedBy: String(item.updatedBy || '').trim()
+      };
+    }
+
+    function getObjectKsgStateRecordByObjectKey_(objectKey) {
+      const key = normalizeMonitoringObjectKey_(objectKey);
+      if (!key) return normalizeObjectKsgStateRecord_(null);
+      return normalizeObjectKsgStateRecord_(state.objectKsgStateByObjectKey[key]);
+    }
+
+    function loadObjectKsgState_(objectId, options) {
+      const objectKey = normalizeMonitoringObjectKey_(objectId);
+      if (!objectKey) return Promise.resolve(normalizeObjectKsgStateRecord_(null));
+      const settings = options || {};
+      if (!settings.force && state.objectKsgStateByObjectKey[objectKey]) {
+        return Promise.resolve(getObjectKsgStateRecordByObjectKey_(objectKey));
+      }
+      state.objectKsgStateLoadingObjectKey = objectKey;
+      if (Object.prototype.hasOwnProperty.call(state.objectKsgStateErrorsByObjectKey, objectKey)) {
+        delete state.objectKsgStateErrorsByObjectKey[objectKey];
+      }
+      renderSectionStack_();
+      return fetchObjectKsgState_(objectId)
+        .then(result => {
+          state.objectKsgStateByObjectKey[objectKey] = normalizeObjectKsgStateRecord_(result);
+          return getObjectKsgStateRecordByObjectKey_(objectKey);
+        })
+        .catch(error => {
+          state.objectKsgStateErrorsByObjectKey[objectKey] = error && error.message ? error.message : String(error || 'Ошибка загрузки');
+          return normalizeObjectKsgStateRecord_(null);
+        })
+        .finally(() => {
+          if (state.objectKsgStateLoadingObjectKey === objectKey) state.objectKsgStateLoadingObjectKey = '';
+          renderSectionStack_();
+        });
+    }
+
+    function ensureSelectedObjectKsgStateLoaded_() {
+      if (!state.activeSections.some(isKsgSection_)) return;
+      const objectId = getSelectedObjectKey_();
+      if (!objectId || !state.currentUser || !state.sessionToken) return;
+      const objectKey = normalizeMonitoringObjectKey_(objectId);
+      if (state.objectKsgStateByObjectKey[objectKey] || state.objectKsgStateLoadingObjectKey === objectKey) return;
+      loadObjectKsgState_(objectId);
+    }
+
+    async function saveSelectedObjectKsgState_(objectId, isoDate) {
+      if (!isCurrentRegistryDatasetEditable_()) {
+        showCopyToast_('Архив доступен только для просмотра', true);
+        return;
+      }
+      if (state.objectSaving) return;
+      const normalizedObjectId = normalizeMonitoringObjectKey_(objectId);
+      const normalizedDate = String(isoDate || '').trim();
+      if (!normalizedObjectId) return;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+        showCopyToast_('Выберите дату обновления блока КСГ', true);
+        return;
+      }
+      state.objectSaving = true;
+      state.objectSaveError = '';
+      state.objectSaveMessage = '';
+      state.objectSaveVisual = 'idle';
+      syncObjectSaveUi_();
+      renderSectionStack_();
+      try {
+        const result = await runServer_('saveSmartFilterShellObjectKsgState', [{
+          objectId: normalizedObjectId,
+          updatedDate: normalizedDate
+        }]);
+        const objectKey = normalizeMonitoringObjectKey_(normalizedObjectId);
+        state.objectKsgStateByObjectKey[objectKey] = normalizeObjectKsgStateRecord_(result);
+        state.objectSaveMessage = 'Дата обновления КСГ сохранена';
+        state.objectSaveError = '';
+        state.objectSaveVisual = 'success';
+        state.objectSaving = false;
+        syncObjectSaveUi_();
+        renderSectionStack_();
+      } catch (err) {
+        if (isUnauthorizedError_(err)) {
+          state.objectSaving = false;
+          state.objectSaveVisual = 'idle';
+          syncObjectSaveUi_();
+          handleUnauthorized_();
+          return;
+        }
+        state.objectSaveError = err && err.message ? err.message : String(err || 'Ошибка сохранения');
+        state.objectSaveVisual = 'error';
+        state.objectSaving = false;
+        syncObjectSaveUi_();
+        renderSectionStack_();
+      }
     }
 
     function loadObjectLabStudiesHistory_(objectId, options) {
@@ -452,6 +552,7 @@ function activateObjectTab_(rowIndex, options) {
       resetActiveObjectCardUiState_();
       renderAll_();
       ensureSelectedObjectMonitoringHistoryLoaded_();
+      ensureSelectedObjectKsgStateLoaded_();
       ensureSelectedObjectLabStudiesHistoryLoaded_();
       if (settings.scroll !== false) scrollWorkspaceToTop_();
     }

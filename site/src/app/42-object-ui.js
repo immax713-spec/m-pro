@@ -7,6 +7,7 @@ function renderObjectView_() {
       objectView.classList.toggle('hidden', state.currentView !== 'object');
       if (state.currentView !== 'object') return;
       ensureSelectedObjectMonitoringHistoryLoaded_();
+      ensureSelectedObjectKsgStateLoaded_();
       ensureSelectedObjectLabStudiesHistoryLoaded_();
       renderHeader_();
       renderPassport_();
@@ -1156,6 +1157,7 @@ function renderSectionStack_() {
         const labStudiesHistoryHtml = isLabStudiesHistoryHostSection_(section)
           ? renderLabStudiesHistorySectionHtml_()
           : '';
+        const sectionToolbarHtml = renderSectionToolbarHtml_(section, rowIndex, editing);
         const customSectionHtml = `${monitoringHistoryHtml}${labStudiesHistoryHtml}`;
         return (
           `<section class="surface section-card" id="${escapeHtml_(sectionDomId_(section.id))}">` +
@@ -1164,6 +1166,7 @@ function renderSectionStack_() {
                 `<h3>${escapeHtml_(section.title)}</h3>` +
               `</div>` +
               `<div class="section-card-actions">` +
+                sectionToolbarHtml +
                 (
                   editing
                     ? (
@@ -1181,7 +1184,7 @@ function renderSectionStack_() {
             `</div>` +
             (
               rows.length
-                ? `<div class="section-rows${editing ? ' is-editing' : ''}">${rows.map(items => renderSectionRowHtml_(items, rowIndex, editing)).join('')}</div>`
+                ? `<div class="section-rows${editing ? ' is-editing' : ''}">${rows.map(items => renderSectionRowHtml_(items, rowIndex, editing, section)).join('')}</div>`
                 : (customSectionHtml
                   ? ''
                   : `<div class="empty-state">${escapeHtml_(placeholderMessage || 'Для текущего объекта в этой секции пока нет подходящих полей.')}</div>`)
@@ -1224,6 +1227,14 @@ function renderSectionStack_() {
       stack.querySelectorAll('[data-open-lab-study-create]').forEach(button => {
         button.addEventListener('click', () => openLabStudyCreateDialog_());
       });
+      stack.querySelectorAll('[data-ksg-state-save]').forEach(button => {
+        button.addEventListener('click', () => {
+          const inputId = String(button.getAttribute('data-input-id') || '').trim();
+          const input = inputId ? document.getElementById(inputId) : null;
+          const isoDate = input ? String(input.value || '').trim() : '';
+          saveSelectedObjectKsgState_(getSelectedObjectKey_(), isoDate);
+        });
+      });
       bindEditableFieldContainerEvents_(stack);
 
       if (state.pendingFocusFieldKey) {
@@ -1236,10 +1247,10 @@ function renderSectionStack_() {
       }
     }
 
-function renderSectionRowHtml_(items, rowIndex, editing) {
+function renderSectionRowHtml_(items, rowIndex, editing, section) {
       return (
         `<div class="section-row">` +
-          `${(Array.isArray(items) ? items : []).map(item => renderSectionItemHtml_(item, rowIndex, editing)).join('')}` +
+          `${(Array.isArray(items) ? items : []).map(item => renderSectionItemHtml_(item, rowIndex, editing, section)).join('')}` +
         `</div>`
       );
     }
@@ -1337,9 +1348,9 @@ function renderSectionRowHtml_(items, rowIndex, editing) {
       );
     }
 
-    function renderSectionItemHtml_(item, rowIndex, editing) {
+    function renderSectionItemHtml_(item, rowIndex, editing, section) {
       if (!item) return '';
-      if (item.type === 'group') return renderSectionGroupHtml_(item, rowIndex, editing);
+      if (item.type === 'group') return renderSectionGroupHtml_(item, rowIndex, editing, section);
       if (item.type === 'rv-field') return renderSectionRvFieldItemHtml_(item, rowIndex);
       if (item.type === 'linked-field') return renderSectionLinkedFieldItemHtml_(item, rowIndex, editing);
       return renderSectionFieldItemHtml_(item.field, rowIndex, editing);
@@ -1372,11 +1383,54 @@ function renderSectionRowHtml_(items, rowIndex, editing) {
       );
     }
 
-function renderSectionGroupHtml_(group, rowIndex, editing) {
+function isKsgSection_(section) {
+      return String(section && section.sourceKey || '').trim() === '__ksg__';
+    }
+
+    function getSelectedObjectKsgStateRecord_() {
+      return getObjectKsgStateRecordByObjectKey_(getSelectedObjectKey_());
+    }
+
+    function getKsgSectionUpdatedDateInputValue_() {
+      const stateRecord = getSelectedObjectKsgStateRecord_();
+      const normalizedStored = normalizeDateRangeFacetBoundary_(stateRecord && stateRecord.updatedDate);
+      if (normalizedStored) return normalizedStored;
+      return formatLocalDateInputValue_(new Date());
+    }
+
+    function renderKsgSectionToolbarHtml_(section, rowIndex, editing) {
+      if (editing || !isKsgSection_(section)) return '';
+      const objectKey = normalizeMonitoringObjectKey_(getSelectedObjectKey_());
+      if (!objectKey) return '';
+      const stateRecord = getSelectedObjectKsgStateRecord_();
+      const inputId = `ksg_section_update_${rowIndex}`;
+      const busy = state.objectSaving || state.objectKsgStateLoadingObjectKey === objectKey;
+      const disabledAttr = busy ? ' disabled' : '';
+      const updatedDateText = formatRegistryDateText_(stateRecord && stateRecord.updatedDate) || '';
+      const updatedByText = String(stateRecord && stateRecord.updatedBy || '').trim();
+      const metaText = updatedDateText
+        ? `Обновлено: ${updatedDateText}${updatedByText ? ` · ${updatedByText}` : ''}`
+        : 'Дата обновления блока не указана';
+      return (
+        `<div class="ksg-section-toolbar" title="${escapeHtml_(metaText)}">` +
+          `<input class="field-input ksg-section-date" type="date" id="${escapeHtml_(inputId)}" value="${escapeHtml_(getKsgSectionUpdatedDateInputValue_())}"${disabledAttr}>` +
+          `<button class="ghost ksg-section-update-button" type="button" data-ksg-state-save data-input-id="${escapeHtml_(inputId)}"${disabledAttr}>Обновить</button>` +
+        `</div>`
+      );
+    }
+
+    function renderSectionToolbarHtml_(section, rowIndex, editing) {
+      if (isKsgSection_(section)) return renderKsgSectionToolbarHtml_(section, rowIndex, editing);
+      return '';
+    }
+
+function renderSectionGroupHtml_(group, rowIndex, editing, section) {
       const changed = (Array.isArray(group.items) ? group.items : []).some(item => hasEditedValue_(rowIndex, item.field.index));
       return (
         `<article class="section-item section-item-wide section-group-item${changed ? ' changed' : ''}${editing ? ' is-editing' : ''}">` +
-          `<div class="section-item-label">${escapeHtml_(group.title)}</div>` +
+          `<div class="section-group-head">` +
+            `<div class="section-item-label">${escapeHtml_(group.title)}</div>` +
+          `</div>` +
           `<div class="section-group-grid">` +
             `${group.items.map(item => renderSectionGroupSubitemHtml_(item, rowIndex, editing)).join('')}` +
           `</div>` +
@@ -1778,7 +1832,7 @@ function formatGroupedFieldLabel_(value) {
       return text.charAt(0).toUpperCase() + text.slice(1);
     }
 
-function renderFieldLinkActionHtml_(value, linkKind) {
+    function renderFieldLinkActionHtml_(value, linkKind) {
       if (!linkKind) return '';
       const text = String(value == null ? '' : value).trim();
       const href = isHttpUrl_(text) ? text : '';

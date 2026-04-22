@@ -1949,6 +1949,16 @@ function buildCurrentDataRefreshOptions_(options) {
       }]).then(result => (result && typeof result === 'object' ? result : { rows: [] }));
     }
 
+    function fetchObjectKsgState_(objectId) {
+      return runServer_('getSmartFilterShellObjectKsgState', [{
+        objectId: String(objectId || '').trim()
+      }]).then(result => (
+        result && typeof result === 'object'
+          ? result
+          : { objectId: '', updatedDate: '', updatedAt: '', updatedBy: '' }
+      ));
+    }
+
     function fetchObjectLabStudiesHistory_(objectId) {
       return runServer_('getSmartFilterShellObjectLabStudiesHistory', [{
         objectId: String(objectId || '').trim()

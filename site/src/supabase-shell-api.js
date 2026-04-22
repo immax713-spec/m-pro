@@ -1127,6 +1127,17 @@
     return result && typeof result === 'object' ? result : { rows: [] };
   }
 
+  async function getSmartFilterShellObjectKsgState(options) {
+    await requireSession(options && options.sessionToken);
+    const result = await invokeRpc(RPC.getObjectKsgState, {
+      p_session_token: normalizeString(options && options.sessionToken),
+      p_object_id: normalizeString(options && options.objectId)
+    });
+    return result && typeof result === 'object'
+      ? result
+      : { objectId: '', updatedDate: '', updatedAt: '', updatedBy: '' };
+  }
+
   async function getSmartFilterShellLabStudyInspectors(options) {
     await requireSession(options && options.sessionToken);
     const result = await invokeRpc(RPC.getLabStudyInspectors, {
@@ -1150,6 +1161,16 @@
     return invokeRpc(RPC.createLabStudy, {
       p_session_token: normalizeString(options && options.sessionToken),
       p_payload: options || {}
+    });
+  }
+
+  async function saveSmartFilterShellObjectKsgState(options) {
+    await requireSession(options && options.sessionToken);
+    const updatedDate = normalizeString(options && options.updatedDate);
+    return invokeRpc(RPC.saveObjectKsgState, {
+      p_session_token: normalizeString(options && options.sessionToken),
+      p_object_id: normalizeString(options && options.objectId),
+      p_updated_date: /^\d{4}-\d{2}-\d{2}$/.test(updatedDate) ? updatedDate : null
     });
   }
 
@@ -1355,11 +1376,13 @@
       getSmartFilterShellArchiveMonitoring,
       getSmartFilterShellWorkControlDashboard,
       saveSmartFilterShellWorkControlSkud,
+      getSmartFilterShellObjectKsgState,
       getSmartFilterShellObjectMonitoringHistory,
       getSmartFilterShellObjectLabStudiesHistory,
       getSmartFilterShellLabStudyInspectors,
       getSmartFilterShellMproInspectorDirectory,
       createSmartFilterShellLabStudy,
+      saveSmartFilterShellObjectKsgState,
       getSmartFilterShellSharedSelections,
       getSmartFilterShellSharedSelectionWorkState,
       saveSmartFilterShellSharedSelection,
